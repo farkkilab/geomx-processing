@@ -17,6 +17,7 @@ library(Rtsne)
 library(pheatmap)
 library(parallel)
 library(ggrepel)
+library(GeoDiff)
 
 # running vignette
 # https://bioconductor.org/packages/devel/workflows/vignettes/GeoMxWorkflows/inst/doc/GeomxTools_RNA-NGS_Analysis.html
@@ -158,9 +159,11 @@ QCResults <- protocolData(geomx_obj)[["QCFlags"]]
 
 QC_Summary <- data.frame(Pass = colSums(!QCResults[, colnames(QCResults)]),
                          Warning = colSums(QCResults[, colnames(QCResults)]))
+
 QCResults$QCStatus <- apply(QCResults, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
 })
+
 QC_Summary["TOTAL FLAGS", ] <-
   c(sum(QCResults[, "QCStatus"] == "PASS"),
     sum(QCResults[, "QCStatus"] == "WARNING"))
@@ -202,7 +205,8 @@ QC_histogram(sData(geomx_obj), "area", col_by, qc_params[["minArea"]], scale_tra
 
 QC_histogram(sData(geomx_obj), "nuclei", col_by, qc_params[["minNuclei"]])
 
-#######
+
+############
 # calculate negative count
 # calculate the negative geometric means for each module
 negativeGeoMeans <- 
@@ -211,10 +215,11 @@ negativeGeoMeans <-
        FUN = function(x) { 
          assayDataApply(x, MARGIN = 2, FUN = ngeoMean, elt = "exprs") 
        }) 
+
 protocolData(geomx_obj)[["NegGeoMean"]] <- negativeGeoMeans
 
 # explicitly copy the Negative geoMeans from sData to pData  
-# nachuj ?
+# this is only to make plot - later on is detached from pData
 negCols <- paste0("NegGeoMean_", modules)
 pData(geomx_obj)[, negCols] <- sData(geomx_obj)[["NegGeoMean"]]
 
@@ -225,13 +230,41 @@ for(ann in negCols) {
 }
 
 # detatch neg_geomean columns ahead of aggregateCounts call
-# nachuj ?
+# just for plot - see above
 pData(geomx_obj) <- pData(geomx_obj)[, !colnames(pData(geomx_obj)) %in% negCols]
 
 # count segments with neg counts
+# NTC - no template control
 table(NTC_Count = sData(geomx_obj)$NTC)
-#####
 
+#TODO decide what to do with information about NegGeoMean and NCT - so far anything happens here
+#########
+# background modelling
+
+paste("## of Negative Probes:", sum(fData(geomx_obj)$Negative))
+# This model estimates a feature factor for each negative probe and a background size factor for each ROI.
+geomx_obj <- fitPoisBG(geomx_obj)
+summary(pData(geomx_obj)$sizefact)
+summary(fData(geomx_obj)$featfact[fData(geomx_obj)$Negative])
+
+set.seed(123)
+geomx_diag <- diagPoisBG(geomx_obj)
+notes(geomx_diag)$disper 
+# dispersion - should be <2, if it's higher there may be problem with the modules
+# if the dispersion is higher, some ROIs may be removed and Pois can be run again
+which(assayDataElement(geomx_diag, "low_outlier") == 1, arr.ind = TRUE)
+which(assayDataElement(geomx_diag, "up_outlier") == 1, arr.ind = TRUE)
+
+# or if we assume batch effect we may want to group by eg slide, or other group we have and check 
+# if the distribution is better
+# geomx_obj <- fitPoisBG(geomx_obj, groupvar = "slide name")
+# set.seed(123)
+# geomx_diag <- diagPoisBG(geomx_obj, split = TRUE)
+# notes(geomx_diag)$disper_sp # why not disper? - check in documentation
+# TODO decide if any segments should be removed based on this score
+
+
+##########
 # remove flagged segments
 
 table(QCResults$QCStatus)
@@ -243,9 +276,11 @@ geomx_obj <- geomx_obj[, QCResults$QCStatus == "PASS"]
 
 # A probe is removed globally from the dataset if either of the following is true:
 #   
-# the geometric mean of that probe’s counts from all segments divided by the geometric mean of all probe counts representing the target from all segments is less than 0.1
+# the geometric mean of that probe’s counts from all segments divided by the geometric mean 
+# of all probe counts representing the target from all segments is less than 0.1
 # the probe is an outlier according to the Grubb’s test in at least 20% of the segments
-# A probe is removed locally (from a given segment) if the probe is an outlier according to the Grubb’s test in that segment.
+# A probe is removed locally (from a given segment) if the probe is an outlier according to 
+# the Grubb’s test in that segment.
 # 
 # We do not typically adjust these QC parameters.
 
