@@ -273,15 +273,23 @@ geomx_obj <- geomx_obj[, QCResults$QCStatus == "PASS"]
 
 
 # QC for probes -----------------------------------------------------------
+#######
+# rmv probes with 0 counts
+# may not be needed
+
+all0probeidx <- which(rowSums(exprs(geomx_obj))==0)
+
+if (length(all0probeidx) > 0) {
+  geomx_obj <- geomx_obj[-all0probeidx, ]
+}
+#######
 
 # A probe is removed globally from the dataset if either of the following is true:
-#   
 # the geometric mean of that probe’s counts from all segments divided by the geometric mean 
 # of all probe counts representing the target from all segments is less than 0.1
 # the probe is an outlier according to the Grubb’s test in at least 20% of the segments
 # A probe is removed locally (from a given segment) if the probe is an outlier according to 
 # the Grubb’s test in that segment.
-# 
 # We do not typically adjust these QC parameters.
 
 geomx_obj <- setBioProbeQCFlags(geomx_obj, 
@@ -296,7 +304,7 @@ qc_probe_df <- data.frame(Passed = sum(rowSums(ProbeQCResults[, -1]) == 0),
                     Global = sum(ProbeQCResults$GlobalGrubbsOutlier),
                     Local = sum(rowSums(ProbeQCResults[, -2:-1]) > 0
                                 & !ProbeQCResults$GlobalGrubbsOutlier))
-
+dim(geomx_obj)
 # retain only probes that passed qc
 geomx_obj <- 
   subset(geomx_obj, 
@@ -313,11 +321,11 @@ length(unique(featureData(geomx_obj)[["TargetName"]]))
 # collapse features to targets
 geomx_obj <- aggregateCounts(geomx_obj)
 
-dim(geomx_obj)
 exprs(geomx_obj)[1:5, 1:2]
 
 
-# determine limit of quantification per segment ---------------------------
+
+# filter based on limit of quantification per segment ---------------------
 
 # The LOQ is calculated based on the distribution of negative control probes and is intended to approximate 
 # the quantifiable limit of gene expression per segment. Please note that this process is more stable in larger 
@@ -349,8 +357,8 @@ for(module in modules) {
 
 pData(geomx_obj)$LOQ <- LOQ
 
-
-# filtering ---------------------------------------------------------------
+###################
+# filtering
 
 # After determining the limit of quantification (LOQ) per segment, 
 # filtering out either segments and/or genes with abnormally low signal
@@ -404,7 +412,7 @@ ggplot(pData(geomx_obj),
 table(pData(geomx_obj)$DetectionThreshold,
       pData(geomx_obj)$class)
 
-# TODO appropriate thr should be choose here based on these plots + stats!!!
+# TODO appropriate thr should be choosen here based on these plots + stats!!!
 
 # filter based on thr choosen
 gene_detect_thr <- 0.1
@@ -491,6 +499,78 @@ dim(geomx_obj)
 # retain only detected genes of interest
 goi <- goi[goi %in% rownames(geomx_obj)]
 
+
+
+# filter based on background modelling ------------------------------------
+# alternative to filtering based on LOQ from the previous section
+
+geomx_obj <- fitPoisBG(geomx_obj, groupvar = "slide name")
+# probe aggregation once again and storage in the other object for GeoDiff lib usage
+# !!!!! geomx_obj <- aggregateCounts(geomx_obj) shouldnt be run before!!!!
+geomx_obj <- aggreprobe(geomx_obj, use = "cor")
+
+# Using the background score test, we can determine which targets are expressed 
+# above the background of the negative probes across this dataset. We can then filter 
+# the data to only targets above background, using a suggested pvalue threshold of 1e-3.
+
+geomx_obj <- BGScoreTest(geomx_obj)
+sum(fData(geomx_obj)[["pvalues"]] < 1e-3, na.rm = TRUE)
+# removeoutlier = TRUE ??
+
+
+# To estimate the signal size factor, we use the fit negative binomial threshold function. 
+# This size factor represents technical variation between ROIs like sequencing depth
+# The feature_high_fitNBth labeled genes are ones well above background that will be used in later steps.
+
+set.seed(123)
+geomx_obj <- fitNBth(geomx_obj, split = TRUE)
+
+features_high <- rownames(fData(geomx_obj))[fData(geomx_obj)$feature_high_fitNBth == 1]
+length(features_high)
+
+# We can compare this threshold to the mean of the background as a sanity check.
+# TODO why it is so very different from vignette? - something made different to geomx_obj from other vignette
+# TODO check the exact meaning
+bgMean <- mean(fData(geomx_obj)$featfact, na.rm = TRUE)
+notes(geomx_obj)[["threshold"]]
+bgMean
+
+#This is a sanity check to see that the signal size factor and background size factor are correlated but not redundant.
+
+cor(geomx_obj$sizefact, geomx_obj$sizefact_fitNBth)
+plot(geomx_obj$sizefact, geomx_obj$sizefact_fitNBth, xlab = "Background Size Factor",
+     ylab = "Signal Size Factor")
+abline(a = 0, b = 1)
+
+# !!!!!!!
+# In this dataset, this size factor correlate well with different quantiles, including 75%
+# quantile which is used in Q3 normalization.
+
+# get only biological probes
+posdat <- geomx_obj[-which(fData(geomx_obj)$CodeClass == "Negative"), ]
+posdat <- exprs(posdat)
+
+quan <- sapply(c(0.75, 0.8, 0.9, 0.95), function(y)
+  apply(posdat, 2, function(x) quantile(x, probs = y)))
+
+corrs <- apply(quan, 2, function(x) cor(x, geomx_obj$sizefact_fitNBth))
+names(corrs) <- c(0.75, 0.8, 0.9, 0.95)
+
+corrs
+
+quan75 <- apply(posdat, 2, function(x) quantile(x, probs = 0.75))
+
+#Quantile range (quantile - background size factor scaled by the mean 
+#feature factor of negative probes) has better correlation with the signal size factor.
+
+geomx_obj <- QuanRange(geomx_obj, split = FALSE, probs = c(0.75, 0.8, 0.9, 0.95))
+
+corrs <- apply(pData(geomx_obj)[, as.character(c(0.75, 0.8, 0.9, 0.95))], 2, function(x)
+  cor(x, geomx_obj$sizefact_fitNBth))
+
+names(corrs) <- c(0.75, 0.8, 0.9, 0.95)
+
+corrs
 
 # normalisation -----------------------------------------------------------
 
