@@ -31,8 +31,8 @@ library(ggrepel)
 
 
 # ?
-# what exactly is 'module' and 'segment' (segment - ROI/AOI ?)
-# module - comes from PKC file
+# what exactly is 'module' and 'segment' (segment - ROI/AOI, including geometric segment areas(ROI) and subarea with different markers(AOI))
+# module - comes from PKC file (pkc's name?)
 
 # pData - metadate for segments (pheno)
 # fData - metadata for genes (feature)
@@ -58,7 +58,7 @@ geomx_obj <-
   readNanoStringGeoMxSet(dccFiles = DCCFiles, 
                          pkcFiles = PKCFiles, # this goes into fData() - features (probes) annotation
                          phenoDataFile = SampleAnnotationFile, # this goes into pData() - protocol (samples) annotation
-                         phenoDataSheet = "Template", #TODO what about this param?
+                         phenoDataSheet = "Template", #TODO what about this param? - An optional character string representing the excel sheet name containing the phenotypic data.
                          phenoDataDccColName = "Sample_ID",
                          protocolDataColNames = c("aoi", "roi"), #TODO adjust
                          experimentDataColNames = c("panel")) #TODO adjust
