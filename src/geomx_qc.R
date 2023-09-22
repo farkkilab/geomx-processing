@@ -6,19 +6,18 @@ library(dplyr)
 
 # define variables --------------------------------------------------------
 
-data_dir <- system.file("extdata", "WTA_NGS_Example",
-                       package="GeoMxWorkflows")
+data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
 
-dcc_path <- dir(file.path(data_dir, "dccs"), pattern = ".dcc$",
+dcc_path <- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
                 full.names = TRUE, recursive = TRUE)
 
-pkc_path <- unzip(zipfile = dir(file.path(data_dir, "pkcs"), pattern = ".zip$",
-                                full.names = TRUE, recursive = TRUE))
-anno_path <-
-  dir(file.path(data_dir, "annotation"), pattern = ".xlsx$",
-      full.names = TRUE, recursive = TRUE)
+pkc_path <- file.path(data_dir, 'metadata/Hs_R_NGS_WTA_v1.0.pkc')
+anno_path <- file.path(data_dir, 'metadata/dcc_metadata_all.xlsx')
+# anno_path <-
+#   dir(file.path(data_dir, "annotation"), pattern = ".xlsx$",
+#       full.names = TRUE, recursive = TRUE)
 
-output_dir <- '/media/iganiemi/T7-iga/st/st-processing/results/geomx/demo'
+output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact'
 dir.create(output_dir, showWarnings = T, recursive = T)
 
 # load geomx dataset ------------------------------------------------------
@@ -26,10 +25,11 @@ dir.create(output_dir, showWarnings = T, recursive = T)
 geomx_obj <- readNanoStringGeoMxSet(dccFiles = dcc_path, 
                                     pkcFiles = pkc_path, # this goes into fData() - features (probes) annotation
                                     phenoDataFile = anno_path, # this goes into pData() - protocol (samples) annotation
-                                    phenoDataSheet = "Template", #TODO what about this param?
+                                    phenoDataSheet = "Sheet1",
                                     phenoDataDccColName = "Sample_ID",
-                                    protocolDataColNames = c("aoi", "roi"), #TODO adjust
-                                    experimentDataColNames = c("panel")) #TODO adjust
+                                    protocolDataColNames = c("Aoi", "Roi"), #TODO adjust
+                                    experimentDataColNames = c("Panel")) #TODO adjust
+
 
 View(assayData(geomx_obj)$exprs)
 dim(assayData(geomx_obj)$exprs)

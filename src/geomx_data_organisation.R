@@ -2,6 +2,7 @@ library(data.table)
 library(dplyr)
 library(readxl)
 library(tibble)
+library(xlsx)
 
 proj_dir <- '/media/iganiemi/T7-iga/st/'
 dcc_dir <- file.path(proj_dir, 'data/geomx/nact_experiment/dcc')
@@ -83,6 +84,7 @@ length(intersect(dcc_data$Sample, clin$Sample))
 dcc_data <- left_join(dcc_data, clin, by = 'Sample')
 
 fwrite(dcc_data, file.path(proj_dir, 'data/geomx/nact_experiment/metadata/dcc_metadata_all.csv'))
+write.xlsx(dcc_data, file.path(proj_dir, 'data/geomx/nact_experiment/metadata/dcc_metadata_all.xlsx'))
 
 # the one dcc file with no fastq
 nofastq <- filter(dcc_data, Sample_ID == nn)
