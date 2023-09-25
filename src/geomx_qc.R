@@ -4,6 +4,7 @@ library(GeoMxWorkflows)
 library(plyr)
 library(dplyr)
 library(ggforce)
+library(data.table)
 
 # define variables --------------------------------------------------------
 
@@ -18,6 +19,7 @@ anno_path <- file.path(data_dir, 'metadata/dcc_metadata_all.xlsx')
 output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact'
 dir.create(output_dir, showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
+dir.create(file.path(output_dir, 'dcc_post_qc'), showWarnings = T, recursive = T)
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
@@ -44,11 +46,9 @@ annotation(geomx_obj)
 View(summary(geomx_obj, MARGIN = 1)) # for probes
 View(summary(geomx_obj, MARGIN = 2)) # for segments (rois)
 
+# !! no reads for DSP-1001660016656-A-H01.dcc
 
 # make overall sankey plot ------------------------------------------------
-#TODO to remove
-# pkcs <- annotation(geomx_obj)
-# modules <- gsub(".pkc", "", pkcs)
 
 count_segments <- filter(geomx_obj@phenoData@data, Annotation_cell != 'NA' & !is.na(Annotation_cell))
 variables_to_plot <- c("Slide Name", "NACT status", "Segment", "Annotation_cell")
@@ -58,6 +58,9 @@ plot_sankey(count_segments, variables_to_plot, "NACT status",
 
 
 # set and plot basic qc parameters ----------------------------------------
+# Shift 0 counts to one (needed for downstream analysis - ?)
+#TODO is this needed?
+#geomx_obj <- shiftCountsOne(geomx_obj, useDALogic = TRUE)
 
 qc_params <-
   list(minSegmentReads = 1000, # Minimum number of reads (1000)
@@ -67,13 +70,13 @@ qc_params <-
        percentSaturation = 50, # Minimum sequencing saturation (50%)
        minNegativeCount = 1,   # Minimum negative control counts (10, 1 in log scale)
        maxNTCCount = 9000,     # Maximum counts observed in NTC well (1000)
-       minNuclei = 20,         # Minimum # of nuclei estimated (100)
+       minNuclei = 20,         # Minimum # of nuclei estimated (100) #TODO maybe bigger
        minArea = 1000)         # Minimum segment area (5000)
 
 geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
-qc_results <- protocolData(geomx_obj)[["QCFlags"]]
+qc_results_segment <- protocolData(geomx_obj)[["QCFlags"]]
 
-qc_summary <- qc_summarize(qc_results)
+qc_summary <- qc_summarize(qc_results_segment)
 
 # plot qc histograms
 QC_histogram(sData(geomx_obj), "Trimmed (%)", "Segment", qc_params[["percentTrimmed"]], 
@@ -102,12 +105,144 @@ QC_histogram(sData(geomx_obj), "Nuclei", "Segment", qc_params[["minNuclei"]],
 
 # remove flagged segments -------------------------------------------------
 #TODO code repetition from function
-qc_results$qc_status <- apply(qc_results, 1L, function(x) {
+qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
 })
 
-table(qc_results$qc_status)
+table(qc_results_segment$qc_status)
+segments_to_rmv <- geomx_obj@phenoData@data[qc_results_segment$qc_status != "PASS", ]
 
-geomx_obj <- geomx_obj[, qc_results$qc_status == "PASS"]
+geomx_obj <- geomx_obj[, qc_results_segment$qc_status == "PASS"]
+
+dim(geomx_obj)
+# removed segments:
+# DSP-1001660016656-A-H01.dcc - no reads at all
+# DSP-1001660016656-A-G01.dcc - low saturation, low negatives
+# DSP-1001660016658-B-A12.dcc - low stiched, low aligned
+# DSP-1001660016658-B-H01.dcc - low stiched
+
+###########################################################################
+###########################################################################
+
+# rmv of probes based on geometric mean and grubbs test -------------------
+# the geometric mean of that probe’s counts from all segments divided by the geometric mean 
+# of all probe counts representing the target from all segments is less than 0.1
+# the probe is an outlier according to the Grubb’s test in at least 20% of the segments
+
+geomx_obj <- setBioProbeQCFlags(geomx_obj, 
+                                qcCutoffs = list(minProbeRatio = 0.1,
+                                                 percentFailGrubbs = 20), 
+                                removeLocalOutliers = TRUE)
+
+qc_results_probe <- fData(geomx_obj)[["QCFlags"]]
+
+# summarise probe qc results
+qc_probe_df <- data.frame(Passed = sum(rowSums(qc_results_probe[, -1]) == 0),
+                          Global = sum(qc_results_probe$GlobalGrubbsOutlier),
+                          Local = sum(rowSums(qc_results_probe[, -2:-1]) > 0
+                                      & !qc_results_probe$GlobalGrubbsOutlier))
+dim(geomx_obj)
+
+# retain only probes that passed qc (globally)
+geomx_obj <- 
+  subset(geomx_obj, 
+         fData(geomx_obj)[["QCFlags"]][,c("LowProbeRatio")] == FALSE &
+           fData(geomx_obj)[["QCFlags"]][,c("GlobalGrubbsOutlier")] == FALSE)
+
+dim(geomx_obj)
+# 1 probe removed
+# TODO what about local removal of probes per segment?
+
+# aggregate probes to features --------------------------------------------
+
+# TODO if we want to do background modelling 
+# from geoDiff it should be done before aggregating counts
+
+# nr of unique targets
+length(unique(featureData(geomx_obj)[["TargetName"]]))
+
+# collapse features to targets
+geomx_obj <- aggregateCounts(geomx_obj)
+
+dim(geomx_obj)
+
+
+# filter based on LOQ per segment and per gene ----------------------------
+
+loq_cutoff <- 2
+loq_min <- 2
+
+# choosen based on the data (nothing is filtered out rn)
+gene_detect_thr <- 0.1 # segment is removed if <10% of genes > LOQ
+# TODO adjustment may be needed
+segment_detect_rate_thr <- 0.01 # genes are removed if > LOQ in less than 1% of segments
+
+# Calculate LOQ for each segment
+# TODO adjust if > 1 modules
+LOQ <- data.frame(row.names = colnames(geomx_obj))
+module <- gsub(".pkc", "", annotation(geomx_obj))
+
+LOQ[, module] <-
+  pmax(loq_min,
+       pData(geomx_obj)[, paste0("NegGeoMean_", module)] * # coming from aggregate_counts
+         pData(geomx_obj)[, paste0("NegGeoSD_", module)] ^ loq_cutoff)
+
+pData(geomx_obj)$LOQ <- LOQ
+
+# calculate if expr > LOQ per each gene per segment
+LOQ_Mat <- t(esApply(geomx_obj, MARGIN = 1,
+                   FUN = function(x) {
+                     x > LOQ[, module]
+                   }))
+
+LOQ_Mat <- LOQ_Mat[fData(geomx_obj)$TargetName, ] # ensure ordering
+
+# Save detection rate information to pheno data
+# how many genes have been detected in each segment  
+pData(geomx_obj)$GenesDetected <- colSums(LOQ_Mat, na.rm = TRUE)
+pData(geomx_obj)$GeneDetectionRate <- pData(geomx_obj)$GenesDetected / nrow(geomx_obj)
+
+#TODO calculate signal/noise ratio = Count/LOQ per segment (similar to genedetectionrate)
+
+plot_detection_rate(pData(geomx_obj), "NACT status", 
+                    file.path(output_dir, 'qc/gene_detect_rate_nact.png'))
+plot_detection_rate(pData(geomx_obj), "Segment", 
+                    file.path(output_dir, 'qc/gene_detect_rate_segment.png'))
+plot_detection_rate(pData(geomx_obj), "Annotation_cell", 
+                    file.path(output_dir, 'qc/gene_detect_rate_anno_cell.png'))
+
+
+# filter out segments with too low gene detection rate
+geomx_obj <- geomx_obj[, pData(geomx_obj)$GeneDetectionRate >= gene_detect_thr]
+
+dim(geomx_obj)
+
+# in how many segments the given gene was detected
+# save to probe data
+LOQ_Mat <- LOQ_Mat[, colnames(geomx_obj)]
+fData(geomx_obj)$DetectedSegments <- rowSums(LOQ_Mat, na.rm = TRUE)
+fData(geomx_obj)$DetectionRate <- fData(geomx_obj)$DetectedSegments / nrow(pData(geomx_obj))
+LOQ_Mat <- LOQ_Mat[fData(geomx_obj)$TargetName, ]
+
+# plot detection rate per gene
+plot_gene_detection_rate(fData(geomx_obj), file.path(output_dir, 'qc/gene_detection_rate.png'))
+
+
+# manually include the negative control probe, for downstream use
+# TODO is it needed?
+negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative")
+neg_probes <- unique(negativeProbefData$TargetName)
+
+# filter out genes detected > LOQ in less then thr nr of segments (1% for now)
+geomx_obj <- 
+  geomx_obj[fData(geomx_obj)$DetectionRate >= segment_detect_rate_thr |
+              fData(geomx_obj)$TargetName %in% neg_probes, ]
+dim(geomx_obj)
+
+# save geomx dcc files after QC
+#TODO sth wrong here
+writeNanoStringGeoMxSet(geomx_obj, dir = file.path(output_dir, 'dcc_post_qc'))
+
+# Q3 normalisation --------------------------------------------------------
 
 
