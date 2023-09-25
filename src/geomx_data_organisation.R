@@ -50,7 +50,7 @@ dup_ids <- n_occur[n_occur$Freq > 1, ]
 batch_duplicated <- batch_all[batch_all$Sample_ID %in% as.character(dup_ids$Var1), ] %>%
   arrange(Sample_ID)
 
-# 41 ids are duplicated - contain the same info, but coming from batch 4 and 6
+# 1 NTCc id is duplicated - contain the same info, but coming from batch 4 and 6
 
 # remove duplicated rows
 batch_all <- batch_all %>%
@@ -82,6 +82,18 @@ length(unique(clin$Sample))
 length(intersect(dcc_data$Sample, clin$Sample))
 
 dcc_data <- left_join(dcc_data, clin, by = 'Sample')
+
+# clean some variables
+#TODO move it to annotation making script
+# make cell annotation and fix some values
+dcc_data$Annotation_cell <- gsub("S[0-9]*_", "", dcc_data$Annotation)
+dcc_data$Annotation_cell <- gsub("pre_|post_", "", dcc_data$Annotation_cell)
+dcc_data$Annotation_cell <- ifelse(dcc_data$`Slide Name` == 'No Template Control', NA, dcc_data$Annotation_cell)
+dcc_data$Annotation_cell <- gsub("posBA1", "posIBA1", dcc_data$Annotation_cell)
+dcc_data$Annotation_cell <- gsub("negBA1", "negIBA1", dcc_data$Annotation_cell)
+
+dcc_data$Segment <- tolower(dcc_data$Segment)
+
 
 fwrite(dcc_data, file.path(proj_dir, 'data/geomx/nact_experiment/metadata/dcc_metadata_all.csv'))
 write.xlsx(dcc_data, file.path(proj_dir, 'data/geomx/nact_experiment/metadata/dcc_metadata_all.xlsx'))
