@@ -5,6 +5,10 @@ library(plyr)
 library(dplyr)
 library(ggforce)
 library(data.table)
+library(umap)
+library(cowplot)
+library(preprocessCore)
+library(Rtsne)
 
 # define variables --------------------------------------------------------
 
@@ -20,6 +24,7 @@ output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact'
 dir.create(output_dir, showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'dcc_post_qc'), showWarnings = T, recursive = T)
+dir.create(file.path(output_dir, 'umap_tsne'), showWarnings = T, recursive = T)
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
@@ -34,18 +39,19 @@ geomx_obj <- readNanoStringGeoMxSet(dccFiles = dcc_path,
                                     experimentDataColNames = c("Panel")) # TODO dunno if this is needed
 
 # explore
-View(assayData(geomx_obj)$exprs)
-dim(assayData(geomx_obj)$exprs)
+# View(assayData(geomx_obj)$exprs)
+# dim(assayData(geomx_obj)$exprs)
+# 
+# View(pData(geomx_obj))
+# View(pData(protocolData(geomx_obj)))
+# View(fData(geomx_obj))
+# featureType(geomx_obj)
+# annotation(geomx_obj)
+# 
+# View(summary(geomx_obj, MARGIN = 1)) # for probes
+# View(summary(geomx_obj, MARGIN = 2)) # for segments (rois)
 
-View(pData(geomx_obj))
-View(pData(protocolData(geomx_obj)))
-View(fData(geomx_obj))
-featureType(geomx_obj)
-annotation(geomx_obj)
-
-View(summary(geomx_obj, MARGIN = 1)) # for probes
-View(summary(geomx_obj, MARGIN = 2)) # for segments (rois)
-
+dim(geomx_obj)
 # !! no reads for DSP-1001660016656-A-H01.dcc
 
 # make overall sankey plot ------------------------------------------------
@@ -59,8 +65,8 @@ plot_sankey(count_segments, variables_to_plot, "NACT status",
 
 # set and plot basic qc parameters ----------------------------------------
 # Shift 0 counts to one (needed for downstream analysis - ?)
-#TODO is this needed?
-#geomx_obj <- shiftCountsOne(geomx_obj, useDALogic = TRUE)
+#TODO this is needed for Q3 norm (but not 100% sure why)
+geomx_obj <- shiftCountsOne(geomx_obj, useDALogic = TRUE)
 
 qc_params <-
   list(minSegmentReads = 1000, # Minimum number of reads (1000)
@@ -229,7 +235,7 @@ plot_gene_detection_rate(fData(geomx_obj), file.path(output_dir, 'qc/gene_detect
 
 
 # manually include the negative control probe, for downstream use
-# TODO is it needed?
+# TODO check how many in the sample data. why just 1?
 negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative")
 neg_probes <- unique(negativeProbefData$TargetName)
 
@@ -241,8 +247,114 @@ dim(geomx_obj)
 
 # save geomx dcc files after QC
 #TODO sth wrong here
-writeNanoStringGeoMxSet(geomx_obj, dir = file.path(output_dir, 'dcc_post_qc'))
+#writeNanoStringGeoMxSet(geomx_obj, dir = file.path(output_dir, 'dcc_post_qc'))
 
 # Q3 normalisation --------------------------------------------------------
 
+plot_q3_stats(geomx_obj, "Annotation_cell", file.path(output_dir, 'qc/q3_stats.png'))
+
+
+geomx_obj <- normalize(geomx_obj ,
+                       norm_method = "quant", 
+                       desiredQuantile = .75,
+                       toElt = "q3_norm")
+
+# quantile normalisation --------------------------------------------------
+
+norm.quantile = normalize.quantiles(as.matrix(geomx_obj@assayData$exprs))
+dimnames(norm.quantile) = dimnames(geomx_obj@assayData$exprs)
+
+# hacking GeoMx class object 
+# TODO this is experimental - newassay is not identical and it may cause problems
+# if so, store this in another mtx and use when needed
+newassay <- new.env(parent=geomx_obj@assayData)
+newassay$exprs <- geomx_obj@assayData$exprs
+newassay$q3_norm <- geomx_obj@assayData$q3_norm
+newassay$quant_norm <- norm.quantile
+
+geomx_obj@assayData <- newassay
+
+# TODO some problems with plotting, dunno for a while
+# plot_norm_effect <- function(expr_data, norm_name, output_name){
+#   norm_box <- boxplot(expr_data,
+#           col = "#9EDAE5", main = norm_name,
+#           log='y', names = seq(1:ncol(expr_data)), xlab = "Segment",
+#           ylab = norm_name)
+#   
+#   png(filename=output_name, width=2000, height=1500, units="px")
+#   plot(norm_box)
+#   dev.off()
+# }
+# 
+# plot_norm_effect(exprs(geomx_obj)[,1:10], 'Raw Counts', file.path(output_dir, 'qc/norm_raw.png'))
+# 
+# plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "q3_norm"),
+#                  'Q3 normalised', file.path(output_dir, 'qc/norm_q3.png'))
+# 
+# plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "quant_norm"),
+#                  'Quantile normalised', file.path(output_dir, 'qc/norm_quant.png'))
+
+# plot effects of normalisation
+boxplot(exprs(geomx_obj)[,1:10],
+        col = "#9EDAE5", main = "Raw Counts",
+        log='y', names = 1:10, xlab = "Segment",
+        ylab = "Counts, Raw")
+
+boxplot(assayDataElement(geomx_obj[,1:10], elt = "q3_norm"),
+        col = "#2CA02C", main = "Q3 Norm Counts",
+        log='y', names = 1:10, xlab = "Segment",
+        ylab = "Counts, Q3 Normalized")
+
+# TODO I don't like sth with this plot, why all outliers are the same in each segment?
+boxplot(assayDataElement(geomx_obj[,1:10], elt = "quant_norm"),
+        col = "#2CA02C", main = "Quantile Norm Counts",
+        log = "y", names = 1:10, xlab = "Segment",
+        ylab = "Counts, Quantile Normalized")
+
+
+# make UMAP and t-SNE -----------------------------------------------------
+
+# update defaults for umap to contain a stable random_state (seed)
+custom_umap <- umap::umap.defaults
+custom_umap$random_state <- 42
+
+# run UMAP on Q3 and quantile norm
+umap_out <-
+  umap(t(log2(assayDataElement(geomx_obj , elt = "q3_norm"))),  
+       config = custom_umap)
+
+umap_out_quant <-
+  umap(t(log2(assayDataElement(geomx_obj , elt = "quant_norm"))),  
+       config = custom_umap)
+
+# save UMAP1 and 2 results to pData
+pData(geomx_obj)[, c("UMAP1_q3_norm", "UMAP2_q3_norm")] <- umap_out$layout[, c(1,2)]
+pData(geomx_obj)[, c("UMAP1_quant_norm", "UMAP2_quant_norm")] <- umap_out_quant$layout[, c(1,2)]
+
+
+# run t-SNE on q3norm and quantile norm
+set.seed(42) # set the seed for tSNE as well
+tsne_out <-
+  Rtsne(t(log2(assayDataElement(geomx_obj , elt = "q3_norm"))),
+        perplexity = ncol(geomx_obj)*.15)
+
+tsne_out_quant <-
+  Rtsne(t(log2(assayDataElement(geomx_obj , elt = "quant_norm"))),
+        perplexity = ncol(geomx_obj)*.15)
+
+# save tSNE1 and 2 results to pData
+pData(geomx_obj)[, c("tSNE1_q3_norm", "tSNE2_q3_norm")] <- tsne_out$Y[, c(1,2)]
+pData(geomx_obj)[, c("tSNE1_quant_norm", "tSNE2_quant_norm")] <- tsne_out_quant$Y[, c(1,2)]
+
+# generate umap and tsne plots and color by variables
+for(method in c('UMAP', 'tSNE')){
+  for(norm in c('q3', 'quant')){
+    for(color_var in c('Annotation_cell', 'Patient', 'NACT status', 'PFS', 'Site')){
+      plot_umap_tsne(pData(geomx_obj), method_type = method, 
+                     norm_type = norm, color_var = color_var,
+                     output_name = file.path(output_dir, 
+                                        paste0('umap_tsne/', method, '_', norm, '_', color_var, '.png')))
+    }
+  }
+}
 
