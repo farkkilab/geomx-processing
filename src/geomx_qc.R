@@ -25,6 +25,8 @@ dir.create(output_dir, showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'dcc_post_qc'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'umap_tsne'), showWarnings = T, recursive = T)
+dir.create(file.path(output_dir, 'umap_tsne', 'tumor'), showWarnings = T, recursive = T)
+dir.create(file.path(output_dir, 'umap_tsne', 'stroma'), showWarnings = T, recursive = T)
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
@@ -314,47 +316,63 @@ boxplot(assayDataElement(geomx_obj[,1:10], elt = "quant_norm"),
 
 # make UMAP and t-SNE -----------------------------------------------------
 
-# update defaults for umap to contain a stable random_state (seed)
-custom_umap <- umap::umap.defaults
-custom_umap$random_state <- 42
+# divide for tumor and stroma and do dimentionality reduction for all
+geomx_obj_tumor <- geomx_obj[, geomx_obj@phenoData@data$Segment == "tumor"]
+geomx_obj_stroma <- geomx_obj[, geomx_obj@phenoData@data$Segment == "stroma"]
 
-# run UMAP on Q3 and quantile norm
-umap_out <-
-  umap(t(log2(assayDataElement(geomx_obj , elt = "q3_norm"))),  
-       config = custom_umap)
+geomx_list <- list(all = geomx_obj, tumor = geomx_obj_tumor, stroma = geomx_obj_stroma)
 
-umap_out_quant <-
-  umap(t(log2(assayDataElement(geomx_obj , elt = "quant_norm"))),  
-       config = custom_umap)
+geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
+  
+  geomx <- geomx_list[[n]]
 
-# save UMAP1 and 2 results to pData
-pData(geomx_obj)[, c("UMAP1_q3_norm", "UMAP2_q3_norm")] <- umap_out$layout[, c(1,2)]
-pData(geomx_obj)[, c("UMAP1_quant_norm", "UMAP2_quant_norm")] <- umap_out_quant$layout[, c(1,2)]
+  # run UMAP and tSNE on Q3 and quantile norm
+  for(norm in c('q3_norm', 'quant_norm')){
+    # update defaults for umap to contain a stable random_state (seed)
+    custom_umap <- umap::umap.defaults
+    custom_umap$random_state <- 42
+    
+    umap_out <-
+      umap(t(log2(assayDataElement(geomx , elt = norm))),  
+           config = custom_umap)
+    
+    # save UMAP1 and 2 results to pData
+    pData(geomx)[, c(paste0("UMAP1_", norm), paste0("UMAP2_", norm))] <- umap_out$layout[, c(1,2)]
+    
+    # set the seed for tSNE as well
+    set.seed(42) 
+    tsne_out <-
+      Rtsne(t(log2(assayDataElement(geomx , elt = norm))),
+            perplexity = ncol(geomx)*.15)
+    
+    # save tSNE1 and 2 results to pData
+    pData(geomx)[, c(paste0("tSNE1_", norm), paste0("tSNE2_", norm))] <- tsne_out$Y[, c(1,2)]
+  }
 
-
-# run t-SNE on q3norm and quantile norm
-set.seed(42) # set the seed for tSNE as well
-tsne_out <-
-  Rtsne(t(log2(assayDataElement(geomx_obj , elt = "q3_norm"))),
-        perplexity = ncol(geomx_obj)*.15)
-
-tsne_out_quant <-
-  Rtsne(t(log2(assayDataElement(geomx_obj , elt = "quant_norm"))),
-        perplexity = ncol(geomx_obj)*.15)
-
-# save tSNE1 and 2 results to pData
-pData(geomx_obj)[, c("tSNE1_q3_norm", "tSNE2_q3_norm")] <- tsne_out$Y[, c(1,2)]
-pData(geomx_obj)[, c("tSNE1_quant_norm", "tSNE2_quant_norm")] <- tsne_out_quant$Y[, c(1,2)]
-
-# generate umap and tsne plots and color by variables
-for(method in c('UMAP', 'tSNE')){
-  for(norm in c('q3', 'quant')){
-    for(color_var in c('Annotation_cell', 'Patient', 'NACT status', 'PFS', 'Site')){
-      plot_umap_tsne(pData(geomx_obj), method_type = method, 
-                     norm_type = norm, color_var = color_var,
-                     output_name = file.path(output_dir, 
-                                        paste0('umap_tsne/', method, '_', norm, '_', color_var, '.png')))
+  # generate umap and tsne plots and color by variables
+  for(method in c('UMAP', 'tSNE')){
+    for(norm in c('q3', 'quant')){
+      for(color_var in c('Annotation_cell', 'Patient', 'NACT status', 'PFS', 'Site', 'Sample')){
+        plot_umap_tsne(pData(geomx), method_type = method, 
+                       norm_type = norm, color_var = color_var,
+                       output_name = file.path(output_dir, 'umap_tsne2', names(geomx_list)[n], 
+                                               paste0(method, '_', norm, '_', color_var, '.png')))
+      }
     }
   }
-}
+  
+  return(geomx)
+})
+
+# update objects
+geomx_obj <- geomx_list_dim_red[[1]]
+geomx_obj_tumor <- geomx_list_dim_red[[2]]
+geomx_obj_stroma <- geomx_list_dim_red[[3]]
+
+rm(geomx_list)
+rm(geomx_list_dim_red)
+
+
+# make DGE between selected ROI groups ------------------------------------
+
 
