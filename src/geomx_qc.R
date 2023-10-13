@@ -11,6 +11,8 @@ library(preprocessCore)
 library(Rtsne)
 library(clusterProfiler)
 library(msigdbr)
+library(progeny)
+library(reshape2)
 
 # define variables --------------------------------------------------------
 
@@ -945,3 +947,112 @@ for(segment in unique(dge_patient_pairs_doublepos$Segment)){
 }
 
 fwrite(ora_patient_pairs_doublepos, file.path(output_dir, 'dge/ora/ora_patient_pairs_doublepos.csv'))
+
+
+# PROGENy scores ----------------------------------------------------------
+library(ggpubr)
+
+dim(geomx_obj)
+colnames(geomx_obj)[1:10]
+rownames(geomx_obj)[1:10]
+
+prog_noperm <- progeny(
+  geomx_obj@assayData$q3_norm,
+  scale = TRUE,
+  organism = "Human",
+  top = 100,
+  perm = 1
+  )
+
+
+prog_perm <- progeny(
+  geomx_obj@assayData$q3_norm,
+  organism = "Human",
+  top = 100,
+  perm = 10,
+  z_scores = FALSE,
+  get_nulldist = FALSE
+)
+
+rownames(prog_perm) <- gsub('\\.', '\\-', rownames(prog_perm))
+rownames(prog_perm) <- gsub('\\-dcc', '\\.dcc', rownames(prog_perm))
+
+
+#####
+#TODO do it in loop
+prog_df <- prog_noperm
+prog_name <- 'noperm'
+
+# adjust df
+prog_long <- melt(prog_df)
+colnames(prog_long) <- c('dcc_filename', 'progeny_path', 'progeny_score')
+prog_long <- left_join(prog_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS')])
+
+fwrite(prog_long, file.path(output_dir, 'progeny', paste0('progeny_', prog_name, '.csv')))
+
+##############
+# make boxplots
+
+# per Anno cell type
+prog_boxpl <- ggplot(data = prog_long, aes(x = progeny_path, y = progeny_score, color = Annotation_cell)) +
+  geom_boxplot() +
+  facet_wrap(~Segment, scales = "fixed", dir="v") +
+  geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  ggtitle(paste('progeny', prog_name, 'scores'))
+
+plot(prog_boxpl)
+ggsave(file.path(output_dir, 'progeny', paste0('box_progeny_anno_', prog_name, '.png')), 
+       height = 2000, width = 3000, unit = 'px')
+
+################################
+# per NACT status
+
+prog_boxpl_nact_all <- ggplot(data = prog_long, aes(x = progeny_path, y = progeny_score, color = `NACT status`)) +
+  geom_boxplot() +
+  facet_wrap(~Segment, scales = "fixed", dir="v") +
+  geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  ggtitle(paste('progeny', prog_name, 'scores'))
+
+plot(prog_boxpl_nact_all)
+ggsave(file.path(output_dir, 'progeny', paste0('box_progeny_prepost_all_', prog_name, '.png')), 
+       height = 2000, width = 3000, unit = 'px')
+
+prog_boxpl_nact_peranno <- ggplot(data = prog_long, aes(x = progeny_path, y = progeny_score, color = `NACT status`)) +
+  geom_boxplot() +
+  facet_wrap(Segment~Annotation_cell, scales = "fixed", ncol=4, nrow=2) +
+  geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  ggtitle(paste('progeny', prog_name, 'scores'))
+
+plot(prog_boxpl_nact_peranno)
+ggsave(file.path(output_dir, 'progeny', paste0('box_progeny_prepost_anno_', prog_name, '.png')), 
+       height = 2000, width = 4000, unit = 'px')
+
+
+################################
+# per PFS in post samples
+prog_long_post <- filter(prog_long, `NACT status` == 'post')
+
+prog_boxpl_pfs_all <- ggplot(data = prog_long_post, aes(x = progeny_path, y = progeny_score, color = PFS)) +
+  geom_boxplot() +
+  facet_wrap(~Segment, scales = "fixed", dir="v") +
+  geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  ggtitle(paste('progeny', prog_name, 'scores'))
+
+plot(prog_boxpl_pfs_all)
+ggsave(file.path(output_dir, 'progeny', paste0('box_progeny_pfs_all_', prog_name, '.png')), height = 2000, width = 3000, unit = 'px')
+
+prog_boxpl_pfs_peranno <- ggplot(data = prog_long_post, aes(x = progeny_path, y = progeny_score, color = PFS)) +
+  geom_boxplot() +
+  facet_wrap(Segment~Annotation_cell, scales = "fixed", ncol=4, nrow=2) +
+  geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  ggtitle(paste('progeny', prog_name, 'scores'))
+
+plot(prog_boxpl_pfs_peranno)
+ggsave(file.path(output_dir, 'progeny', paste0('box_progeny_pfs_anno_', prog_name, '.png')), 
+       height = 2000, width = 4000, unit = 'px')
+
