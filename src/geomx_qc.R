@@ -9,6 +9,8 @@ library(umap)
 library(cowplot)
 library(preprocessCore)
 library(Rtsne)
+library(clusterProfiler)
+library(msigdbr)
 
 # define variables --------------------------------------------------------
 
@@ -480,7 +482,6 @@ fwrite(results2_signif, file.path(output_dir, 'dge/dge_annotation_cell_all_signi
 
 ######################################
 # BETWEEN SLIDES COMPARISON
-# TODO  paired pre and post
 
 # run LMM without random slope:
 # formula follows conventions defined by the lme4 package
@@ -695,3 +696,252 @@ for(segment in c("tumor", "stroma")){
 fwrite(results_patient_pairs_doublepos, file.path(output_dir, 'dge/dge_patient_pairs_doublepos.csv'))
 results_patient_pairs_doublepos_signif <- results_patient_pairs_doublepos[results_patient_pairs_doublepos$FDR <= 0.05, ]
 fwrite(results_patient_pairs_doublepos_signif, file.path(output_dir, 'dge/dge_patient_pairs_doublepos_signif.csv'))
+
+
+###########################################
+# check DEG results
+list.files(file.path(output_dir, 'dge/old'))
+
+dge_anno <- fread(file.path(output_dir, 'dge/old/dge_annotation_cell_all_signif.csv'))
+dge_anno_prepost <- fread(file.path(output_dir, 'dge/old/dge_annotation_cell_pre_post_separately_signif.csv'))
+
+# length = 0
+#dge_pfs <- fread(file.path(output_dir, 'dge/old/dge_pfs_all_signif.csv'))
+#dge_pfs_doublepos <- fread(file.path(output_dir, 'dge/old/dge_pfs_doublepos_signif.csv'))
+
+#dge_prepost <- fread(file.path(output_dir, 'dge/old/dge_pre_post_all_signif.csv'))
+#dge_prepost_doublepos <- fread(file.path(output_dir, 'dge/old/dge_pre_post_doublepos_signif.csv'))
+
+dge_patient_pairs <- fread(file.path(output_dir, 'dge/old/dge_patient_pairs_signif.csv'))
+dge_patient_pairs_doublepos <- fread(file.path(output_dir, 'dge/old/dge_patient_pairs_doublepos_signif.csv'))
+
+dge_list <- list(dge_anno, dge_anno_prepost, dge_patient_pairs, dge_patient_pairs_doublepos)
+
+##################################################
+###################################################
+# prepare volcano plots
+
+library(ggrepel) 
+
+####
+# anno
+res_anno <- fread(file.path(output_dir, 'dge/old/dge_annotation_cell_all.csv'))
+
+for(contrast in unique(res_anno$Contrast)){
+  
+  cont_pos <- unlist(strsplit(contrast, ' - '))[1]
+  cont_neg <- unlist(strsplit(contrast, ' - '))[2]
+  
+  plot_volcano_deg(filter(res_anno, Contrast == contrast),
+                   'anno', 10, cont_pos, cont_neg)
+}
+
+#####
+# anno pre-post
+res_anno_prepost <- fread(file.path(output_dir, 'dge/old/dge_annotation_cell_pre_post_separately.csv'))
+
+for(subset in unique(res_anno_prepost$Subset)){
+  for(contrast in unique(res_anno_prepost$Contrast)){
+    
+    cont_pos <- unlist(strsplit(contrast, ' - '))[1]
+    cont_neg <- unlist(strsplit(contrast, ' - '))[2]
+    
+    plot_volcano_deg(filter(res_anno_prepost, Contrast == contrast & Subset == subset),
+                     paste0('anno_', subset), 10, cont_pos, cont_neg)
+  }
+}
+
+######
+# patient_pairs all
+res_patient_pairs <- fread(file.path(output_dir, 'dge/old/dge_patient_pairs.csv'))
+
+for(patient in unique(res_patient_pairs$Patient)){
+  for(contrast in unique(res_patient_pairs$Contrast)){
+    
+    cont_pos <- unlist(strsplit(contrast, ' - '))[1]
+    cont_neg <- unlist(strsplit(contrast, ' - '))[2]
+    
+    plot_volcano_deg(filter(res_patient_pairs, Contrast == contrast & Patient == patient),
+                     paste0('patient_pairs_all_', patient), 10, cont_pos, cont_neg)
+  }
+}
+
+######
+# patient_pairs doublepos
+res_patient_pairs_doublepos <- fread(file.path(output_dir, 'dge/old/dge_patient_pairs_doublepos.csv'))
+
+for(patient in unique(res_patient_pairs_doublepos$Patient)){
+  for(contrast in unique(res_patient_pairs_doublepos$Contrast)){
+    
+    cont_pos <- unlist(strsplit(contrast, ' - '))[1]
+    cont_neg <- unlist(strsplit(contrast, ' - '))[2]
+    
+    plot_volcano_deg(filter(res_patient_pairs_doublepos, Contrast == contrast & Patient == patient),
+                     paste0('patient_pairs_doublepos_', patient), 10, cont_pos, cont_neg)
+  }
+}
+
+#######################################
+#######################################
+
+# ORA on all Hallmarks + CP -----------------------------------------------
+
+
+
+# get bcg genes - all genes in dataset
+bcg_genes <- rownames(geomx_obj)
+
+# prepare mdigdb
+msigdb_df <- msigdbr(species = "Homo sapiens")
+msigdb_df <- filter(msigdb_df, gs_cat %in% c("H", "C2") & gs_subcat != "CGP")
+
+################################
+# ora for dge_anno
+ora_anno <- data.frame()
+for(segment in unique(dge_anno$Segment)){
+  for(contrast in unique(dge_anno$Contrast)){
+    dge_pos <- filter(dge_anno, Segment == segment & Contrast == contrast & Estimate > 0)
+    dge_neg <- filter(dge_anno, Segment == segment & Contrast == contrast & Estimate < 0)
+    
+    ora_pos <- calculate_ora(dge_pos$Gene, bcg_genes, msigdb_df, padj = 0.05)
+    ora_neg <- calculate_ora(dge_neg$Gene, bcg_genes, msigdb_df, padj = 0.05)
+    
+    if(nrow(ora_pos > 0)){
+      ora_pos$direction <- 'up'
+    }
+    
+    if(nrow(ora_neg > 0)){
+      ora_neg$direction <- 'down'
+    }
+    
+    ora <- rbind(ora_pos, ora_neg)
+    
+    if(nrow(ora) > 0){
+      ora$contrast <- contrast
+      ora$segment <- segment
+      ora$GeneRatio_perc <- as.numeric(gsub("\\/[0-9]*", "", ora$GeneRatio))/
+        as.numeric(gsub("[0-9]*\\/", "", ora$GeneRatio))
+      
+      ora_anno <- rbind(ora_anno, ora)
+    }
+
+  }
+}
+
+fwrite(ora_anno, file.path(output_dir, 'dge/ora/ora_anno.csv'))
+#######################################################
+# ora for dge_anno_prepost
+
+ora_anno_prepost <- data.frame()
+for(segment in unique(dge_anno_prepost$Segment)){
+  for(subset in unique(dge_anno_prepost$Subset)){
+    for(contrast in unique(dge_anno_prepost$Contrast)){
+      dge_pos <- filter(dge_anno_prepost, Segment == segment & Subset == subset & 
+                          Contrast == contrast & Estimate > 0)
+      dge_neg <- filter(dge_anno_prepost, Segment == segment & Subset == subset &
+                          Contrast == contrast & Estimate < 0)
+      
+      ora_pos <- calculate_ora(dge_pos$Gene, bcg_genes, msigdb_df, padj = 0.05)
+      ora_neg <- calculate_ora(dge_neg$Gene, bcg_genes, msigdb_df, padj = 0.05)
+      
+      if(nrow(ora_pos > 0)){
+        ora_pos$direction <- 'up'
+      }
+      
+      if(nrow(ora_neg > 0)){
+        ora_neg$direction <- 'down'
+      }
+      
+      ora <- rbind(ora_pos, ora_neg)
+      
+      if(nrow(ora) > 0){
+        ora$contrast <- contrast
+        ora$segment <- segment
+        ora$subset <- subset
+        ora$GeneRatio_perc <- as.numeric(gsub("\\/[0-9]*", "", ora$GeneRatio))/
+          as.numeric(gsub("[0-9]*\\/", "", ora$GeneRatio))
+        
+        ora_anno_prepost <- rbind(ora_anno_prepost, ora)
+      }
+    }
+  }
+}
+fwrite(ora_anno_prepost, file.path(output_dir, 'dge/ora/ora_anno_prepost.csv'))
+#######################################################
+# ora for dge_patient_pairs
+
+ora_patient_pairs <- data.frame()
+for(segment in unique(dge_patient_pairs$Segment)){
+  for(patient in unique(dge_patient_pairs$Patient)){
+    for(contrast in unique(dge_patient_pairs$Contrast)){
+      dge_pos <- filter(dge_patient_pairs, Segment == segment & Patient == patient & 
+                          Contrast == contrast & Estimate > 0)
+      dge_neg <- filter(dge_patient_pairs, Segment == segment & Patient == patient &
+                          Contrast == contrast & Estimate < 0)
+      
+      ora_pos <- calculate_ora(dge_pos$Gene, bcg_genes, msigdb_df, padj = 0.05)
+      ora_neg <- calculate_ora(dge_neg$Gene, bcg_genes, msigdb_df, padj = 0.05)
+      
+      if(nrow(ora_pos > 0)){
+        ora_pos$direction <- 'up'
+      }
+      
+      if(nrow(ora_neg > 0)){
+        ora_neg$direction <- 'down'
+      }
+      
+      ora <- rbind(ora_pos, ora_neg)
+      
+      if(nrow(ora) > 0){
+        ora$contrast <- contrast
+        ora$segment <- segment
+        ora$patient <- patient
+        ora$GeneRatio_perc <- as.numeric(gsub("\\/[0-9]*", "", ora$GeneRatio))/
+          as.numeric(gsub("[0-9]*\\/", "", ora$GeneRatio))
+        
+        ora_patient_pairs <- rbind(ora_patient_pairs, ora)
+      }
+    }
+  }
+}
+
+fwrite(ora_patient_pairs, file.path(output_dir, 'dge/ora/ora_patient_pairs.csv'))
+#######################################################
+# ora for dge_patient_pairs_doublepos
+
+ora_patient_pairs_doublepos <- data.frame()
+for(segment in unique(dge_patient_pairs_doublepos$Segment)){
+  for(patient in unique(dge_patient_pairs_doublepos$Patient)){
+    for(contrast in unique(dge_patient_pairs_doublepos$Contrast)){
+      dge_pos <- filter(dge_patient_pairs_doublepos, Segment == segment & Patient == patient & 
+                          Contrast == contrast & Estimate > 0)
+      dge_neg <- filter(dge_patient_pairs_doublepos, Segment == segment & Patient == patient &
+                          Contrast == contrast & Estimate < 0)
+      
+      ora_pos <- calculate_ora(dge_pos$Gene, bcg_genes, msigdb_df, padj = 0.05)
+      ora_neg <- calculate_ora(dge_neg$Gene, bcg_genes, msigdb_df, padj = 0.05)
+      
+      if(nrow(ora_pos > 0)){
+        ora_pos$direction <- 'up'
+      }
+      
+      if(nrow(ora_neg > 0)){
+        ora_neg$direction <- 'down'
+      }
+      
+      ora <- rbind(ora_pos, ora_neg)
+      
+      if(nrow(ora) > 0){
+        ora$contrast <- contrast
+        ora$segment <- segment
+        ora$patient <- patient
+        ora$GeneRatio_perc <- as.numeric(gsub("\\/[0-9]*", "", ora$GeneRatio))/
+          as.numeric(gsub("[0-9]*\\/", "", ora$GeneRatio))
+        
+        ora_patient_pairs_doublepos <- rbind(ora_patient_pairs_doublepos, ora)
+      }
+    }
+  }
+}
+
+fwrite(ora_patient_pairs_doublepos, file.path(output_dir, 'dge/ora/ora_patient_pairs_doublepos.csv'))
