@@ -13,6 +13,9 @@ library(clusterProfiler)
 library(msigdbr)
 library(progeny)
 library(reshape2)
+library(biomaRt)
+library(GSVA)
+library(ggpubr)
 
 # define variables --------------------------------------------------------
 
@@ -34,6 +37,13 @@ dir.create(file.path(output_dir, 'umap_tsne', 'stroma'), showWarnings = T, recur
 dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
+
+# signature files
+sig_t_exhaustion <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/t_cell_exhaustion.csv'
+sig_macro <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/macrophages.csv'
+sig_mhc <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/MHC.csv'
+
+sig_all <- list(sig_t_exhaustion, sig_macro, sig_mhc)
 
 # load geomx dataset ------------------------------------------------------
 
@@ -376,7 +386,11 @@ geomx_obj_stroma <- geomx_list_dim_red[[3]]
 
 rm(geomx_list)
 rm(geomx_list_dim_red)
-
+##########################################################################
+##########################################################################
+##########################################################################
+# TODO PREPROCESSING ENDS HERE UPPER PART OF A SCRIPT SEPARATED FROM THE ANALYSIS BELOW
+# TODO SAVE GEOMX_OBJ AS EXTERNAJ OBJ AND LOAD FOR THE NEXT SCRIPTS
 # make DGE between selected ROI groups ------------------------------------
 
 # within slide analysis - with random slope in LLM
@@ -950,7 +964,7 @@ fwrite(ora_patient_pairs_doublepos, file.path(output_dir, 'dge/ora/ora_patient_p
 
 
 # PROGENy scores ----------------------------------------------------------
-library(ggpubr)
+
 
 dim(geomx_obj)
 colnames(geomx_obj)[1:10]
@@ -1054,5 +1068,249 @@ prog_boxpl_pfs_peranno <- ggplot(data = prog_long_post, aes(x = progeny_path, y 
 
 plot(prog_boxpl_pfs_peranno)
 ggsave(file.path(output_dir, 'progeny', paste0('box_progeny_pfs_anno_', prog_name, '.png')), 
+       height = 2000, width = 4000, unit = 'px')
+
+
+
+
+# UCell scores for selected pathways --------------------------------------
+
+
+# changing signatures to HGNC symbols
+
+# sig_list <- lapply(sig_all, function(x){
+#   sig <- fread(x)
+#   sig_list <- as.list(sig)
+#   return(sig_list)
+# })
+# 
+# sig_list <- unlist(sig_list, recursive = F)
+# 
+# sig_list_names <- lapply(sig_list, function(x){
+#   print('XXXXX')
+#   print(x)
+#   x <- x[!is.na(x)]
+#   print(x)
+#   x <- unlist(gene_2names(x, conv='entrez'))
+#   print(x)
+#   })
+# 
+# library(qpcR)
+# sig_df <- do.call(qpcR:::cbind.na, sig_list_names)
+# fwrite(sig_df, '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc.csv')
+
+
+# GSVA and ssGSEA ---------------------------------------------------------
+library(GSVA)
+
+# selected pathways
+sig_texh_macro_mhc_list <- as.list(fread('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc.csv'))
+sig_caf_revised_list <- as.list(fread('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/stromal_cell_subtype_signatures_symbols_ensembl_ids_revised.csv'))
+
+# all Hallmark + CP from msigDB
+msigdb_df <- msigdbr(species = "Homo sapiens")
+msigdb_df <- filter(msigdb_df, gs_cat == 'H' | gs_subcat %in% c('CP:BIOCARTA', 'CP:KEGG', 'CP:REACTOME'))
+
+hal_cp_list <- lapply(unique(msigdb_df$gs_name), function(x){
+  gs <- filter(msigdb_df, gs_name == x)
+  gs_genes <- unique(gs$human_gene_symbol)
+})
+
+names(hal_cp_list) <- unique(msigdb_df$gs_name)
+
+#####
+
+expr_mtx <- assayDataElement(geomx_obj, elt = "q3_norm")
+View(expr_mtx[1:10, 1:10])
+
+# do gsva on pathway lists
+gsva_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'gsva', kcdf="Poisson", min.sz = 5)
+gsva_texh_macro_mhc <- gsva(expr_mtx, sig_texh_macro_mhc_list, method = 'gsva', kcdf="Poisson", min.sz = 5)
+gsva_caf <- gsva(expr_mtx, sig_caf_revised_list, method = 'gsva', kcdf="Poisson", min.sz = 5)
+
+# do ssgsea on selected lists
+# ssgsea_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'ssgsea', kcdf="Poisson", min.sz = 5)
+# ssgsea_texh_macro_mhc <- gsva(expr_mtx, sig_texh_macro_mhc_list, method = 'ssgsea', kcdf="Poisson", min.sz = 5)
+# ssgsea_caf <- gsva(expr_mtx, sig_caf_revised_list, method = 'ssgsea', kcdf="Poisson", min.sz = 5)
+
+######
+
+# adjust df
+
+gsva_texh_macro_mhc_long <- melt(gsva_texh_macro_mhc)
+colnames(gsva_texh_macro_mhc_long) <- c('pathway','dcc_filename', 'gsva_score')
+gsva_texh_macro_mhc_long <- left_join(gsva_texh_macro_mhc_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS')])
+
+fwrite(gsva_texh_macro_mhc_long, file.path(output_dir, 'gsva', paste0('gsva_texh_macro_mhc.csv')))
+
+gsva_caf_long <- melt(gsva_caf)
+colnames(gsva_caf_long) <- c('pathway','dcc_filename', 'gsva_score')
+gsva_caf_long <- left_join(gsva_caf_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS')])
+
+fwrite(gsva_caf_long, file.path(output_dir, 'gsva', paste0('gsva_caf.csv')))
+
+gsva_list <- list(gsva_texh_macro_mhc_long, gsva_caf_long)
+names(gsva_list) <- c('texh_macro_mhc', 'caf')
+
+# boxplot for selected pathways
+# TODO this is exactly copied from PROGENY!!!
+
+##############
+# make boxplots
+
+for(i in 1:length(gsva_list)){
+  gsva_df <- gsva_list[[i]]
+  gsva_name <- names(gsva_list)[i]
+  
+  print(gsva_name)
+  
+  # per Anno cell type
+  gsva_boxpl <- ggplot(data = gsva_df, aes(x = pathway, y = gsva_score, color = Annotation_cell)) +
+    geom_boxplot() +
+    facet_wrap(~Segment, scales = "fixed", dir="v") +
+    geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+    theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+    ggtitle(paste('gsva scores'))+
+    ylim(-1, 1.4)
+  
+  plot(gsva_boxpl)
+  ggsave(file.path(output_dir, 'gsva', paste0('box_gsva_', gsva_name, '_anno.png')), 
+         height = 2000, width = 3000, unit = 'px')
+  
+  ################################
+  # per NACT status
+  
+  gsva_boxpl_nact_all <- ggplot(data = gsva_df, aes(x = pathway, y = gsva_score, color = `NACT status`)) +
+    geom_boxplot() +
+    facet_wrap(~Segment, scales = "fixed", dir="v") +
+    geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+    theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+    ggtitle(paste('gsva scores')) +
+    ylim(-1, 1.4)
+  
+  plot(gsva_boxpl_nact_all)
+  ggsave(file.path(output_dir, 'gsva',  paste0('box_gsva_', gsva_name, '_nact_all.png')), 
+         height = 2000, width = 3000, unit = 'px')
+  
+  gsva_boxpl_nact_peranno <- ggplot(data = gsva_df, aes(x = pathway, y = gsva_score, color = `NACT status`)) +
+    geom_boxplot() +
+    facet_wrap(Segment~Annotation_cell, scales = "fixed", ncol=4, nrow=2) +
+    geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+    theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+    ggtitle(paste('gsva scores'))+
+    ylim(-1, 1.4)
+  
+  plot(gsva_boxpl_nact_peranno)
+  ggsave(file.path(output_dir, 'gsva', paste0('box_gsva_', gsva_name, '_nact_peranno.png')), 
+         height = 2000, width = 4000, unit = 'px')
+  
+  
+  ################################
+  # per PFS in post samples
+  gsva_df_post <- filter(gsva_df, `NACT status` == 'post')
+  
+  gsva_boxpl_pfs_all <- ggplot(data = gsva_df_post, aes(x = pathway, y = gsva_score, color = PFS)) +
+    geom_boxplot() +
+    facet_wrap(~Segment, scales = "fixed", dir="v") +
+    geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+    theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+    ggtitle(paste('gsva scores'))+
+    ylim(-1, 1.4)
+  
+  plot(gsva_boxpl_pfs_all)
+  ggsave(file.path(output_dir, 'gsva', paste0('box_gsva_', gsva_name, '_pfs_all.png')), 
+         height = 2000, width = 3000, unit = 'px')
+  
+  gsva_boxpl_pfs_peranno <- ggplot(data = gsva_df_post, aes(x = pathway, y = gsva_score, color = PFS)) +
+    geom_boxplot() +
+    facet_wrap(Segment~Annotation_cell, scales = "fixed", ncol=4, nrow=2) +
+    geom_pwc(method = "t_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+    theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+    ggtitle(paste('gsva scores'))+
+    ylim(-1, 1.4)
+  
+  plot(gsva_boxpl_pfs_peranno)
+  ggsave(file.path(output_dir, 'gsva', paste0('box_gsva_', gsva_name, '_pfs_peranno.png')), 
+         height = 2000, width = 4000, unit = 'px')
+}
+
+
+# individual gene distributions -------------------------------------------
+
+goi <- c('PDCD1', 'TIGIT', 'PYCR1', 'HAVCR2') 
+
+expr_mtx <- assayDataElement(geomx_obj, elt = "q3_norm")
+expr_mtx_goi <- expr_mtx[goi, ]
+
+expr_mtx_goi_long <- melt(expr_mtx_goi)
+colnames(expr_mtx_goi_long) <- c('gene','dcc_filename', 'expr')
+expr_mtx_goi_long <- left_join(expr_mtx_goi_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS')])
+
+
+# make boxplots
+# TODO again code repetition
+
+# per Anno cell type
+goi_boxpl <- ggplot(data = expr_mtx_goi_long, aes(x = gene, y = expr, color = Annotation_cell)) +
+  geom_boxplot() +
+  facet_wrap(~Segment, scales = "fixed", dir="v") +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+  ggtitle(paste('gene expression'))
+
+plot(goi_boxpl)
+ggsave(file.path(output_dir, 'ind_genes', 'box_goi_anno.png'), 
+       height = 2000, width = 3000, unit = 'px')
+
+################################
+# per NACT status
+
+goi_boxpl_nact_all <- ggplot(data = expr_mtx_goi_long, aes(x = gene, y = expr, color = `NACT status`)) +
+  geom_boxplot() +
+  facet_wrap(~Segment, scales = "fixed", dir="v") +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+  ggtitle(paste('gene expression'))
+
+plot(goi_boxpl_nact_all)
+ggsave(file.path(output_dir, 'ind_genes', 'box_goi_nact_all.png'), 
+       height = 2000, width = 3000, unit = 'px')
+
+goi_boxpl_nact_peranno <- ggplot(data = expr_mtx_goi_long, aes(x = gene, y = expr, color = `NACT status`)) +
+  geom_boxplot() +
+  facet_wrap(Segment~Annotation_cell, scales = "fixed", ncol=4, nrow=2) +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+  ggtitle(paste('gene expression'))
+
+plot(goi_boxpl_nact_peranno)
+ggsave(file.path(output_dir, 'ind_genes', 'box_goi_nact_peranno.png'), 
+       height = 2000, width = 4000, unit = 'px')
+
+
+################################
+# per PFS in post samples
+expr_mtx_goi_long_post <- filter(expr_mtx_goi_long, `NACT status` == 'post')
+
+goi_boxpl_pfs_all <- ggplot(data = expr_mtx_goi_long_post, aes(x = gene, y = expr, color = PFS)) +
+  geom_boxplot() +
+  facet_wrap(~Segment, scales = "fixed", dir="v") +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+  ggtitle(paste('gene expression'))
+
+plot(goi_boxpl_pfs_all)
+ggsave(file.path(output_dir, 'ind_genes', 'box_goi_pfs_all.png'), 
+       height = 2000, width = 3000, unit = 'px')
+
+goi_boxpl_pfs_peranno <- ggplot(data = expr_mtx_goi_long_post, aes(x = gene, y = expr, color = PFS)) +
+  geom_boxplot() +
+  facet_wrap(Segment~Annotation_cell, scales = "fixed", ncol=4, nrow=2) +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+  ggtitle(paste('gene expression'))
+
+plot(goi_boxpl_pfs_peranno)
+ggsave(file.path(output_dir, 'ind_genes', 'box_goi_pfs_peranno.png'), 
        height = 2000, width = 4000, unit = 'px')
 
