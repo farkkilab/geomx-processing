@@ -173,16 +173,161 @@ plot_q3_stats <- function(geomx_obj, ann_of_interest, output_name){
 plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'), 
                            norm_type = c('q3', 'quant'), color_var, shape_var = 'Segment',
                            output_name){
-  ggplot(pData(geomx_obj),
+  ggplot(pheno_data,
          aes(x = get(paste0(method_type, '1_', norm_type, '_norm')), 
              y = get(paste0(method_type, '2_', norm_type, '_norm')), 
              color = get(color_var), shape = get(shape_var))) +
     geom_point(size = 3) +
-    xlab(paste0('UMAP2_', norm_type, '_norm')) +
+    xlab(paste0('UMAP1_', norm_type, '_norm')) +
     ylab(paste0('UMAP2_', norm_type, '_norm')) +
     scale_color_discrete(name = color_var) + 
     scale_shape_discrete(name = shape_var) + 
     theme_bw()
   
   ggsave(output_name, width = 2000, height = 1500, unit='px')
+}
+
+############################################################
+calculate_ora <- function(gene_vect, bcg_gene_vect, msigdb_df, padj = 0.1){
+  ora <- enricher(
+    gene = gene_vect,
+    pvalueCutoff = padj, # Can choose a FDR cutoff
+    pAdjustMethod = "BH", 
+    universe = bcg_gene_vect, 
+    TERM2GENE = dplyr::select(msigdb_df, gs_name, human_gene_symbol)
+  )
+  
+  if(!is.null(ora)){
+    ora_df <- data.frame(ora@result) %>%
+      filter(p.adjust <= padj)
+  } else{
+    ora_df <- data.frame()
+  }
+  return(ora_df)
+}
+
+##########################################################
+plot_volcano_deg <- function(results, plot_name, top_n_lab, group_pos, group_neg){
+  # Categorize Results based on P-value & FDR for plotting
+  results$Color <- "NS or FC < 0.5"
+  results$Color[results$`Pr(>|t|)` < 0.05] <- "P < 0.05"
+  results$Color[results$FDR < 0.05] <- "FDR < 0.05"
+  results$Color[results$FDR < 0.001] <- "FDR < 0.001"
+  results$Color[abs(results$Estimate) < 0.5] <- "NS or FC < 0.5"
+  results$Color <- factor(results$Color,
+                          levels = c("NS or FC < 0.5", "P < 0.05",
+                                     "FDR < 0.05", "FDR < 0.001"))
+  
+  # pick top genes for either side of volcano to label
+  # order genes for convenience:
+  results$invert_P <- (-log10(results$`Pr(>|t|)`)) * sign(results$Estimate)
+  top_g <- c()
+  for(cond in c("tumor", "stroma")) {
+    ind <- results$Segment == cond
+    top_g <- c(top_g,
+               results[ind, 'Gene'][
+                 order(results[ind, 'invert_P'], decreasing = TRUE)[1:top_n_lab]],
+               results[ind, 'Gene'][
+                 order(results[ind, 'invert_P'], decreasing = FALSE)[1:top_n_lab]])
+  }
+  top_g <- unique(unlist(top_g))
+  results <- results[, -'invert_P'] # remove invert_P from matrix
+  
+  # Graph results
+  volc <- ggplot(results,
+                 aes(x = Estimate, y = -log10(`Pr(>|t|)`),
+                     color = Color, label = Gene)) +
+    geom_vline(xintercept = c(0.5, -0.5), lty = "dashed") +
+    geom_hline(yintercept = -log10(0.05), lty = "dashed") +
+    geom_point() +
+    labs(x = paste("Enriched in ",  group_neg, " <- log2(FC) -> Enriched in ", group_pos),
+         y = "Significance, -log10(P)",
+         color = "Significance") +
+    scale_color_manual(values = c(`FDR < 0.001` = "dodgerblue",
+                                  `FDR < 0.05` = "lightblue",
+                                  `P < 0.05` = "orange2",
+                                  `NS or FC < 0.5` = "gray"),
+                       guide = guide_legend(override.aes = list(size = 4))) +
+    scale_y_continuous(expand = expansion(mult = c(0,0.05))) +
+    geom_text_repel(data = subset(results, (Gene %in% top_g) & (FDR < 0.05) & (Estimate > 0.5 | Estimate < -0.5)),
+                    size = 4, point.padding = 0.15, color = "black",
+                    min.segment.length = .1, box.padding = .2, lwd = 2,
+                    max.overlaps = 50) +
+    theme_bw(base_size = 16) +
+    theme(legend.position = "bottom") +
+    facet_wrap(~Segment, scales = "fixed") +
+    ggtitle(paste(plot_name, group_pos, group_neg))
+  
+  ggsave(file.path(output_dir, 'dge', paste0('volc_', plot_name, '_', group_pos, '_', group_neg,  '.png')), width = 4000, height = 2000, unit='px')
+}
+
+################################################################
+# change ensembl/entrez into gene names for nested list of genes
+# def
+# inp
+# args
+# outp
+gene_2names <- function(gene_inp_list, conv = c('ens', 'entrez'), type = 'list'){
+  
+  ensembl = useMart("ensembl",dataset="hsapiens_gene_ensembl")
+  
+  #TODO make it for df if needed and also the other way around
+  # gene_df_names <- getBM(attributes=c('external_gene_name', 'ensembl_gene_id'),
+  #                           filters = 'ensembl_gene_id',
+  #                           values = as.character(unlist(gene_list)),
+  #                           mart = ensembl)
+  # 
+  # 
+  # 
+  # marker_ind <- left_join(marker_ind, marker_ind_names)
+  # rm(marker_ind_names)
+  # 
+  if(conv == 'ens'){
+    conv_name <- 'ensembl_gene_id'
+  } else if(conv == 'entrez'){
+    conv_name <- 'entrezgene_id'
+  } else{stop()}
+  
+  if(type == 'list'){
+    
+    gene_list <- lapply(gene_inp_list, function(x){
+      gene_names <- getBM(attributes=c('external_gene_name', conv_name),
+                          filters = conv_name,
+                          values = x,
+                          mart = ensembl)
+      
+      gene_names <- gene_names$external_gene_name
+    })
+    return(gene_list)
+  }
+}
+
+############################################################
+# make boxplot for pathway
+pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, facet_var,
+                            plot_title, output_path, statistic_test="t_test", ymin=-1, ymax=1.4){
+  # per Anno cell type
+  gsva_boxpl <- ggplot(data = df, aes(x = get(pathway_colname), y = get(score_colname), color = get(color_colname))) +
+    geom_boxplot() +
+    #facet_wrap(~get(facet_var), scales = "fixed", dir="v") + #TODO adjust for 2
+    geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.5) +
+    theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+    ggtitle(plot_title)+
+    ylim(ymin, ymax) +
+    xlab(pathway_colname) +
+    ylab(score_colname) +
+    guides(color=guide_legend(title=color_colname))
+  
+  if(length(facet_var) == 1){
+    gsva_boxpl <- gsva_boxpl +
+      facet_wrap(~get(facet_var), scales = "fixed", dir="v")
+  } else if(length(facet_var) == 2){
+    gsva_boxpl <- gsva_boxpl +
+      facet_wrap(get(facet_var[1])~get(facet_var[2]), scales = "fixed", dir="v", nrow=2)
+  } else{
+    stop('only 1 or 2 variables for facet')
+  }
+  
+  plot(gsva_boxpl)
+  ggsave(output_path, height = 2000, width = 3000, unit = 'px')
 }
