@@ -371,7 +371,7 @@ geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
         plot_umap_tsne(pData(geomx), method_type = method, 
                        norm_type = norm, color_var = color_var,
                        output_name = file.path(output_dir, 'umap_tsne2', names(geomx_list)[n], 
-                                               paste0(method, '_', norm, '_', color_var, '.png')))
+                                               paste0(method, '_', norm, '_', color_var, '.pdf')))
       }
     }
   }
@@ -994,13 +994,13 @@ rownames(prog_perm) <- gsub('\\-dcc', '\\.dcc', rownames(prog_perm))
 
 #####
 #TODO do it in loop
-prog_df <- prog_noperm
-prog_name <- 'noperm'
+prog_df <- prog_perm
+prog_name <- 'perm'
 
 # adjust df
 prog_long <- melt(prog_df)
 colnames(prog_long) <- c('dcc_filename', 'progeny_path', 'progeny_score')
-prog_long <- left_join(prog_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS')])
+prog_long <- left_join(prog_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS', 'Patient')])
 
 fwrite(prog_long, file.path(output_dir, 'progeny', paste0('progeny_', prog_name, '.csv')))
 
@@ -1104,7 +1104,8 @@ ggsave(file.path(output_dir, 'progeny', paste0('box_progeny_pfs_anno_', prog_nam
 library(GSVA)
 
 # selected pathways
-sig_texh_macro_mhc_list <- as.list(fread('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc.csv'))
+#sig_texh_macro_mhc_list <- as.list(fread('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc.csv'))
+sig_texh_macro_mhc_list <- as.list(fread('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc_ifng_forpaper.csv'))
 sig_caf_revised_list <- as.list(fread('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/stromal_cell_subtype_signatures_symbols_ensembl_ids_revised.csv'))
 
 # pathways from Glasgow
@@ -1149,9 +1150,9 @@ gsva_pycr1 <- gsva(expr_mtx, pycr_list, method = 'gsva', kcdf="Poisson", min.sz 
 
 gsva_texh_macro_mhc_long <- melt(gsva_texh_macro_mhc)
 colnames(gsva_texh_macro_mhc_long) <- c('pathway','dcc_filename', 'gsva_score')
-gsva_texh_macro_mhc_long <- left_join(gsva_texh_macro_mhc_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS')])
+gsva_texh_macro_mhc_long <- left_join(gsva_texh_macro_mhc_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS', 'Patient')])
 
-fwrite(gsva_texh_macro_mhc_long, file.path(output_dir, 'gsva', paste0('gsva_texh_macro_mhc.csv')))
+fwrite(gsva_texh_macro_mhc_long, file.path(output_dir, 'gsva', paste0('gsva_texh_macro_mhc_forpaper.csv')))
 
 gsva_caf_long <- melt(gsva_caf)
 colnames(gsva_caf_long) <- c('pathway','dcc_filename', 'gsva_score')
@@ -1169,3 +1170,16 @@ gsva_pycr1_long <- left_join(gsva_pycr1_long, pData(geomx_obj)[c('dcc_filename',
 fwrite(gsva_pycr1_long, file.path(output_dir, 'gsva', paste0('gsva_pycr1.csv')))
 
 # VISUALISATION IN  GSVA_VISUALISATION.R  
+
+
+# individual genes expression ---------------------------------------------
+
+goi <- c('PDCD1', 'HAVCR2', 'TIGIT', 'CD96', 'NECTIN2', 'CXCR3', 'CXCL9', 'IL2RG', 'IL2RB') 
+
+expr_mtx <- assayDataElement(geomx_obj, elt = "q3_norm")
+expr_mtx_goi <- expr_mtx[goi, ]
+
+expr_mtx_goi_long <- melt(expr_mtx_goi)
+colnames(expr_mtx_goi_long) <- c('gene','dcc_filename', 'expr')
+expr_mtx_goi_long <- left_join(expr_mtx_goi_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS', 'Patient')])
+fwrite(expr_mtx_goi_long, file.path(output_dir, 'ind_genes', paste0('ind_genes_exh_lr.csv')))
