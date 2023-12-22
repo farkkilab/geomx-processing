@@ -16,7 +16,7 @@ plot_sankey <- function(data, variables_to_plot, fill_var, output_name){
   ggplot(test_gr, aes(x, id = id, split = y, value = n)) +
     geom_parallel_sets(aes(fill = get(fill_var)), alpha = 0.5, axis.width = 0.1) +
     geom_parallel_sets_axes(axis.width = 0.2) +
-    geom_parallel_sets_labels(color = "white", size = 5) +
+    geom_parallel_sets_labels(color = "white", size = 3) +
     theme_classic(base_size = 17) + 
     theme(legend.position = "bottom",
           axis.ticks.y = element_blank(),
@@ -309,7 +309,7 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
                             manual_colours = c("#F8766D", "#00BA38", "#619CFF", "#C77CFF")){
   # per Anno cell type
   gsva_boxpl <- ggplot(data = df, aes(x = get(pathway_colname), y = get(score_colname), fill = get(color_colname))) +
-    #geom_boxplot() +
+    geom_boxplot() +
     geom_violin() +
     # geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
     #            size= 0.2, alpha = 0.6) +
@@ -320,9 +320,9 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
     xlab(pathway_colname) +
     ylab(paste0(score_colname)) +
     guides(fill=guide_legend(title=color_colname)) +
-    #guides(fill=guide_legend(title='PFS')) +
+    guides(fill=guide_legend(title='PFS')) +
     scale_fill_manual(values=manual_colours) +
-    #scale_y_continuous(trans='log10') 
+    #scale_y_continuous(trans='log10')
     ylim(ymin, ymax)
   
   if(length(facet_var) == 1){

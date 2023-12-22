@@ -221,6 +221,7 @@ pData(geomx_obj)$GenesDetected <- colSums(LOQ_Mat, na.rm = TRUE)
 pData(geomx_obj)$GeneDetectionRate <- pData(geomx_obj)$GenesDetected / nrow(geomx_obj)
 
 print(paste("median gene nr is: ", as.character(median(pData(geomx_obj)$GenesDetected))))
+print(paste("mean gene nr is: ", as.character(mean(pData(geomx_obj)$GenesDetected))))
 print(paste("median gene detection rate is: ", as.character(median(pData(geomx_obj)$GeneDetectionRate))))
 
 #TODO calculate signal/noise ratio = Count/LOQ per segment (similar to genedetectionrate)
