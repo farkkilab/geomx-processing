@@ -169,6 +169,20 @@ plot_q3_stats <- function(geomx_obj, ann_of_interest, output_name){
   ggsave(output_name, width=2000, height=1500, unit='px')
 }
 
+###########################################################
+# plot normalisation effects
+
+plot_norm_effect <- function(expr_data, norm_name, output_name){
+  png(filename=output_name, width=1000, height=750, units="px")
+  
+  boxplot(expr_data,
+          col = "#9EDAE5", main = norm_name,
+          log='y', names = seq(1:ncol(expr_data)), xlab = "Segment",
+          ylab = norm_name)
+  
+  dev.off()
+}
+
 ############################################################
 plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'), 
                            norm_type = c('q3', 'quant'), color_var, shape_var = 'Segment',
