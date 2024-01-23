@@ -1,13 +1,18 @@
 # TODO check if all packages are needed
 library(NanoStringNCTools)
 library(GeomxTools)
-#library(GeoMxWorkflows)
+library(GeoMxWorkflows)
+library(GeoDiff)
 library(plyr)
 library(dplyr)
+library(ggplot2)
 library(ggforce)
 library(data.table)
 library(cowplot)
 library(preprocessCore)
+library(Biobase)
+library(reshape2)
+
 library(umap)
 library(Rtsne)
 
@@ -55,6 +60,8 @@ geomx_obj <- readNanoStringGeoMxSet(dccFiles = dcc_path,
                                     protocolDataColNames = c("Aoi", "Roi"),
                                     experimentDataColNames = c("Panel")) # TODO dunno if this is needed
 
+pkcs <- annotation(geomx_obj)
+modules <- gsub(".pkc", "", pkcs)
 # explore
 # View(assayData(geomx_obj)$exprs)
 # dim(assayData(geomx_obj)$exprs)
@@ -70,6 +77,46 @@ geomx_obj <- readNanoStringGeoMxSet(dccFiles = dcc_path,
 
 print(paste('dim of raw dataset is: '))
 print(dim(geomx_obj))
+
+# manualfix of NTC --------------------------------------------------------
+
+# manually add messed up info for NTC to sData()
+
+sdt <- sData(geomx_obj)
+sdt$NTC_ID <- apply(sdt, 1, function(x){
+  # one NTC/batch
+  if(x[['batch_nr']] %in% c(1,2,3,4,7,8)){
+    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
+  } else{
+    ntc <- NA
+  }
+  
+  # the same NTC for batch 4 and 6
+  if(x[['batch_nr']] == 6){
+    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 4]
+  }
+  
+  # 2 different NTC for batch 5
+  if(x[['batch_nr']] == 5 & grepl('-E-', x[['dcc_filename']])){
+    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-E-', sdt$dcc_filename)]
+  } else if(x[['batch_nr']] == 5 & grepl('-B-', x[['dcc_filename']])){
+    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-B-', sdt$dcc_filename)]
+  }
+  
+  return(ntc)
+})
+
+#TODO check in manual if it really is Deduplicatedreads for NTC count
+sdt$NTC <- apply(sdt, 1, function(x){
+  ntc_cnt <- sdt$DeduplicatedReads[sdt$dcc_filename == x[['NTC_ID']]]
+})
+
+#add to protocolData
+identical(rownames(protocolData(geomx_obj)@data), sdt$dcc_filename)
+protocolData(geomx_obj)@data[, c("NTC_ID", "NTC")] <- sdt[, c("NTC_ID", "NTC")]
+
+#change 'Area' and 'Nuclei' colnames for correct qc flags
+pData(geomx_obj) <- dplyr::rename(pData(geomx_obj), 'area' = 'Area', 'nuclei' = 'Nuclei')
 
 # make overall sankey plot ------------------------------------------------
 count_segments <- geomx_obj@phenoData@data[main_var != 'NA' & !is.na(main_var), ]
@@ -91,13 +138,19 @@ qc_params <-
        percentSaturation = 50, # Minimum sequencing saturation (50%)
        minNegativeCount = 1,   # Minimum negative control counts (10, 1 in log scale)
        maxNTCCount = 9000,     # Maximum counts observed in NTC well (1000)
-       minNuclei = 20,         # Minimum # of nuclei estimated (100) #TODO maybe bigger
+       minNuclei = 20,         # Minimum # of nuclei estimated (100) 
        minArea = 1000)         # Minimum segment area (5000)
+
+#TODO maxNTCCount basic param is 60 in default function. Ask Geomx ppl !
 
 # set up qc flags for segments
 geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
-qc_results_segment <- protocolData(geomx_obj)[["QCFlags"]]
 
+# rmv neg probes
+#TODO check if this is not messing up with latter functions
+geomx_obj <- geomx_obj[, !(geomx_obj$`Slide Name` == 'No Template Control')]
+
+qc_results_segment <- protocolData(geomx_obj)[["QCFlags"]]
 qc_summary <- qc_summarize(qc_results_segment)
 
 print('qc summary:')
@@ -117,18 +170,75 @@ QC_histogram(sData(geomx_obj), "Aligned (%)", "Segment", qc_params[["percentAlig
 QC_histogram(sData(geomx_obj), "Saturated (%)", "Segment", qc_params[["percentSaturation"]],
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_satur.png'))
 
-QC_histogram(sData(geomx_obj), "Area", "Segment", qc_params[["minArea"]], 
+QC_histogram(sData(geomx_obj), "area", "Segment", qc_params[["minArea"]], 
              scale_trans = "log10", file.path(output_dir, 'qc/qc_hist_area.png'))
 
-QC_histogram(sData(geomx_obj), "Nuclei", "Segment", qc_params[["minNuclei"]],
+QC_histogram(sData(geomx_obj), "nuclei", "Segment", qc_params[["minNuclei"]],
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_nuclei.png'))
 
-# negative probes modelling -----------------------------------------------
 
-# TODO additional part
+# negative geometric means ------------------------------------------------
+
+# calculate the negative geometric means for each module
+negativeGeoMeans <- 
+  esBy(negativeControlSubset(geomx_obj), 
+       GROUP = "Module", 
+       FUN = function(x) { 
+         assayDataApply(x, MARGIN = 2, FUN = ngeoMean, elt = "exprs") 
+       }) 
+
+protocolData(geomx_obj)[["NegGeoMean"]] <- negativeGeoMeans
+
+# explicitly copy the Negative geoMeans from sData to pData
+# TODO this + detaching may be rmv, check if > 1 module
+negCols <- paste0("NegGeoMean_", modules)
+pData(geomx_obj)[, negCols] <- sData(geomx_obj)[["NegGeoMean"]]
+
+for(ann in paste0("NegGeoMean_", modules)) {
+  QC_histogram(sData(geomx_obj), ann, "Segment", 2, scale_trans = "log10",
+               file.path(output_dir, 'qc/qc_hist_neggeomean.png')) #TODO? why exactly thr = 2?
+}
+
+# detatch neg_geomean columns ahead of aggregateCounts call
+pData(geomx_obj) <- pData(geomx_obj)[, !colnames(pData(geomx_obj)) %in% negCols]
+
+# background modelling based on negative probes ---------------------------
+
+sum(fData(geomx_obj)$Negative) # same as negativeControlSubset(geomx_obj)
+
+# fit poisson distribution
+geomx_obj <- fitPoisBG(geomx_obj)
+
+summary(pData(geomx_obj)$sizefact)
+summary(fData(geomx_obj)$featfact[fData(geomx_obj)$Negative])
+
+# diagnose Poisson model
+set.seed(123)
+geomx_diag <- diagPoisBG(geomx_obj)
+
+notes(geomx_diag)$disper
+
+# If the dispersion is >2, one of these factors might be present in the data. 
+# We can check for outlier ROIs. People can choose to set outliers to be missing 
+# values and rerun the Poisson Background model.
+
+# TODO if no batch effect, change these outliers to NA 
+length(which(assayDataElement(geomx_diag, "low_outlier") == 1, arr.ind = TRUE))
+length(which(assayDataElement(geomx_diag, "up_outlier") == 1, arr.ind = TRUE))
+
+# Or if a batch effect is assumed, the poisson model can be adjusted to take 
+# different groups into account. Here we are grouping the ROIs by slide.
+
+geomx_obj <- fitPoisBG(geomx_obj, groupvar = "Slide Name")
+
+set.seed(123)
+geomx_diag <- diagPoisBG(geomx_obj, split = TRUE)
+
+notes(geomx_diag)$disper_sp
 
 # remove flagged segments -------------------------------------------------
-#TODO code repetition from function
+
+table(sData(geomx_obj)$NTC)
 
 qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
@@ -136,6 +246,10 @@ qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
 
 segments_to_rmv <- geomx_obj@phenoData@data[qc_results_segment$qc_status != "PASS", ]
 geomx_obj <- geomx_obj[, qc_results_segment$qc_status == "PASS"]
+
+# remove segments with neggeomean < 1.5
+# TODO adjust thr and decide if that should be removed - later on LOQ is being checked
+geomx_obj <- geomx_obj[, sData(geomx_obj)[["NegGeoMean"]] >= 1.5]
 
 print(paste('dim after removing bad quality segments: '))
 print(dim(geomx_obj))
@@ -173,9 +287,6 @@ print(dim(geomx_obj))
 
 # aggregate probes to features --------------------------------------------
 
-# TODO if we want to do background modelling 
-# from geoDiff it should be done before aggregating counts
-
 # collapse features to targets
 geomx_obj <- aggregateCounts(geomx_obj)
 
@@ -199,24 +310,29 @@ gene_detect_thr <- 0.1 # segment is removed if <10% of genes > LOQ
 segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less than 1% of segments
 
 # Calculate LOQ for each segment
-# TODO adjust if > 1 modules
 LOQ <- data.frame(row.names = colnames(geomx_obj))
-module <- gsub(".pkc", "", annotation(geomx_obj))
 
-LOQ[, module] <-
-  pmax(loq_min,
-       pData(geomx_obj)[, paste0("NegGeoMean_", module)] * # coming from aggregate_counts
-         pData(geomx_obj)[, paste0("NegGeoSD_", module)] ^ loq_cutoff)
+for(module in modules){
+  LOQ[, module] <-
+    pmax(loq_min,
+         pData(geomx_obj)[, paste0("NegGeoMean_", module)] * # coming from aggregate_counts
+           pData(geomx_obj)[, paste0("NegGeoSD_", module)] ^ loq_cutoff)
+}
 
 pData(geomx_obj)$LOQ <- LOQ
 
 # calculate if expr > LOQ per each gene per segment
-LOQ_Mat <- t(esApply(geomx_obj, MARGIN = 1,
-                   FUN = function(x) {
-                     x > LOQ[, module]
-                   }))
-
-LOQ_Mat <- LOQ_Mat[fData(geomx_obj)$TargetName, ] # ensure ordering
+LOQ_Mat <- c()
+for(module in modules) {
+  ind <- fData(geomx_obj)$Module == module
+  Mat_i <- t(esApply(geomx_obj[ind, ], MARGIN = 1,
+                     FUN = function(x) {
+                       x > LOQ[, module]
+                     }))
+  LOQ_Mat <- rbind(LOQ_Mat, Mat_i)
+}
+# ensure ordering 
+LOQ_Mat <- LOQ_Mat[fData(geomx_obj)$TargetName, ]
 
 # Save detection rate information to pheno data
 # how many genes have been detected in each segment  
@@ -250,8 +366,7 @@ LOQ_Mat <- LOQ_Mat[fData(geomx_obj)$TargetName, ]
 plot_gene_detection_rate(fData(geomx_obj), file.path(output_dir, 'qc/gene_detection_rate.png'))
 
 # manually include the negative control probe, for downstream use
-# TODO check how many in the sample data. why just 1?
-negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative")
+negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative") # 1 bcs already collapsed to targets
 neg_probes <- unique(negativeProbefData$TargetName)
 
 # filter out genes detected > LOQ in less then thr nr of segments (1% for now)
@@ -262,7 +377,28 @@ geomx_obj <-
 print(paste('dim after removing genes based on LOQ: '))
 print(dim(geomx_obj))
 
-# save geomx object after QC
+
+# additional background modelling for genes -------------------------------
+
+geomx_obj <- BGScoreTest(geomx_obj)
+
+sum(fData(geomx_obj)[["pvalues"]] < 1e-3, na.rm = TRUE)
+#TODO rmv genes below bcground
+
+
+# estimating signal size factor -------------------------------------------
+
+#To estimate the signal size factor, we use the fit negative binomial threshold function. 
+#This size factor represents technical variation between ROIs like sequencing depth
+
+# TODO may be done later according to 
+# https://bioconductor.org/packages/release/bioc/vignettes/GeoDiff/inst/doc/Workflow_WTA_kidney.html
+# aggreprobe needed, not sure how this will affect the previous aggregation
+
+
+# save geomx object after QC ----------------------------------------------
+
+
 #TODO this is changing the assayData environment object - check if not causing any issues later
-saveRDS(geomx_obj, file = file.path(output_dir, 'geomx_qc.RDS'))
+saveRDS(geomx_obj, file = file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS'))
 
