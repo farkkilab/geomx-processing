@@ -34,7 +34,7 @@ pkc_path <- file.path(data_dir, 'metadata/Hs_R_NGS_WTA_v1.0.pkc')
 anno_path <- file.path(data_dir, 'metadata/dcc_metadata_all.xlsx')
 
 output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
-output_rds_path <- file.path(output_dir, 'geomx_qc.RDS')
+output_rds_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 main_var <- "Annotation_cell" # legend in sankey, 
@@ -44,9 +44,6 @@ main_var <- "Annotation_cell" # legend in sankey,
 
 dir.create(output_dir, showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
-dir.create(file.path(output_dir, 'umap_tsne'), showWarnings = T, recursive = T)
-dir.create(file.path(output_dir, 'umap_tsne', 'tumor'), showWarnings = T, recursive = T)
-dir.create(file.path(output_dir, 'umap_tsne', 'stroma'), showWarnings = T, recursive = T)
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
@@ -398,7 +395,6 @@ sum(fData(geomx_obj)[["pvalues"]] < 1e-3, na.rm = TRUE)
 
 # save geomx object after QC ----------------------------------------------
 
-
 #TODO this is changing the assayData environment object - check if not causing any issues later
-saveRDS(geomx_obj, file = file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS'))
+saveRDS(geomx_obj, file = output_rds_path)
 
