@@ -21,8 +21,8 @@ library(Rtsne)
 # get variables -----------------------------------------------------------
 data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
 output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
-input_rds_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
-output_rds_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc_norm.RDS')
+input_rds_path <- file.path(output_dir, 'geomx_qc.RDS')
+output_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 main_var <- "Annotation_cell" # legend in sankey, 
@@ -54,6 +54,8 @@ geomx_obj <- normalize(geomx_obj ,
                        toElt = "q3_norm")
 
 # quantile normalisation --------------------------------------------------
+# from
+# https://github.com/LevivanHijfte/NanoString_normalization_methods/blob/main/Data_preprocessing.R
 
 norm.quantile = normalize.quantiles(as.matrix(geomx_obj@assayData$exprs))
 dimnames(norm.quantile) = dimnames(geomx_obj@assayData$exprs)

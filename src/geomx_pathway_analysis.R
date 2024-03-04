@@ -34,8 +34,8 @@ input_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient')
 
-sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc_ifng_forpaper.csv'
-sig_name <- 'texh_macro_mhc_ifng_forpaper'
+sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc_ifng_myet_forpaper.csv'
+sig_name <- 'texh_macro_mhc_ifng_myet_forpaper'
 
 norm_type <- 'q3_norm' # either 'q3_norm' or 'quant_norm'
 
@@ -57,6 +57,7 @@ geomx_obj <- readRDS(input_rds_path)
 
 # read selected pathways
 sig_list <- as.list(fread(sig_path))
+sig_list <- lapply(sig_list, function(l){l[l !=""]})
 
 # read expression mtx
 expr_mtx <- assayDataElement(geomx_obj, elt = norm_type)
@@ -72,7 +73,8 @@ gsva_sel_sig_long <- melt(gsva_sel_sig)
 colnames(gsva_sel_sig_long) <- c('pathway','dcc_filename', 'gsva_score')
 gsva_sel_sig_long <- left_join(gsva_sel_sig_long, pData(geomx_obj)[gsva_vars])
 
-fwrite(gsva_sel_sig_long, file.path(output_dir, 'gsva', paste0('gsva', sig_name, '_neggeo_ntc.csv')))
+
+fwrite(gsva_sel_sig_long, file.path(output_dir, 'gsva', paste0('gsva_', sig_name, '_neggeo_ntc.csv')))
 
 # do GSVA on all Hallmark + CP from msigDB
 if(do_gsva_hal_cp){
@@ -1017,8 +1019,14 @@ sapply(1:length(prog_list), function(x){
 # 
 # 
 # # individual genes expression ---------------------------------------------
+# NECTIN2, TIGIT, CD96, LAG3, CD226, CXCL12, CXCR4, HGF, CD44
+# PD1, TIM3
+# CXCL9, CXCL10, CXCR3
+
+# dir.create(file.path(output_dir, 'ind_genes'), showWarnings = T, recursive = T)
 # 
-# goi <- c('PDCD1', 'HAVCR2', 'TIGIT', 'CD96', 'NECTIN2', 'CXCR3', 'CXCL9', 'IL2RG', 'IL2RB') 
+# goi <- c('NECTIN2', 'TIGIT', 'CD96', 'LAG3', 'CD226', 'CXCL12', 'CXCR4', 'HGF', 
+#          'CD44', 'PDCD1', 'HAVCR2', 'CXCL9', 'CXCL10', 'CXCR3')
 # 
 # expr_mtx <- assayDataElement(geomx_obj, elt = "q3_norm")
 # expr_mtx_goi <- expr_mtx[goi, ]
@@ -1026,4 +1034,4 @@ sapply(1:length(prog_list), function(x){
 # expr_mtx_goi_long <- melt(expr_mtx_goi)
 # colnames(expr_mtx_goi_long) <- c('gene','dcc_filename', 'expr')
 # expr_mtx_goi_long <- left_join(expr_mtx_goi_long, pData(geomx_obj)[c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS', 'Patient')])
-# fwrite(expr_mtx_goi_long, file.path(output_dir, 'ind_genes', paste0('ind_genes_exh_lr.csv')))
+# fwrite(expr_mtx_goi_long, file.path(output_dir, 'ind_genes', paste0('ind_genes_exh_lr_fin.csv')))

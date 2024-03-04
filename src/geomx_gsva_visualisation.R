@@ -9,9 +9,9 @@ library(colorspace)
 
 #TODO adjust for PROGENY
 
-output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact'
+output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
 
-gsva_name <- 'texh_macro_mhc' # or caf or 'texh_macro_mhc' , 'pycr1
+gsva_name <- 'texh_macro_mhc_ifng_myet_forpaper' # or caf or 'texh_macro_mhc' , 'pycr1
 gsva_path <- file.path(output_dir, 'gsva', paste0('gsva_', gsva_name, '.csv'))
 #gsva_path <- file.path(output_dir, 'progeny', paste0('progeny_perm.csv'))
 

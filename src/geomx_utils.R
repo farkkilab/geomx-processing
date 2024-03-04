@@ -323,10 +323,10 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
                             manual_colours = c("#F8766D", "#00BA38", "#619CFF", "#C77CFF")){
   # per Anno cell type
   gsva_boxpl <- ggplot(data = df, aes(x = get(pathway_colname), y = get(score_colname), fill = get(color_colname))) +
-    geom_boxplot() +
+    #geom_boxplot() +
     geom_violin() +
-    # geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
-    #            size= 0.2, alpha = 0.6) +
+    geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+               size= 0.2, alpha = 0.6) +
     stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
     geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
     theme(axis.text.x = element_text(angle=45, hjust=1, size = 4)) +
@@ -334,10 +334,9 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
     xlab(pathway_colname) +
     ylab(paste0(score_colname)) +
     guides(fill=guide_legend(title=color_colname)) +
-    guides(fill=guide_legend(title='PFS')) +
     scale_fill_manual(values=manual_colours) +
-    #scale_y_continuous(trans='log10')
-    ylim(ymin, ymax)
+    scale_y_continuous(trans='log10')
+    #ylim(ymin, ymax)
   
   if(length(facet_var) == 1){
     gsva_boxpl <- gsva_boxpl +

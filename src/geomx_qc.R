@@ -143,7 +143,7 @@ qc_params <-
 # set up qc flags for segments
 geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
 
-# rmv neg probes
+# rmv NTC segments
 #TODO check if this is not messing up with latter functions
 geomx_obj <- geomx_obj[, !(geomx_obj$`Slide Name` == 'No Template Control')]
 
