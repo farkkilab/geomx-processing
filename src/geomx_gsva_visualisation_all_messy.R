@@ -9,13 +9,15 @@ library(colorspace)
 library(ggcorrplot)
 library(viridis)
 library(RColorBrewer)
+library(nichenetr)
+library(multinichenetr)
 
 # set up variables --------------------------------------------------------
 
 output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
 
 gsva_name <- 'texh_macro_mhc_ifng_myet_forpaper' # or caf or 'texh_macro_mhc' , 'pycr1', 'progeny'
-gsva_path <- file.path(output_dir, 'gsva', paste0('gsva_', gsva_name, '_forpaper_neggeo_ntc.csv'))
+gsva_path <- file.path(output_dir, 'gsva', paste0('gsva_', gsva_name, '.csv')) #, '_forpaper_neggeo_ntc.csv'
 progeny_path <- file.path(output_dir, 'progeny', paste0('progeny_perm_neggeo_ntc.csv'))
 
 outp2 <- ifelse(gsva_name == 'progeny', 'progeny', 'gsva')
@@ -96,7 +98,7 @@ path_to_rm <- c("APOPTOSIS1", "EFFECTOR_VS_EXHAUSTED_CD8_TCELL_DN", "EFFECTOR_VS
                 "EXHAUSTED_VS_MEMORY_CD8_TCELL_DN", "EXHAUSTED_VS_MEMORY_CD8_TCELL_UP", "NAIVE_VS_EXHAUSTED_CD8_TCELL_DN",
                 "NAIVE_VS_EXHAUSTED_CD8_TCELL_UP", "OVARY_CL13_MONOCYTE_MACROPHAGE")
 
-gsva_df <- filter(gsva_df, !(pathway %in% path_to_rm))
+gsva_df <- dplyr::filter(gsva_df, !(pathway %in% path_to_rm))
 
 path_names <- unique(gsva_df$pathway) 
 
@@ -444,8 +446,8 @@ progeny_df$PFS_upd <- ifelse(progeny_df$Patient %in% c('S065', 'S027'), 'Long', 
 progeny_wide <- dcast(progeny_df, dcc_filename + Segment + Annotation_cell + `NACT status` + PFS + PFS_upd ~ progeny_path,
                    value.var = 'progeny_score')
 # get ind genes
-ind_genes_wide <- dcast(ind_genes, dcc_filename + Segment + Annotation_cell + `NACT status` + PFS + PFS_upd ~ gene,
-                        value.var = 'expr')
+# ind_genes_wide <- dcast(ind_genes, dcc_filename + Segment + Annotation_cell + `NACT status` + PFS + PFS_upd ~ gene,
+#                         value.var = 'expr')
 
 # combine gsva with progeny and ind genes
 
@@ -457,10 +459,10 @@ gsva_ind_genes_wide <- full_join(gsva_wide, progeny_wide) # without individual g
 path_names <- c(unique(gsva_df$pathway), unique(progeny_df$progeny_path)) #, unique(ind_genes$gene))
 
 #selected paths
-path_names <- c('TIGIT', 'NECTIN2', 'TIM3', 
-                "CTLA4_PATHWAY", "CTLA4_INHIBITORY_SIGNALING", "TCELL_EXHAUSTION", "PD_1_SIGNALING",
-                "JAK_STAT_SIGNALING_PATHWAY", "IL2_STAT5_SIGNALING", "IL2_PATHWAY", "INTERFERON_GAMMA_RESPONSE",
-                "TNFA_SIGNALING_VIA_NFKB")
+# path_names <- c('TIGIT', 'NECTIN2', 'TIM3', 
+#                 "CTLA4_PATHWAY", "CTLA4_INHIBITORY_SIGNALING", "TCELL_EXHAUSTION", "PD_1_SIGNALING",
+#                 "JAK_STAT_SIGNALING_PATHWAY", "IL2_STAT5_SIGNALING", "IL2_PATHWAY", "INTERFERON_GAMMA_RESPONSE",
+#                 "TNFA_SIGNALING_VIA_NFKB")
 
 make_corplot(gsva_ind_genes_wide, path_names, 'all')
 make_corplot(gsva_ind_genes_wide[gsva_ind_genes_wide$`NACT status` == 'post', ], path_names, 'pre')
@@ -553,7 +555,7 @@ get_cor_counts <- function(input_df_wide){
     rename(group_var2 = group) 
   
   cor_obj_sel <- distinct(cor_obj, cor, pval, .keep_all = T) %>% # hakierskie, pvals are unique xd
-    filter(group_var1 != 'other' & group_var2 != 'other')
+    dplyr::filter(group_var1 != 'other' & group_var2 != 'other')
   
   cor_counts <- as.data.frame(table(cor_obj_sel[, c("group_var1", "group_var2")]))
   
@@ -772,4 +774,226 @@ sapply(1:length(input_df_list), function(x){
   
 })
 
+##############################################
+##############################################
+# circleplots from NicheNetr Package
+
+make_cor_data <- function(input_df_wide, path_names, path_groups, cond_name){
+  cor_obj <- make_corplot(input_df_wide, path_names, 'test-cor')
+  cor_obj  <- full_join(melt(cor_obj[[1]], value.name = 'cor'), melt(cor_obj[[2]], value.name = 'pval'))
+  
+  # filter with 0.6 it ignores neg correlation, but there's no in this dataset
+  cor_obj <- filter(cor_obj, cor > 0.6 & pval <= 0.05) %>% 
+    filter(Var1 != Var2) %>%
+    left_join(path_groups, by = c('Var1' = 'path')) %>%
+    rename(group_var1 = group) %>%
+    left_join(path_groups, by = c('Var2' = 'path')) %>%
+    rename(group_var2 = group) %>%
+    dplyr::filter(group_var1 != 'other' & group_var2 != 'other') %>%
+    mutate(group = cond_name)
+
+  #cor_obj_sel <- distinct(cor_obj, cor, pval, .keep_all = T)  # hakierskie, pvals are unique xd  takes unique link from a pair
+  cor_obj_sel <- cor_obj
+  return(cor_obj_sel)
+} 
+
+cor_dpos_stroma_pre <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'stroma' & 
+                                     gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
+                                     gsva_ind_genes_wide$`NACT status` == 'pre', ], path_names, path_groups, 'stroma_pre')
+cor_dpos_stroma_post <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'stroma' & 
+                                       gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
+                                       gsva_ind_genes_wide$`NACT status` == 'post', ], path_names, path_groups, 'stroma_post')
+cor_dpos_tumor_pre <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'tumor' & 
+                                       gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
+                                       gsva_ind_genes_wide$`NACT status` == 'pre', ], path_names, path_groups, 'tumor_pre')
+cor_dpos_tumor_post <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'tumor' & 
+                                        gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
+                                        gsva_ind_genes_wide$`NACT status` == 'post', ], path_names, path_groups, 'tumor_post')
+
+cor_all <- rbind(cor_dpos_stroma_pre, cor_dpos_stroma_post, cor_dpos_tumor_pre, cor_dpos_tumor_post)
+
+
+# TODO now make plot one by one bcs sth is wrong with iterating inside the big function
+cor_all <- cor_dpos_stroma_post
+cor_all <- cor_all[cor_all$group_var1 == 'texh' | cor_all$group_var2 == 'texh', ]
+  
+#hacking colnames for nichenetr
+colnames(cor_all) <- c('ligand', 'receptor', 'prioritization_score', 'pval', 'sender', 'receiver', 'group')
+cor_all$id <- paste(cor_all$ligand, cor_all$receptor, cor_all$sender, cor_all$receiver, sep = '_')
+
+
+colors_list <- as.list(viridis(length(unique(c(cor_all$sender, cor_all$receiver)))))
+names(colors_list) <- unique(c(cor_all$sender, cor_all$receiver))
+
+
+#####################################################
+pdf(file= file.path(output_dir, 'corr_stroma_post_texh.pdf'))
+make_circos_one_group_iga(cor_all, colors_list, colors_list)
+dev.off()
+
+
+###############################################################
+make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_receiver){
+  
+  requireNamespace("dplyr")
+  requireNamespace("ggplot2")
+  requireNamespace("circlize")
+  
+  prioritized_tbl_oi = prioritized_tbl_oi %>% dplyr::ungroup() # if grouped: things will be messed up downstream
+  
+  # Link each cell type to a color
+  grid_col_tbl_ligand = tibble::tibble(sender = colors_sender %>% names(), color_ligand_type = colors_sender)
+  grid_col_tbl_receptor = tibble::tibble(receiver = colors_receiver %>% names(), color_receptor_type = colors_receiver)
+  
+  # Make the plot for each condition
+  groups_oi = prioritized_tbl_oi$group %>% unique()
+  all_plots = groups_oi %>% lapply(function(group_oi){
+    
+    # Make the plot for condition of interest - title of the plot
+    title = group_oi
+    circos_links_oi = prioritized_tbl_oi %>% dplyr::filter(group == group_oi)
+    
+    # deal with duplicated sector names
+    # dplyr::rename the ligands so we can have the same ligand in multiple senders (and receptors in multiple receivers)
+    # only do it with duplicated ones!
+    circos_links = circos_links_oi %>% dplyr::rename(weight = prioritization_score)
+    
+    df = circos_links
+    
+    ligand.uni = unique(df$ligand)
+    for (i in 1:length(ligand.uni)) {
+      df.i = df[df$ligand == ligand.uni[i], ]
+      sender.uni = unique(df.i$sender)
+      for (j in 1:length(sender.uni)) {
+        df.i.j = df.i[df.i$sender == sender.uni[j], ]
+        df.i.j$ligand = paste0(df.i.j$ligand, paste(rep(' ',j-1),collapse = ''))
+        df$ligand[df$id %in% df.i.j$id] = df.i.j$ligand
+      }
+    }
+    receptor.uni = unique(df$receptor)
+    for (i in 1:length(receptor.uni)) {
+      df.i = df[df$receptor == receptor.uni[i], ]
+      receiver.uni = unique(df.i$receiver)
+      for (j in 1:length(receiver.uni)) {
+        df.i.j = df.i[df.i$receiver == receiver.uni[j], ]
+        df.i.j$receptor = paste0(df.i.j$receptor, paste(rep(' ',j-1),collapse = ''))
+        df$receptor[df$id %in% df.i.j$id] = df.i.j$receptor
+      }
+    }
+    
+    intersecting_ligands_receptors = generics::intersect(unique(df$ligand),unique(df$receptor))
+    
+    while(length(intersecting_ligands_receptors) > 0){
+      df_unique = df %>% dplyr::filter(!receptor %in% intersecting_ligands_receptors)
+      df_duplicated = df %>% dplyr::filter(receptor %in% intersecting_ligands_receptors)
+      df_duplicated = df_duplicated %>% dplyr::mutate(receptor = paste(" ",receptor, sep = ""))
+      df = dplyr::bind_rows(df_unique, df_duplicated)
+      intersecting_ligands_receptors = generics::intersect(unique(df$ligand),unique(df$receptor))
+    }
+    
+    circos_links = df
+    
+    # Link ligands/Receptors to the colors of senders/receivers
+    circos_links = circos_links %>% dplyr::inner_join(grid_col_tbl_ligand) %>% dplyr::inner_join(grid_col_tbl_receptor)
+    links_circle = circos_links %>% dplyr::distinct(ligand,receptor, weight)
+    ligand_color = circos_links %>% dplyr::distinct(ligand,color_ligand_type)
+    grid_ligand_color = ligand_color$color_ligand_type %>% magrittr::set_names(ligand_color$ligand)
+    receptor_color = circos_links %>% dplyr::distinct(receptor,color_receptor_type)
+    grid_receptor_color = receptor_color$color_receptor_type %>% magrittr::set_names(receptor_color$receptor)
+    grid_col =c(grid_ligand_color,grid_receptor_color)
+    
+    # Define order of the ligands and receptors and the gaps
+    ligand_order = prioritized_tbl_oi$sender %>% unique() %>% sort() %>% lapply(function(sender_oi){
+      ligands = circos_links %>% dplyr::filter(sender == sender_oi) %>%  dplyr::arrange(ligand) %>% dplyr::distinct(ligand)
+    }) %>% unlist()
+    
+    receptor_order = prioritized_tbl_oi$receiver %>% unique() %>% sort() %>% lapply(function(receiver_oi){
+      receptors = circos_links %>% dplyr::filter(receiver == receiver_oi) %>%  dplyr::arrange(receptor) %>% dplyr::distinct(receptor)
+    }) %>% unlist()
+    
+    order = c(ligand_order,receptor_order)
+    
+    width_same_cell_same_ligand_type = 0.275
+    width_different_cell = 3
+    width_ligand_receptor = 9
+    width_same_cell_same_receptor_type = 0.275
+    
+    sender_gaps = prioritized_tbl_oi$sender %>% unique() %>% sort() %>% lapply(function(sender_oi){
+      print(sender_oi)
+      sector = rep(width_same_cell_same_ligand_type, times = (circos_links %>% dplyr::filter(sender == sender_oi) %>% dplyr::distinct(ligand) %>% nrow() -1))
+      gap = width_different_cell
+      return(c(sector,gap))
+    }) %>% unlist()
+    sender_gaps = sender_gaps[-length(sender_gaps)]
+    
+    receiver_gaps = prioritized_tbl_oi$receiver %>% unique() %>% sort() %>% lapply(function(receiver_oi){
+      sector = rep(width_same_cell_same_receptor_type, times = (circos_links %>% dplyr::filter(receiver == receiver_oi) %>% dplyr::distinct(receptor) %>% nrow() -1))
+      gap = width_different_cell
+      return(c(sector,gap))
+    }) %>% unlist()
+    receiver_gaps = receiver_gaps[-length(receiver_gaps)]
+    
+    gaps = c(sender_gaps, width_ligand_receptor, receiver_gaps, width_ligand_receptor)
+    
+    # print(length(gaps))
+    # print(length(union(circos_links$ligand, circos_links$receptor) %>% unique()))
+    if(length(gaps) != length(union(circos_links$ligand, circos_links$receptor) %>% unique())){
+      warning("Specified gaps have different length than combined total of ligands and receptors - This is probably due to duplicates in ligand-receptor names")
+    }
+
+    
+    links_circle$weight[links_circle$weight == 0] = 0.01
+    circos.clear()
+    circos.par(gap.degree = gaps)
+    chordDiagram(links_circle,
+                 directional = 0,
+                 order=order,
+                 link.sort = TRUE,
+                 link.decreasing = TRUE,
+                 grid.col = unlist(grid_col),
+                 # transparency = transparency,
+                 diffHeight = 0.0075,
+                 #direction.type = c("diffHeight", "arrows"),
+                 link.visible = links_circle$weight > 0.01,
+                 annotationTrack = "grid",
+                 preAllocateTracks = list(track.height = 0.175),
+                 grid.border = "gray35", link.arr.length = 0.05, link.arr.type = "big.arrow",  link.lwd = 1.25, link.lty = 1, link.border="gray35",
+                 reduce = 0,
+                 scale = TRUE)
+    circos.track(track.index = 1, panel.fun = function(x, y) {
+      circos.text(CELL_META$xcenter, CELL_META$ylim[1], CELL_META$sector.index,
+                  facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.4)
+    }, bg.border = NA) #
+    
+    title(title)
+    p_circos = recordPlot()
+    return(p_circos)
+    
+  })
+  names(all_plots) = groups_oi
+  
+  plot(NULL ,xaxt='n',yaxt='n',bty='n',ylab='',xlab='', xlim=0:1, ylim=0:1)
+  # grid_col_all = c(colors_receiver, colors_sender)
+  legend = ComplexHeatmap::Legend(at = prioritized_tbl_oi$receiver %>% unique() %>% sort(),
+                                  type = "grid",
+                                  #legend_gp = grid::gpar(fill = colors_receiver[prioritized_tbl_oi$receiver %>% unique() %>% sort()]),
+                                  legend_gp = grid::gpar(fill = as.character(colors_receiver[prioritized_tbl_oi$receiver %>% unique() %>% sort()])),
+                                  title_position = "topleft",
+                                  title = "Receiver")
+  ComplexHeatmap::draw(legend, just = c("left", "bottom"))
+  
+  # legend = ComplexHeatmap::Legend(at = prioritized_tbl_oi$sender %>% unique() %>% sort(),
+  #                                 type = "grid",
+  #                                 #legend_gp = grid::gpar(fill = colors_sender[prioritized_tbl_oi$sender %>% unique() %>% sort()]),
+  #                                 legend_gp = grid::gpar(fill = as.character(colors_sender[prioritized_tbl_oi$sender %>% unique() %>% sort()])),
+  #                                 title_position = "topleft",
+  #                                 title = "Sender")
+  # ComplexHeatmap::draw(legend, just = c("left", "top"))
+  
+  p_legend = grDevices::recordPlot()
+  
+  all_plots$legend = p_legend
+  
+  return(all_plots)
+}
 
