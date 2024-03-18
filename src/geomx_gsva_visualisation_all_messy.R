@@ -792,10 +792,12 @@ make_cor_data <- function(input_df_wide, path_names, path_groups, cond_name){
     dplyr::filter(group_var1 != 'other' & group_var2 != 'other') %>%
     mutate(group = cond_name)
 
-  #cor_obj_sel <- distinct(cor_obj, cor, pval, .keep_all = T)  # hakierskie, pvals are unique xd  takes unique link from a pair
-  cor_obj_sel <- cor_obj
+  cor_obj_sel <- distinct(cor_obj, cor, pval, .keep_all = T)  # hakierskie, pvals are unique xd  takes unique link from a pair
+  #cor_obj_sel <- cor_obj
   return(cor_obj_sel)
 } 
+
+# changing path names for better display
 
 cor_dpos_stroma_pre <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'stroma' & 
                                      gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
@@ -810,29 +812,46 @@ cor_dpos_tumor_post <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Seg
                                         gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
                                         gsva_ind_genes_wide$`NACT status` == 'post', ], path_names, path_groups, 'tumor_post')
 
-cor_all <- rbind(cor_dpos_stroma_pre, cor_dpos_stroma_post, cor_dpos_tumor_pre, cor_dpos_tumor_post)
+cor_all_list <- list(stroma_pre = cor_dpos_stroma_pre, stroma_post = cor_dpos_stroma_post, 
+                     tumor_pre = cor_dpos_tumor_pre, tumor_post = cor_dpos_tumor_post)
+
+cor_all_df <- do.call(rbind, cor_all_list)
+
+colors_list <- as.list(viridis(length(unique(c(cor_all_df$group_var1, cor_all_df$group_var2)))))
+names(colors_list) <- unique(c(cor_all_df$group_var1, cor_all_df$group_var2))
+colors_list$mhc <- '#ff0040'
 
 
-# TODO now make plot one by one bcs sth is wrong with iterating inside the big function
-cor_all <- cor_dpos_stroma_post
-cor_all <- cor_all[cor_all$group_var1 == 'texh' | cor_all$group_var2 == 'texh', ]
+lapply(1:length(cor_all_list), function(n){
+  cor_all <- cor_all_list[[n]]
   
-#hacking colnames for nichenetr
-colnames(cor_all) <- c('ligand', 'receptor', 'prioritization_score', 'pval', 'sender', 'receiver', 'group')
-cor_all$id <- paste(cor_all$ligand, cor_all$receptor, cor_all$sender, cor_all$receiver, sep = '_')
-
-
-colors_list <- as.list(viridis(length(unique(c(cor_all$sender, cor_all$receiver)))))
-names(colors_list) <- unique(c(cor_all$sender, cor_all$receiver))
-
-
-#####################################################
-pdf(file= file.path(output_dir, 'corr_stroma_post_texh.pdf'))
-make_circos_one_group_iga(cor_all, colors_list, colors_list)
-dev.off()
-
+  cor_all <- cor_all[cor_all$group_var1 == 'texh' | cor_all$group_var2 == 'texh', ]
+  
+  #hacking colnames for nichenetr
+  colnames(cor_all) <- c('ligand', 'receptor', 'prioritization_score', 'pval', 'sender', 'receiver', 'group')
+  cor_all$id <- paste(cor_all$ligand, cor_all$receptor, cor_all$sender, cor_all$receiver, sep = '_')
+  
+  cor_all$ligand <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_UP', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_UP', cor_all$ligand)
+  cor_all$ligand <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_DN', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_DN', cor_all$ligand)
+  cor_all$ligand <- gsub('CLASS_I_MHC_MEDIATED_ANTIGEN_PROCESSING_PRESENTATION', 'MHC_I_AG_PROCESSING_PRESENTATION', cor_all$ligand)
+  cor_all$ligand <- gsub('MHC_CLASS_II_ANTIGEN_PRESENTATION', 'MHC_CLASS_II_AG_PRESENTATION', cor_all$ligand)
+  
+  cor_all$receptor <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_UP', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_UP', cor_all$receptor)
+  cor_all$receptor <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_DN', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_DN', cor_all$receptor)
+  cor_all$receptor <- gsub('CLASS_I_MHC_MEDIATED_ANTIGEN_PROCESSING_PRESENTATION', 'MHC_I_AG_PROCESSING_PRESENTATION', cor_all$receptor)
+  cor_all$receptor <- gsub('MHC_CLASS_II_ANTIGEN_PRESENTATION', 'MHC_CLASS_II_AG_PRESENTATION', cor_all$receptor)
+  
+  colors_sender <- colors_list[names(colors_list) %in% cor_all$sender]
+  colors_receiver <- colors_list[names(colors_list) %in% cor_all$receiver]
+  
+  pdf(file= file.path(output_dir,'circle', paste0('corr_', names(cor_all_list)[n], 'texh_half.pdf')))
+  make_circos_one_group_iga(cor_all, colors_sender, colors_receiver)
+  dev.off()
+  
+})
 
 ###############################################################
+# from https://github.com/saeyslab/multinichenetr/blob/main/R/plotting.R
 make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_receiver){
   
   requireNamespace("dplyr")
@@ -944,7 +963,7 @@ make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_r
     
     links_circle$weight[links_circle$weight == 0] = 0.01
     circos.clear()
-    circos.par(gap.degree = gaps)
+    circos.par(gap.degree = gaps, canvas.xlim=c(-1.7, 1.7), canvas.ylim=c(-1.7,1.7))
     chordDiagram(links_circle,
                  directional = 0,
                  order=order,
@@ -962,7 +981,7 @@ make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_r
                  scale = TRUE)
     circos.track(track.index = 1, panel.fun = function(x, y) {
       circos.text(CELL_META$xcenter, CELL_META$ylim[1], CELL_META$sector.index,
-                  facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.4)
+                  facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.5)
     }, bg.border = NA) #
     
     title(title)
