@@ -11,6 +11,7 @@ library(reshape2)
 library(Seurat)
 library(tibble)
 library(BayesPrism)
+library(biomaRt)
 
 # define variables --------------------------------------------------------
 
@@ -363,4 +364,288 @@ identical(colnames(scrna_mtx)[-1], weights_high$cell_name)
 high_deconv <- fread(file.path(output_dir, 'prism','results', 'geomx_decom_mid_lvl_ct.tsv'))
 high_gains <- fread(file.path(output_dir, 'prism','results', 'geomx_gains_mid_lvl_ct.tsv'))
 high_weights <- fread(file.path(output_dir, 'prism','results', 'geomx_weights_mid_lvl_ct.tsv'))
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+# deconvolution by bayesprism ---------------------------------------------
+# https://github.com/Danko-Lab/BayesPrism/blob/main/tutorial_deconvolution.html
+
+geomx_obj <- readRDS(input_rds_path)
+scrna_ref_obj <- readRDS(scrna_ref_path)
+
+############################################
+# filter cell types and cell states
+
+scrna_ref_obj@meta.data$cell_type <- ifelse(scrna_ref_obj@meta.data$cell_type == 'Epithelial cells', 
+                                            'tumor', scrna_ref_obj@meta.data$cell_type)
+
+# cell states - clustering tumor cells by patient
+scrna_ref_obj@meta.data$cell_state <- ifelse(scrna_ref_obj@meta.data$cell_type == 'tumor', 
+                                             paste0('tumor_', scrna_ref_obj@meta.data$patient), 
+                                             scrna_ref_obj@meta.data$cell_type)
+
+
+# remove cells from cell states with <20 cells
+ct_freq <- as.data.frame(table(scrna_ref_obj@meta.data$cell_state))
+
+low_ct_cells_20 <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$cell_state %in% 
+                                                    as.character(ct_freq$Var1[ct_freq$Freq < 20])]
+low_ct_cells_45 <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$cell_state %in% 
+                                                    as.character(ct_freq$Var1[ct_freq$Freq < 45])]
+
+#TODO change trough 20 and 45
+scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% low_ct_cells_45]
+
+#fix  mid-lvl-ct
+
+scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct == 'Plasma cells', 
+                                             'Bcells', scrna_ref_obj@meta.data$mid_lvl_ct)
+scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct == 'Classical monocytes', 
+                                             'Macrophages', scrna_ref_obj@meta.data$mid_lvl_ct)
+scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct == 'Epithelial cells', 
+                                             'tumor', scrna_ref_obj@meta.data$mid_lvl_ct)
+
+#TODO check if it should be removed or not
+# mid_ct_other_cells <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$mid_lvl_ct == 'other']
+# scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% mid_ct_other_cells]
+
+#########################################
+# transform mtx
+
+geomx_raw <- t(geomx_obj@assayData$exprs)
+scrna_raw <- t(scrna_ref_obj@assays$RNA@data)
+
+head(rownames(geomx_raw))
+
+head(colnames(geomx_raw))
+dim(geomx_raw)
+
+head(rownames(scrna_raw))
+head(colnames(scrna_raw))
+dim(scrna_raw)
+
+##############################################
+#TODO make a function out of this
+# repair synonymuous gene names
+length(colnames(geomx_raw))
+length(intersect(colnames(geomx_raw), colnames(scrna_raw)))
+
+geo_non_ex <- setdiff(colnames(geomx_raw), colnames(scrna_raw))
+
+ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl")
+
+geo_non_ex_syn <- getBM(attributes=c('external_gene_name', 'external_synonym'),
+                    filters = 'external_gene_name',
+                    values = geo_non_ex,
+                    mart = ensembl)
+
+
+geo_syn_in_scrna <- filter(geo_non_ex_syn, external_synonym %in% colnames(scrna_raw)) %>%
+  distinct(external_gene_name, .keep_all = T) # it'll remove a handful of weird genes with multiple synonyms simultaneously present in scrna, may be ignored
+
+common_genes <- sapply(colnames(geomx_raw), function(x){
+  if(x %in% geo_syn_in_scrna$external_gene_name){
+    gname <- geo_syn_in_scrna$external_synonym[geo_syn_in_scrna$external_gene_name == x]
+  } else{
+    gname <- x
+  }
+  return(gname)
+})
+
+colnames(geomx_raw) <- common_genes
+
+length(intersect(colnames(geomx_raw), colnames(scrna_raw)))
+
+#########################################
+# QC of cell states
+
+#TODO think of changing labels for mast cells, Th17, tumor_H103
+
+# plot.cor.phi (input=scrna_raw,
+#               input.labels=scrna_ref_obj@meta.data$cell_state,
+#               title="cell state correlation",
+#               #specify pdf.prefix if need to output to pdf
+#               #pdf.prefix="gbm.cor.cs",
+#               cexRow=0.6, cexCol=0.6,
+#               margins=c(6,6))
+# 
+# dev.off()
+# 
+# plot.cor.phi (input=scrna_raw,
+#               input.labels=scrna_ref_obj@meta.data$mid_lvl_ct,
+#               title="cell type correlation",
+#               #specify pdf.prefix if need to output to pdf
+#               #pdf.prefix="gbm.cor.ct",
+#               cexRow=0.5, cexCol=0.5,
+# )
+# 
+# dev.off()
+############################################
+# check genes outliers
+
+# scrna_stat <- plot.scRNA.outlier(
+#   input=scrna_raw, #make sure the colnames are gene symbol or ENSMEBL ID 
+#   cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+#   species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+#   return.raw=TRUE #return the data used for plotting. 
+#   #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+# )
+# 
+# View(scrna_stat)
+# 
+# geomx_stat <- plot.bulk.outlier(
+#   bulk.input=geomx_raw,#make sure the colnames are gene symbol or ENSMEBL ID 
+#   sc.input=scrna_raw, #make sure the colnames are gene symbol or ENSMEBL ID 
+#   cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+#   species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+#   return.raw=TRUE
+#   #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+# )
+# 
+# View(geomx_stat)
+
+# filter out outlier genes
+
+scrna_filt <- cleanup.genes (input=scrna_raw,
+                                  input.type="count.matrix",
+                                  species="hs", 
+                                  gene.group=c( "Rb","Mrp","other_Rb","chrM","MALAT1","chrX","chrY") ,
+                                  exp.cells=5)
+dim(scrna_raw)
+dim(scrna_filt)
+
+# geomx doen't have to be filtered since later on they took only intersection of genes
+
+
+# check expr concordance for different gene types
+#plot.bulk.vs.sc (sc.input = scrna_filt, bulk.input = geomx_raw)
+
+# subset to protein coding genes
+scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
+
+# TODO takes > 64G of memory, have to be run on linux machine
+# subset to signature genes (differentially expressed trough cell types)
+# diff_exp_stat <- get.exp.stat(sc.dat=scrna_raw[,colSums(scrna_raw>0)>3],# filter genes to reduce memory use
+#                               cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+#                               cell.state.labels=scrna_ref_obj@meta.data$cell_state,
+#                               pseudo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+#                               cell.count.cutoff=20, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+#                               n.cores=8 #number of threads
+# )
+
+# scrna_filt_pc_sig <- select.marker (sc.dat=scrna_filt_pc,
+#                                          stat=diff_exp_stat,
+#                                          pval.max=0.01,
+#                                          lfc.min=0.1)
+
+# dim(scrna_filt_pc_sig)
+
+########################################
+# check labels
+unique(scrna_ref_obj@meta.data[, c('cell_type', 'mid_lvl_ct', 'cell_state')])
+
+########################################
+# make a prism object
+
+prism_obj <- new.prism(
+  reference=scrna_filt_pc, 
+  mixture=geomx_raw,
+  input.type="count.matrix", 
+  cell.type.labels = scrna_ref_obj@meta.data$cell_type, 
+  cell.state.labels = scrna_ref_obj@meta.data$cell_state,
+  key="tumor",
+  outlier.cut=0.01,
+  outlier.fraction=0.1,
+)
+
+# run bayesprism
+bprism_res <- run.prism(prism = prism_obj, n.cores=18)
+
+# save res and explore
+saveRDS(bprism_res, file = file.path(output_dir, 'bayes-prism', 'bp_res_all_ct_45.RDS'))
+
+slotNames(bprism_res)
+
+mean_ct_frac <- get.fraction (bp=bprism_res,
+                              which.theta="final",
+                              state.or.type="type")
+
+# TODO mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bult, 0.5 for Visium, GeoMx should be in the middle)
+# histogram suggests 0.5 as thr
+ct_frac_cv <- bprism_res@posterior.theta_f@theta.cv
+
+# extract posterior mean of cell type-specific gene expression count matrix Z  
+# TODO normalise it!
+#Clustering bulk samples by theta or Z (Z can be normalized by vst(round(t(Z.tumor))), 
+# using the vst function from the DESeq2 package.)
+tumor_gene_exp <- get.exp (bp=bprism_res,
+                    state.or.type="type",
+                    cell.name="tumor")
+
+
+##############################################################
+##############################################################
+##############################################################
+
+# compare with ROI type 
+
+ct_frac <- as.data.frame(mean_ct_frac)
+ct_frac$stroma <- ct_frac$Fibroblasts + ct_frac$`Endothelial cells`
+ct_frac$immune <- ct_frac$`Regulatory T cells` + ct_frac$`Memory B cells` + ct_frac$`CD16- NK cells` + 
+  ct_frac$`Tem/Trm cytotoxic T cells` + ct_frac$`Tcm/Naive helper T cells` + ct_frac$Macrophages + ct_frac$`Mast cells` +
+  ct_frac$`Migratory DCs` + ct_frac$`Plasma cells` + ct_frac$ILC + ct_frac$pDC + ct_frac$`Type 17 helper T cells` +
+  ct_frac$`CD16+ NK cells` + ct_frac$`NK cells` + ct_frac$`Naive B cells` + ct_frac$DC1 + ct_frac$`Classical monocytes`
+
+#ct_frac <- mutate(ct_frac, immune = rowSums(select(ct_frac, -tumor, -stroma, -Fibroblasts, -`Endothelial cells`)))
+ct_frac$tot <- ct_frac$tumor + ct_frac$stroma + ct_frac$immune
+
+ct_frac <- rownames_to_column(ct_frac, 'dcc_filename')
+ct_frac <- left_join(ct_frac, sData(geomx_obj)[, c('dcc_filename', 'Patient', 'Segment', 'Sample','Nuclei', 'NACT status', 'Annotation_cell')],
+                     by = 'dcc_filename')
+
+
+ggplot(data = ct_frac, aes(x = Segment, y = tumor)) +
+  geom_violin() 
+  # geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+  #            size= 0.2, alpha = 0.6) 
+
+
+ggplot(data = ct_frac, aes(x = Segment, y = stroma)) +
+  geom_violin() 
+
+ggplot(data = ct_frac, aes(x = Segment, y = immune)) +
+  geom_violin() 
+
+
+ct_frac_stroma <- ct_frac[ct_frac$Segment == 'stroma', ]
+ct_frac_tumor <- ct_frac[ct_frac$Segment == 'tumor', ]
+
+ggplot(data = ct_frac_stroma, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, shape = Annotation_cell, color = Sample)) +
+  geom_point(alpha = 0.5, size = 2)
+
+ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_stroma.pdf')),
+       width = 1500, height = 2000, unit = 'px')
+
+ggplot(data = ct_frac_tumor, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, shape = Annotation_cell, color = Sample)) +
+  geom_point(alpha = 0.5, size = 2)
+
+ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_tumor.pdf')),
+       width = 1500, height = 2000, unit = 'px')
+
+###############
+
+ggplot(data = ct_frac_stroma, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, color = Annotation_cell)) +
+  geom_point(alpha = 0.5, size = 2)
+
+ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_stroma2.pdf')),
+       width = 1500, height = 2000, unit = 'px')
+
+ggplot(data = ct_frac_tumor, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, color = Annotation_cell)) +
+  geom_point(alpha = 0.5, size = 2)
+
+ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_tumor2.pdf')),
+       width = 1500, height = 2000, unit = 'px')
 

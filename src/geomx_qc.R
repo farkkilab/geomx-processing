@@ -237,12 +237,14 @@ notes(geomx_diag)$disper_sp
 
 table(sData(geomx_obj)$NTC)
 
+#TODO !!!!! HighNTC - one sample which was included before
+#qc_results_segment <- qc_results_segment[, -which(names(qc_results_segment) == 'HighNTC')]
+
 qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
 })
 
-segments_to_rmv <- geomx_obj@phenoData@data[qc_results_segment$qc_status != "PASS", ]
-geomx_obj <- geomx_obj[, qc_results_segment$qc_status == "PASS"]
+geomx_obj <- geomx_obj[, qc_results_segment$qc_status == "PASS", ]
 
 # remove segments with neggeomean < 1.5
 # TODO adjust thr and decide if that should be removed - later on LOQ is being checked
@@ -340,6 +342,7 @@ print(paste("median gene nr is: ", as.character(median(pData(geomx_obj)$GenesDet
 print(paste("mean gene nr is: ", as.character(mean(pData(geomx_obj)$GenesDetected))))
 print(paste("median gene detection rate is: ", as.character(median(pData(geomx_obj)$GeneDetectionRate))))
 
+
 #TODO calculate signal/noise ratio = Count/LOQ per segment (similar to genedetectionrate)
 
 sapply(imp_vars, function(vname){
@@ -394,6 +397,10 @@ sum(fData(geomx_obj)[["pvalues"]] < 1e-3, na.rm = TRUE)
 
 
 # save geomx object after QC ----------------------------------------------
+
+print(paste("median gene nr is: ", as.character(median(pData(geomx_obj)$GenesDetected))))
+print(paste("mean gene nr is: ", as.character(mean(pData(geomx_obj)$GenesDetected))))
+print(paste("median gene detection rate is: ", as.character(median(pData(geomx_obj)$GeneDetectionRate))))
 
 #TODO this is changing the assayData environment object - check if not causing any issues later
 saveRDS(geomx_obj, file = output_rds_path)

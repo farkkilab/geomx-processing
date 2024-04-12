@@ -446,8 +446,8 @@ progeny_df$PFS_upd <- ifelse(progeny_df$Patient %in% c('S065', 'S027'), 'Long', 
 progeny_wide <- dcast(progeny_df, dcc_filename + Segment + Annotation_cell + `NACT status` + PFS + PFS_upd ~ progeny_path,
                    value.var = 'progeny_score')
 # get ind genes
-# ind_genes_wide <- dcast(ind_genes, dcc_filename + Segment + Annotation_cell + `NACT status` + PFS + PFS_upd ~ gene,
-#                         value.var = 'expr')
+ind_genes_wide <- dcast(ind_genes, dcc_filename + Segment + Annotation_cell + `NACT status` + PFS + PFS_upd ~ gene,
+                        value.var = 'expr')
 
 # combine gsva with progeny and ind genes
 
@@ -459,10 +459,10 @@ gsva_ind_genes_wide <- full_join(gsva_wide, progeny_wide) # without individual g
 path_names <- c(unique(gsva_df$pathway), unique(progeny_df$progeny_path)) #, unique(ind_genes$gene))
 
 #selected paths
-# path_names <- c('TIGIT', 'NECTIN2', 'TIM3', 
-#                 "CTLA4_PATHWAY", "CTLA4_INHIBITORY_SIGNALING", "TCELL_EXHAUSTION", "PD_1_SIGNALING",
-#                 "JAK_STAT_SIGNALING_PATHWAY", "IL2_STAT5_SIGNALING", "IL2_PATHWAY", "INTERFERON_GAMMA_RESPONSE",
-#                 "TNFA_SIGNALING_VIA_NFKB")
+path_names <- c('TIGIT', 'NECTIN2', 'TIM3', 
+                "CTLA4_PATHWAY", "CTLA4_INHIBITORY_SIGNALING", "TCELL_EXHAUSTION", "PD_1_SIGNALING",
+                "JAK_STAT_SIGNALING_PATHWAY", "IL2_STAT5_SIGNALING", "IL2_PATHWAY", "INTERFERON_GAMMA_RESPONSE",
+                "TNFA_SIGNALING_VIA_NFKB")
 
 make_corplot(gsva_ind_genes_wide, path_names, 'all')
 make_corplot(gsva_ind_genes_wide[gsva_ind_genes_wide$`NACT status` == 'post', ], path_names, 'pre')
@@ -777,81 +777,45 @@ sapply(1:length(input_df_list), function(x){
 ##############################################
 ##############################################
 # circleplots from NicheNetr Package
+input_df_wide <- gsva_stroma_doublepos[gsva_stroma_doublepos$`NACT status` == 'pre', ]
 
-make_cor_data <- function(input_df_wide, path_names, path_groups, cond_name){
-  cor_obj <- make_corplot(input_df_wide, path_names, 'test-cor')
-  cor_obj  <- full_join(melt(cor_obj[[1]], value.name = 'cor'), melt(cor_obj[[2]], value.name = 'pval'))
-  
-  # filter with 0.6 it ignores neg correlation, but there's no in this dataset
-  cor_obj <- filter(cor_obj, cor > 0.6 & pval <= 0.05) %>% 
-    filter(Var1 != Var2) %>%
-    left_join(path_groups, by = c('Var1' = 'path')) %>%
-    rename(group_var1 = group) %>%
-    left_join(path_groups, by = c('Var2' = 'path')) %>%
-    rename(group_var2 = group) %>%
-    dplyr::filter(group_var1 != 'other' & group_var2 != 'other') %>%
-    mutate(group = cond_name)
+cor_obj <- make_corplot(input_df_wide, path_names, 'test-cor')
+cor_obj  <- full_join(melt(cor_obj[[1]], value.name = 'cor'), melt(cor_obj[[2]], value.name = 'pval'))
 
-  cor_obj_sel <- distinct(cor_obj, cor, pval, .keep_all = T)  # hakierskie, pvals are unique xd  takes unique link from a pair
-  #cor_obj_sel <- cor_obj
-  return(cor_obj_sel)
-} 
+# filter with 0.6 it ignores neg correlation, but there's no in this dataset
+cor_obj <- filter(cor_obj, cor > 0.6 & pval <= 0.05) %>% 
+  filter(Var1 != Var2) %>%
+  left_join(path_groups, by = c('Var1' = 'path')) %>%
+  rename(group_var1 = group) %>%
+  left_join(path_groups, by = c('Var2' = 'path')) %>%
+  rename(group_var2 = group) %>%
+  dplyr::filter(group_var1 != 'other' & group_var2 != 'other')
 
-# changing path names for better display
+#cor_obj_sel <- distinct(cor_obj, cor, pval, .keep_all = T)  # hakierskie, pvals are unique xd
+cor_obj_sel <- cor_obj
 
-cor_dpos_stroma_pre <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'stroma' & 
-                                     gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
-                                     gsva_ind_genes_wide$`NACT status` == 'pre', ], path_names, path_groups, 'stroma_pre')
-cor_dpos_stroma_post <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'stroma' & 
-                                       gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
-                                       gsva_ind_genes_wide$`NACT status` == 'post', ], path_names, path_groups, 'stroma_post')
-cor_dpos_tumor_pre <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'tumor' & 
-                                       gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
-                                       gsva_ind_genes_wide$`NACT status` == 'pre', ], path_names, path_groups, 'tumor_pre')
-cor_dpos_tumor_post <- make_cor_data(gsva_ind_genes_wide[gsva_ind_genes_wide$Segment == 'tumor' & 
-                                        gsva_ind_genes_wide$Annotation_cell == 'posCD8_posIBA1' &
-                                        gsva_ind_genes_wide$`NACT status` == 'post', ], path_names, path_groups, 'tumor_post')
+#hacking colnames for nichenetr
+colnames(cor_obj_sel) <- c('ligand', 'receptor', 'prioritization_score', 'pval', 'sender', 'receiver')
+cor_obj_sel$group <- 'oo'
+cor_obj_sel$id <- paste(cor_obj_sel$ligand, cor_obj_sel$receptor, cor_obj_sel$sender, cor_obj_sel$receiver, sep = '_')
+length(unique(cor_obj_sel$sender))
+length(unique(cor_obj_sel$receiver))
+intersect(unique(cor_obj_sel$sender), unique(cor_obj_sel$receiver))
 
-cor_all_list <- list(stroma_pre = cor_dpos_stroma_pre, stroma_post = cor_dpos_stroma_post, 
-                     tumor_pre = cor_dpos_tumor_pre, tumor_post = cor_dpos_tumor_post)
+colors_list <- as.list(viridis(length(unique(c(cor_obj_sel$sender, cor_obj_sel$receiver)))))
+names(colors_list) <- unique(c(cor_obj_sel$sender, cor_obj_sel$receiver))
 
-cor_all_df <- do.call(rbind, cor_all_list)
+kk <- make_circos_one_group_iga(cor_obj_sel, colors_list, colors_list)
+kk
 
-colors_list <- as.list(viridis(length(unique(c(cor_all_df$group_var1, cor_all_df$group_var2)))))
-names(colors_list) <- unique(c(cor_all_df$group_var1, cor_all_df$group_var2))
-colors_list$mhc <- '#ff0040'
+###########
+colors_sender <- colors_list
+colors_receiver <- colors_list
+
+prioritized_tbl_oi <- cor_obj_sel
+group_oi <- 'oo'
 
 
-lapply(1:length(cor_all_list), function(n){
-  cor_all <- cor_all_list[[n]]
-  
-  cor_all <- cor_all[cor_all$group_var1 == 'texh' | cor_all$group_var2 == 'texh', ]
-  
-  #hacking colnames for nichenetr
-  colnames(cor_all) <- c('ligand', 'receptor', 'prioritization_score', 'pval', 'sender', 'receiver', 'group')
-  cor_all$id <- paste(cor_all$ligand, cor_all$receptor, cor_all$sender, cor_all$receiver, sep = '_')
-  
-  cor_all$ligand <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_UP', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_UP', cor_all$ligand)
-  cor_all$ligand <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_DN', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_DN', cor_all$ligand)
-  cor_all$ligand <- gsub('CLASS_I_MHC_MEDIATED_ANTIGEN_PROCESSING_PRESENTATION', 'MHC_I_AG_PROCESSING_PRESENTATION', cor_all$ligand)
-  cor_all$ligand <- gsub('MHC_CLASS_II_ANTIGEN_PRESENTATION', 'MHC_CLASS_II_AG_PRESENTATION', cor_all$ligand)
-  
-  cor_all$receptor <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_UP', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_UP', cor_all$receptor)
-  cor_all$receptor <- gsub('CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_DN', 'CLASS_M1_VS_ALT_M2_MACROPHAGE_DN', cor_all$receptor)
-  cor_all$receptor <- gsub('CLASS_I_MHC_MEDIATED_ANTIGEN_PROCESSING_PRESENTATION', 'MHC_I_AG_PROCESSING_PRESENTATION', cor_all$receptor)
-  cor_all$receptor <- gsub('MHC_CLASS_II_ANTIGEN_PRESENTATION', 'MHC_CLASS_II_AG_PRESENTATION', cor_all$receptor)
-  
-  colors_sender <- colors_list[names(colors_list) %in% cor_all$sender]
-  colors_receiver <- colors_list[names(colors_list) %in% cor_all$receiver]
-  
-  pdf(file= file.path(output_dir,'circle', paste0('corr_', names(cor_all_list)[n], 'texh_half.pdf')))
-  make_circos_one_group_iga(cor_all, colors_sender, colors_receiver)
-  dev.off()
-  
-})
-
-###############################################################
-# from https://github.com/saeyslab/multinichenetr/blob/main/R/plotting.R
 make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_receiver){
   
   requireNamespace("dplyr")
@@ -920,6 +884,8 @@ make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_r
     receptor_color = circos_links %>% dplyr::distinct(receptor,color_receptor_type)
     grid_receptor_color = receptor_color$color_receptor_type %>% magrittr::set_names(receptor_color$receptor)
     grid_col =c(grid_ligand_color,grid_receptor_color)
+    names(grid_col) <- c(names(grid_ligand_color), names(grid_receptor_color))
+    grid_col <- grid_col[!duplicated(grid_col)]
     
     # Define order of the ligands and receptors and the gaps
     ligand_order = prioritized_tbl_oi$sender %>% unique() %>% sort() %>% lapply(function(sender_oi){
@@ -938,7 +904,6 @@ make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_r
     width_same_cell_same_receptor_type = 0.275
     
     sender_gaps = prioritized_tbl_oi$sender %>% unique() %>% sort() %>% lapply(function(sender_oi){
-      print(sender_oi)
       sector = rep(width_same_cell_same_ligand_type, times = (circos_links %>% dplyr::filter(sender == sender_oi) %>% dplyr::distinct(ligand) %>% nrow() -1))
       gap = width_different_cell
       return(c(sector,gap))
@@ -959,17 +924,20 @@ make_circos_one_group_iga = function(prioritized_tbl_oi, colors_sender, colors_r
     if(length(gaps) != length(union(circos_links$ligand, circos_links$receptor) %>% unique())){
       warning("Specified gaps have different length than combined total of ligands and receptors - This is probably due to duplicates in ligand-receptor names")
     }
-
+    
+    grid_col =c(grid_ligand_color,grid_receptor_color)
+    #grid_col <- grid_col[!duplicated(grid_col)]
+    
     
     links_circle$weight[links_circle$weight == 0] = 0.01
     circos.clear()
-    circos.par(gap.degree = gaps, canvas.xlim=c(-1.7, 1.7), canvas.ylim=c(-1.7,1.7))
+    circos.par(gap.degree = gaps)
     chordDiagram(links_circle,
                  directional = 0,
                  order=order,
                  link.sort = TRUE,
                  link.decreasing = TRUE,
-                 grid.col = unlist(grid_col),
+                 grid.col = grid_col,
                  # transparency = transparency,
                  diffHeight = 0.0075,
                  #direction.type = c("diffHeight", "arrows"),
