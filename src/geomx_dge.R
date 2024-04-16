@@ -367,20 +367,74 @@ geomx_obj <- readRDS(input_rds_path)
 
 
 
+# make DGE between selected ROI groups ------------------------------------
+
+# within slide analysis - with random slope in LLM
+# comparison between ++ (posCD8_posIBA1) and other groups
+
+# convert test variables to factors
+for(col in c(imp_vars, 'Sample')){
+  pData(geomx_obj)[[paste0(col, "_factor")]] <- factor(pData(geomx_obj)[[col]])
+}
+
+# convert normalized counts to log scale
+assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
+  assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
+
+# run LMM:
+# formula follows conventions defined by the lme4 package
+results <- c()
+for(segment in c("tumor", "stroma")){
+  # careful! this is from all table with umap made for all ROIs - should be change to avoid confusion
+  geomx_segment <- geomx_obj[, geomx_obj@phenoData@data$Segment == segment]
+  for(status in c("pre", "post")) {
+    ind <- geomx_segment@phenoData@data$`NACT status` == status
+
+    mixedOutmc <-
+      mixedModelDE(geomx_segment[, ind],
+                   elt = "log_q3_norm",
+                   modelFormula = ~ Annotation_cell_factor + (1 + Annotation_cell_factor | Sample_factor), # random slope
+                   groupVar = "Annotation_cell_factor",
+                   nCores = (parallel::detectCores() - 1),
+                   multiCore = FALSE)
+
+
+    # format results as data.frame
+    r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
+    tests <- rownames(r_test)
+    r_test <- as.data.frame(r_test)
+    r_test$Contrast <- tests
+
+    # use lapply in case you have multiple levels of your test factor to
+    # correctly associate gene name with it's row in the results table
+    r_test$Gene <-
+      unlist(lapply(colnames(mixedOutmc),
+                    rep, nrow(mixedOutmc["lsmeans", ][[1]])))
+    r_test$Subset <- status
+    r_test$Segment <- segment
+    r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
+    r_test <- r_test[, c("Gene", "Subset", "Segment",  "Contrast", "Estimate",
+                         "Pr(>|t|)", "FDR")]
+    results <- rbind(results, r_test)
+  }
+}
+
+fwrite(results, file.path(output_dir, 'dge/dge_annotation_cell_pre_post_separately.csv'))
+
+
 # enrichment on DGE -------------------------------------------------------
-
-
-dge_data_dir <- file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/old/")
+# TODO examine FDR calculation on the lvl of DGE
+dge_data_dir <- file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge")
 
 #list.files(dge_data_dir)
 
 #dge_df <- fread(file.path(dge_data_dir, "dge_annotation_cell_all.csv"))
-dge_df <- fread(file.path(dge_data_dir, "dge_annotation_cell_pre_post_separately.csv"))
+dge_df <- fread(file.path(dge_data_dir, "old",  "dge_annotation_cell_pre_post_separately.csv"))
 #dge_df <- fread(file.path(dge_data_dir, "dge_patient_pairs_doublepos.csv"))
 
 # select thr
 fc_thr <- 1
-pval_thr <- 0.1
+pval_thr <- 0.05
 # filter to post and significant
 
 dge_df_sig <- filter(dge_df, Subset == 'post' & FDR <= pval_thr & (Estimate >= fc_thr | Estimate <= -fc_thr))
@@ -412,7 +466,7 @@ msigdb_df <- msigdbr(species = "Homo sapiens")
 msigdb_df <- filter(msigdb_df, gs_cat %in% c("H", "C2", "C5") & !(gs_subcat %in% c("CGP", "GO:CC", "GO:MF", "HPO", "CP")))
 
 msigdb_list <- lapply(unique(msigdb_df$gs_name), function(x){
-  ls <- as.list(msigdb_df$gene_symbol[msigdb_df$gs_name == x])
+  ls <- msigdb_df$gene_symbol[msigdb_df$gs_name == x]
 })
 
 names(msigdb_list) <- unique(msigdb_df$gs_name)
@@ -454,40 +508,89 @@ msigdb_res <- data.frame(msigdb_res@result) %>%
 
 # GSEA with fgsea ---------------------------------------------------------
 
-dge_all_sub <- filter(dge_df, Subset == 'post' &
-                      Contrast == 'negCD8_negIBA1 - posCD8_posIBA1' &
-                      Segment == 'tumor')
+rank_type <- 'rank_fdr_fcval' # c('rank_p', 'rank_p_fcval', 'rank_fdr_fcval')
 
-dge_sub_rank <- sign(dge_all_sub$Estimate)*(-log10(dge_all_sub$`Pr(>|t|)`)) #TODO `Pr(>|t|)` or FDR?
-names(dge_sub_rank) <- dge_all_sub$Gene
-dge_sub_rank <- sort(dge_sub_rank, decreasing = T)
+gsea_all <- lapply(unique(dge_df$Contrast), function(contrast){
+  lapply(unique(dge_df$Segment), function(segment){
+    
+    dge_all_sub <- filter(dge_df, Subset == 'post' &
+                            Contrast == contrast &
+                            Segment == segment)
+    
+    # TODO why is it different than the one saved from DGE calculation??
+    dge_all_sub$FDR2 <- p.adjust(dge_all_sub$`Pr(>|t|)`, method = "fdr") 
+    
+     dge_all_sub$rank_p <- sign(dge_all_sub$Estimate)*(-log10(dge_all_sub$`Pr(>|t|)`))
+     dge_all_sub$rank_p_fcval <- dge_all_sub$Estimate*(-log10(dge_all_sub$`Pr(>|t|)`))
+     dge_all_sub$rank_fdr_fcval <- dge_all_sub$Estimate*(-log10(dge_all_sub$FDR2))
+    
+     # fdr rank alnone makes no sense - too many ties
+     # plot(dge_all_sub$rank_p, dge_all_sub$rank_fdr) #linear + plateau - may be used interchangeably
+     # plot(dge_all_sub$rank_p, dge_all_sub$rank_p_fcval) #linear + plateau - may be used interchangeably
+     # plot(dge_all_sub$rank_fdr, dge_all_sub$rank_fdr_fcval) # linear
+    
+     dge_sub_rank <- dge_all_sub[[rank_type]]
+     names(dge_sub_rank) <- dge_all_sub$Gene
+     dge_sub_rank <- sort(dge_sub_rank, decreasing = T)
+    
+     plot(dge_sub_rank)
+    
+     # fix infinite ranks if needed
+     # Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+     max_ranking <- max(dge_sub_rank[is.finite(dge_sub_rank)])
+     min_ranking <- min(dge_sub_rank[is.finite(dge_sub_rank)])
+     dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank > max_ranking, max_ranking * 10)
+     dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank < min_ranking, min_ranking * 10)
+     dge_sub_rank <- sort(dge_sub_rank, decreasing = TRUE) # sort genes by ranking
+    
+    
+     gsea_res <- fgsea(pathways = msigdb_list, # List of gene sets to check
+                       stats = dge_sub_rank,
+                       scoreType = 'std', # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
+                       minSize = 10,
+                      maxSize = 500,
+                       nproc = 18) # for parallelisation
+    
+    
+     gsea_res <- arrange(gsea_res, padj) %>%
+       filter(padj <= 0.01)
+    
+     # Select only independent pathways, removing redundancies/similar pathways
+     collapsedPathways <- collapsePathways(gsea_res, msigdb_list, dge_sub_rank)
+     mainPathways <- gsea_res[pathway %in% collapsedPathways$mainPathways][order(-NES), pathway]
+     gsea_res_main <- filter(gsea_res, pathway %in% mainPathways)
+    
+     gsea_res_main$Segment <- segment
+     gsea_res_main$Contrast <- contrast
 
-plot(dge_sub_rank)
+     # plotEnrichment(msigdb_list[[head(gsea_res[order(padj), ], 1)$pathway]],
+     #                dge_sub_rank) +
+     #   labs(title = head(gsea_res[order(padj), ], 1)$pathway)
 
-# fix infinite ranks if needed
-# Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
-max_ranking <- max(dge_sub_rank[is.finite(dge_sub_rank)])
-min_ranking <- min(dge_sub_rank[is.finite(dge_sub_rank)])
-dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank > max_ranking, max_ranking * 10)
-dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank < min_ranking, min_ranking * 10)
-dge_sub_rank <- sort(dge_sub_rank, decreasing = TRUE) # sort genes by ranking
-
-
-gsea_res <- fgsea(pathways = msigdb_list, # List of gene sets to check
-                 stats = dge_sub_rank,
-                 scoreType = 'std', # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
-                 minSize = 10,
-                 maxSize = 500,
-                 nproc = 18) # for parallelisation
+    print(paste(contrast, segment, 'pass'))
+    return(gsea_res_main)
+  })
+})
 
 
-gsea_res <- arrange(gsea_res, padj) %>%
-  filter(padj <= 0.01)
+gsea_all <- do.call(rbind, unlist(gsea_all, recursive=FALSE))
+
+fwrite(gsea_all, file.path(dge_data_dir, 'gsea', paste0('gsea_post_', rank_type, '.csv')))
 
 
-# Select only independent pathways, removing redundancies/similar pathways
-collapsedPathways <- collapsePathways(gsea_res, msigdb_list, dge_sub_rank)
-mainPathways <- GSEAres[pathway %in% collapsedPathways$mainPathways][order(-NES), pathway]
-#pdf(file = paste0('GSEA/Selected_pathways/', paste0(filename, background_genes, '_gsea_mainpathways.pdf')), width = 20, height = 15)
-plotGseaTable(bg_genes[mainPathways], rankings, GSEAres, gseaParam = 0.5)
-#dev.off()
+# inspect GSEA results ----------------------------------------------------
+
+gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_rank_p_fcval.csv"
+
+gsea_res <- fread(gsea_res_path)
+
+# filter only for doublepositive comparisons
+gsea_res <- gsea_res[grepl('posCD8_posIBA1', gsea_res$Contrast), ]
+gsea_up <- gsea_res[gsea_res$NES > 0, ]
+gsea_down <- gsea_res[gsea_res$NES < 0, ]
+
+length(unique(gsea_up$pathway))
+sort(table(gsea_up$pathway), decreasing = T)
+
+gsea_up_stroma <- gsea_up[gsea_up$Segment == 'stroma', ]
+gsea_up_tumor <- gsea_up[gsea_up$Segment == 'tumor', ]
