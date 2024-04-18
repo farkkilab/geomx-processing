@@ -59,8 +59,11 @@ geomx_obj@phenoData@data$PFS <- ifelse(geomx_obj@phenoData@data$Patient %in% c('
 # within slide analysis - with random slope in LLM
 # comparison between ++ (posCD8_posIBA1) and other groups
 
+pData(geomx_obj)$Annotation_cell_dual <- ifelse(pData(geomx_obj)$Annotation_cell == 'posCD8_posIBA1',
+                                                'posCD8_posIBA1', 'other_roi_type')
+
 # convert test variables to factors
-for(col in c(imp_vars, 'Sample')){
+for(col in c(imp_vars, 'Sample', 'Annotation_cell_dual')){
   pData(geomx_obj)[[paste0(col, "_factor")]] <- factor(pData(geomx_obj)[[col]])
 }
 
@@ -80,8 +83,8 @@ for(segment in c("tumor", "stroma")){
     mixedOutmc <-
       mixedModelDE(geomx_segment[, ind],
                    elt = "log_q3_norm",
-                   modelFormula = ~ Annotation_cell_factor + (1 + Annotation_cell_factor | Sample_factor), # random slope
-                   groupVar = "Annotation_cell_factor",
+                   modelFormula = ~ Annotation_cell_dual_factor + (1 + Annotation_cell_dual_factor | Sample_factor), # random slope
+                   groupVar = "Annotation_cell_dual_factor",
                    nCores = (parallel::detectCores() - 1),
                    multiCore = FALSE)
 
@@ -106,7 +109,7 @@ for(segment in c("tumor", "stroma")){
   }
 }
 
-fwrite(results, file.path(output_dir, 'dge/dge_annotation_cell_pre_post_separately.csv'))
+fwrite(results, file.path(output_dir, 'dge/dge_annotation_dual_cell_pre_post_separately.csv'))
 
 # # without differentiation to pre and post
 # 
@@ -431,11 +434,10 @@ fwrite(results_pfs_doublepos, '/media/iganiemi/T7-iga/st/geomx-processing/result
 
 dge_data_dir <- file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge")
 
-list.files(file.path(dge_data_dir, 'old'))
+list.files(file.path(dge_data_dir, 'dge'))
 
-dge_df <- fread(file.path(dge_data_dir, "old",  "dge_annotation_cell_pre_post_separately.csv"))
-#dge_df <- fread(file.path(dge_data_dir, "dge_patient_pairs_doublepos.csv"))
-dge_df <- fread(file.path(dge_data_dir, "old",  "dge_pfs_doublepos_updated.csv"))
+dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_annotation_dual_cell_pre_post_separately.csv"))
+dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_pfs_doublepos_updated.csv"))
 
 # select thr
 fc_thr <- 1
@@ -500,22 +502,11 @@ msigdb_res <- enricher(
 msigdb_res <- data.frame(msigdb_res@result) %>%
   filter(p.adjust <= pval_thr)
 
-
-# GO enrichment with topGO ------------------------------------------------
-
-
-# sampleGOdata <- new("topGOdata",
-#                     + description = "Simple session", ontology = "BP",
-#                     + allGenes = geneList, geneSel = topDiffGenes,
-#                     + nodeSize = 10,
-#                     + annot = annFUN.db, affyLib = affyLib)
-
-
 # GSEA with fgsea ---------------------------------------------------------
 
-rank_type <- 'rank_fdr_fcval' # c('rank_p', 'rank_p_fcval', 'rank_fdr_fcval')
+rank_type <- 'rank_p' # c('rank_p', 'rank_p_fcval', 'rank_fdr_fcval')
 
-#dge_df <- filter(dge_df, Subset == 'post') #for anno comparison
+dge_df <- filter(dge_df, Subset == 'post') #for anno comparison
 
 gsea_all <- lapply(unique(dge_df$Contrast), function(contrast){
   lapply(unique(dge_df$Segment), function(segment){
@@ -581,75 +572,45 @@ gsea_all <- lapply(unique(dge_df$Contrast), function(contrast){
 
 gsea_all <- do.call(rbind, unlist(gsea_all, recursive=FALSE))
 
-fwrite(gsea_all, file.path(dge_data_dir, 'gsea', paste0('gsea_post_pfi_', rank_type, '.csv')))
+fwrite(gsea_all, file.path(dge_data_dir, 'gsea', paste0('gsea_post_anno_dual_', rank_type, '.csv')))
 
 
 # inspect GSEA results ----------------------------------------------------
 
-gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_rank_fdr_fcval.csv"
+# doublepos vs others
+gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_anno_dual_rank_p_fcval.csv"
+
+# doublepos : pfi long vs short
+gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_pfi_rank_p_fcval.csv"
 
 gsea_res <- fread(gsea_res_path)
 
 # filter only for doublepositive comparisons
-gsea_res <- gsea_res[grepl('posCD8_posIBA1', gsea_res$Contrast), ]
+#gsea_res <- gsea_res[grepl('posCD8_posIBA1', gsea_res$Contrast), ]
 
-###
-gsea_up <- gsea_res[gsea_res$NES > 0, ] # downregulated in ++
-gsea_down <- gsea_res[gsea_res$NES < 0, ] # upregulated in ++
+# NES < 0 upregulated in ++
+# NES > 0 downregulated in ++
 
-length(unique(gsea_down$pathway))
-sort(table(gsea_down$pathway), decreasing = T)
+intersect(gsea_res$pathway[gsea_res$NES > 0], gsea_res$pathway[gsea_res$NES < 0])
 
-gsea_down_stroma <- gsea_down[gsea_down$Segment == 'stroma', ]
-gsea_down_tumor <- gsea_down[gsea_down$Segment == 'tumor', ]
+gsea_res <- gsea_res[gsea_res$NES > 0, ]
 
-length(unique(gsea_down_stroma$pathway))
-path_nr <- as.data.frame(sort(table(gsea_down_stroma$pathway), decreasing = T))
+length(unique(gsea_res$pathway))
 
-# analyse which pathways are upregulated in 3 and 2 
-sharing <- sapply(unique(gsea_down_stroma$pathway), function(x){
-  gsea_p <- gsea_down_stroma$Contrast[gsea_down_stroma$pathway == x]
-  
-  if(length(gsea_p) == 3){
-    y <- 'shared_3'
-  } else if(length(gsea_p) == 2){
-    if(!("negCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
-      y <- 'shared_2_no_doubleneg'
-    } else if(!("negCD8_posIBA1 - posCD8_posIBA1" %in% gsea_p)){
-      y <- 'shared_2_no_negpos'
-    } else if(!("posCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
-      y <- 'shared_2_no_negpos'
-    }
-  } else{
-    y <- paste0('shared_1_', gsea_p)
-  }
-})
+gsea_stroma <- gsea_res[gsea_res$Segment == 'stroma', ]
+gsea_tumor <- gsea_res[gsea_res$Segment == 'tumor', ]
 
-sharing_pathway <- data.frame(pathway = unique(gsea_down_stroma$pathway), sharing = sharing)
-
-#################################
-# for short-long PFI
-
-gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_pfi_rank_fdr_fcval.csv"
-
-gsea_res <- fread(gsea_res_path)
-
-gsea_down <- gsea_res[gsea_res$NES < 0, ] # upregulated in short
-gsea_down_stroma <- gsea_down[gsea_down$Segment == 'stroma', ]
-
-length(unique(gsea_down_stroma$pathway))
-
-gsea_down_stroma <- filter(gsea_down_stroma, NES <= -2)
-
-############################################################################
-###########################################################################
 # clustering based on jaccard idx - nr of common elements in a set / union of sets
 
-paths_genes_list <- lapply(gsea_down_stroma$leadingEdge, function(x){
+gsea_subset <- gsea_tumor
+
+length(unique(gsea_subset$pathway))
+
+paths_genes_list <- lapply(gsea_subset$leadingEdge, function(x){
   genelist <- unlist(strsplit(x, split='|', fixed=T))
 })
 
-names(paths_genes_list) <- gsea_down_stroma$pathway
+names(paths_genes_list) <- gsea_subset$pathway
 
 
 path_jaccard <- lapply(paths_genes_list, function(x){
@@ -661,11 +622,82 @@ path_jaccard <- lapply(paths_genes_list, function(x){
 
 path_jaccard_mtx <- do.call('cbind', path_jaccard)
 
-
-hist(path_jaccard_mtx, xlim = c(0, 0.5), breaks = 100)
-png('~/hmap_paths_cluster.png', width = 3500, height = 3500, pointsize = 8)
+hist(path_jaccard_mtx, breaks = 100)
 heatmap(path_jaccard_mtx)
-dev.off()
+
+# clustering with hclust
+path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
+plot(path_hclust, hang = -1, cex = 0.2)
+
+path_hclust_cut_1 <- cutree(path_hclust, h = 1)
+path_hclust_cut_12 <- cutree(path_hclust, h = 1.2)
+path_hclust_cut_15 <- cutree(path_hclust, h = 1.5)
+
+length(unique(unname(path_hclust_cut_1)))
+length(unique(unname(path_hclust_cut_12)))
+length(unique(unname(path_hclust_cut_15)))
+sort(table(path_hclust_cut_1), decreasing = T)
+
+path_hclust_cut_1[path_hclust_cut_1 == '5']
+
+# merge with gsea result
+if(identical(gsea_subset$pathway, names(path_hclust_cut_1))){
+  gsea_subset$path_cluster_cut_1 <- path_hclust_cut_1
+  gsea_subset$path_cluster_cut_12 <- path_hclust_cut_12
+  gsea_subset$path_cluster_cut_15 <- path_hclust_cut_15
+}
+
+fwrite(gsea_subset, file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/pos",
+                              "gsea_post_pfi_rank_p_fcval_clust_tumor.csv"))
+
+
+anno_stroma <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
+                               "gsea_post_anno_dual_rank_p_fcval_clust_stroma.csv"))
+
+anno_tumor <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
+                               "gsea_post_anno_dual_rank_p_fcval_clust_tumor.csv"))
+
+pfi_stroma <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
+                               "gsea_post_pfi_rank_p_fcval_clust_stroma.csv"))
+
+pfi_tumor <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
+                              "gsea_post_pfi_rank_p_fcval_clust_tumor.csv"))
+
+gsea_subset_clust <- anno_stroma
+
+gsea_subset_clust_neg <- gsea_subset_clust[gsea_subset_clust$NES < 0, ] # it's already splitted
+gsea_subset_clust_neg <- arrange(gsea_subset_clust_neg, NES)
+gsea_subset_clust_neg <- gsea_subset_clust_neg[grepl('GOBP', gsea_subset_clust_neg$pathway)] 
+#keep 1st pathway from cluster
+gsea_subset_clust_neg_1 <- gsea_subset_clust_neg[!(duplicated(gsea_subset_clust_neg$path_cluster_cut_1)), ]
+gsea_subset_clust_neg_12 <- gsea_subset_clust_neg[!(duplicated(gsea_subset_clust_neg$path_cluster_cut_12)), ]
+gsea_subset_clust_neg_15 <- gsea_subset_clust_neg[!(duplicated(gsea_subset_clust_neg$path_cluster_cut_15)), ]
+
+# path_nr <- as.data.frame(sort(table(gsea_down_stroma$pathway), decreasing = T))
+# 
+# # analyse which pathways are upregulated in 3 and 2 
+# sharing <- sapply(unique(gsea_down_stroma$pathway), function(x){
+#   gsea_p <- gsea_down_stroma$Contrast[gsea_down_stroma$pathway == x]
+#   
+#   if(length(gsea_p) == 3){
+#     y <- 'shared_3'
+#   } else if(length(gsea_p) == 2){
+#     if(!("negCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
+#       y <- 'shared_2_no_doubleneg'
+#     } else if(!("negCD8_posIBA1 - posCD8_posIBA1" %in% gsea_p)){
+#       y <- 'shared_2_no_negpos'
+#     } else if(!("posCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
+#       y <- 'shared_2_no_negpos'
+#     }
+#   } else{
+#     y <- paste0('shared_1_', gsea_p)
+#   }
+# })
+# 
+# sharing_pathway <- data.frame(pathway = unique(gsea_down_stroma$pathway), sharing = sharing)
+
+############################################################################
+###########################################################################
 
 
 # clustering with dbscan
@@ -680,22 +712,3 @@ dev.off()
 # cl1 <- names(path_clust[path_clust == 1])
 # cl2 <- names(path_clust[path_clust == 2])
 
-# clustering with hclust
-path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
-plot(path_hclust, hang = -1, cex = 0.2)
-
-path_hclust_cut_05 <- cutree(path_hclust, h = 0.5)
-
-length(unique(unname(path_hclust_cut_05)))
-sort(table(path_hclust_cut_05), decreasing = T)
-
-path_hclust_cut_05[path_hclust_cut_05 == '70']
-
-#############
-
-path_hclust_cut_1 <- cutree(path_hclust, h = 1)
-
-length(unique(unname(path_hclust_cut_1)))
-sort(table(path_hclust_cut_1), decreasing = T)
-
-path_hclust_cut_1[path_hclust_cut_1 == '153']
