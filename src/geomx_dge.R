@@ -580,6 +580,9 @@ fwrite(gsea_all, file.path(dge_data_dir, 'gsea', paste0('gsea_post_anno_dual_', 
 # doublepos vs others
 gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_anno_dual_rank_p_fcval.csv"
 
+# doublepos vs each other separately
+gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_anno_rank_p_fcval.csv"
+
 # doublepos : pfi long vs short
 gsea_res_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_post_pfi_rank_p_fcval.csv"
 
@@ -593,7 +596,8 @@ gsea_res <- fread(gsea_res_path)
 
 intersect(gsea_res$pathway[gsea_res$NES > 0], gsea_res$pathway[gsea_res$NES < 0])
 
-gsea_res <- gsea_res[gsea_res$NES > 0, ]
+# TODO change +/- here
+gsea_res <- gsea_res[gsea_res$NES < 0, ]
 
 length(unique(gsea_res$pathway))
 
@@ -602,6 +606,7 @@ gsea_tumor <- gsea_res[gsea_res$Segment == 'tumor', ]
 
 # clustering based on jaccard idx - nr of common elements in a set / union of sets
 
+# TODO change str/tum here
 gsea_subset <- gsea_tumor
 
 length(unique(gsea_subset$pathway))
@@ -638,7 +643,7 @@ length(unique(unname(path_hclust_cut_12)))
 length(unique(unname(path_hclust_cut_15)))
 sort(table(path_hclust_cut_1), decreasing = T)
 
-path_hclust_cut_1[path_hclust_cut_1 == '5']
+path_hclust_cut_1[path_hclust_cut_1 == '9']
 
 # merge with gsea result
 if(identical(gsea_subset$pathway, names(path_hclust_cut_1))){
@@ -647,15 +652,15 @@ if(identical(gsea_subset$pathway, names(path_hclust_cut_1))){
   gsea_subset$path_cluster_cut_15 <- path_hclust_cut_15
 }
 
-fwrite(gsea_subset, file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/pos",
-                              "gsea_post_pfi_rank_p_fcval_clust_tumor.csv"))
+fwrite(gsea_subset, file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
+                              "gsea_post_anno_rank_p_fcval_clust_tumor.csv"))
 
 
-anno_stroma <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
-                               "gsea_post_anno_dual_rank_p_fcval_clust_stroma.csv"))
+anno_stroma <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/pos",
+                               "gsea_post_anno_rank_p_fcval_clust_stroma.csv"))
 
-anno_tumor <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
-                               "gsea_post_anno_dual_rank_p_fcval_clust_tumor.csv"))
+anno_tumor <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/pos",
+                               "gsea_post_anno_rank_p_fcval_clust_tumor.csv"))
 
 pfi_stroma <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
                                "gsea_post_pfi_rank_p_fcval_clust_stroma.csv"))
@@ -663,38 +668,49 @@ pfi_stroma <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/result
 pfi_tumor <- fread(file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/neg",
                               "gsea_post_pfi_rank_p_fcval_clust_tumor.csv"))
 
-gsea_subset_clust <- anno_stroma
+gsea_subset_clust <- pfi_stroma
+gsea_subset_clust <- arrange(gsea_subset_clust, desc(NES))
+gsea_subset_clust <- arrange(gsea_subset_clust, NES)
 
-gsea_subset_clust_neg <- gsea_subset_clust[gsea_subset_clust$NES < 0, ] # it's already splitted
-gsea_subset_clust_neg <- arrange(gsea_subset_clust_neg, NES)
-gsea_subset_clust_neg <- gsea_subset_clust_neg[grepl('GOBP', gsea_subset_clust_neg$pathway)] 
+#gsea_subset_clust <- gsea_subset_clust[grepl('GOBP', gsea_subset_clust$pathway)] 
+
 #keep 1st pathway from cluster
-gsea_subset_clust_neg_1 <- gsea_subset_clust_neg[!(duplicated(gsea_subset_clust_neg$path_cluster_cut_1)), ]
-gsea_subset_clust_neg_12 <- gsea_subset_clust_neg[!(duplicated(gsea_subset_clust_neg$path_cluster_cut_12)), ]
-gsea_subset_clust_neg_15 <- gsea_subset_clust_neg[!(duplicated(gsea_subset_clust_neg$path_cluster_cut_15)), ]
+gsea_subset_clust_1 <- gsea_subset_clust[!(duplicated(gsea_subset_clust$path_cluster_cut_1)), ]
+gsea_subset_clust_12 <- gsea_subset_clust[!(duplicated(gsea_subset_clust$path_cluster_cut_12)), ]
+gsea_subset_clust_15 <- gsea_subset_clust[!(duplicated(gsea_subset_clust$path_cluster_cut_15)), ]
 
-# path_nr <- as.data.frame(sort(table(gsea_down_stroma$pathway), decreasing = T))
-# 
-# # analyse which pathways are upregulated in 3 and 2 
-# sharing <- sapply(unique(gsea_down_stroma$pathway), function(x){
-#   gsea_p <- gsea_down_stroma$Contrast[gsea_down_stroma$pathway == x]
-#   
-#   if(length(gsea_p) == 3){
-#     y <- 'shared_3'
-#   } else if(length(gsea_p) == 2){
-#     if(!("negCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
-#       y <- 'shared_2_no_doubleneg'
-#     } else if(!("negCD8_posIBA1 - posCD8_posIBA1" %in% gsea_p)){
-#       y <- 'shared_2_no_negpos'
-#     } else if(!("posCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
-#       y <- 'shared_2_no_negpos'
-#     }
-#   } else{
-#     y <- paste0('shared_1_', gsea_p)
-#   }
-# })
-# 
-# sharing_pathway <- data.frame(pathway = unique(gsea_down_stroma$pathway), sharing = sharing)
+
+# for ++ vs each other ROI type separately
+# analyse which pathways are upregulated in 3 and 2
+sharing <- stack(sapply(unique(gsea_subset_clust$pathway), function(x){
+  gsea_p <- gsea_subset_clust$Contrast[gsea_subset_clust$pathway == x]
+
+  if(length(gsea_p) == 3){
+    y <- 'shared_3'
+  } else if(length(gsea_p) == 2){
+    if(!("negCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
+      y <- 'shared_2_no_doubleneg'
+    } else if(!("negCD8_posIBA1 - posCD8_posIBA1" %in% gsea_p)){
+      y <- 'shared_2_no_negpos'
+    } else if(!("posCD8_negIBA1 - posCD8_posIBA1" %in% gsea_p)){
+      y <- 'shared_2_no_negpos'
+    }
+  } else{
+    y <- paste0('shared_1_', gsea_p)
+  }
+  return(y)
+}))
+
+gsea_subset_fin <- gsea_subset_clust_1[gsea_subset_clust_1$pathway %in% sharing$ind[sharing$values == 'shared_3'] &
+                                          grepl('posCD8_posIBA1', gsea_subset_clust_1$Contrast), ]
+
+gsea_subset_fin <- arrange(gsea_subset_fin, desc(NES))
+
+#TODO filter for 1st appearance on pathway - fir different comparison it may had different
+# leading edge genes and haven't been clustered before
+
+fwrite(gsea_subset_fin, file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/gsea/gsea_clust/fin",
+                                  "gsea_post_anno_rank_p_fcval_clust_tumor_pos_pospos_shared_fin.csv"))
 
 ############################################################################
 ###########################################################################
