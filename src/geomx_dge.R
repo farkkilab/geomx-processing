@@ -55,10 +55,6 @@ geomx_obj@phenoData@data$PFS <- ifelse(geomx_obj@phenoData@data$Patient %in% c('
                                               geomx_obj@phenoData@data$PFS))
 
 # make DGE between selected ROI groups ------------------------------------
-
-# within slide analysis - with random slope in LLM
-# comparison between ++ (posCD8_posIBA1) and other groups
-
 pData(geomx_obj)$Annotation_cell_dual <- ifelse(pData(geomx_obj)$Annotation_cell == 'posCD8_posIBA1',
                                                 'posCD8_posIBA1', 'other_roi_type')
 
@@ -71,6 +67,8 @@ for(col in c(imp_vars, 'Sample', 'Annotation_cell_dual')){
 assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
   assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
 
+# within slide analysis - with random slope in LLM
+# comparison between ++ (posCD8_posIBA1) and other groups
 # run LMM:
 # formula follows conventions defined by the lme4 package
 results <- c()
@@ -146,17 +144,9 @@ fwrite(results, file.path(output_dir, 'dge/dge_annotation_dual_cell_pre_post_sep
 # }
 # 
 # fwrite(results2, file.path(output_dir, 'dge/dge_annotation_cell_all.csv'))
-# 
-# 
-# #####################################
-# results_signif <- results[results$FDR <= 0.05, ]
-# results2_signif <- results2[results2$FDR <= 0.05, ]
-# 
-# fwrite(results_signif, file.path(output_dir, 'dge/dge_annotation_cell_pre_post_separately_signif.csv'))
-# fwrite(results2_signif, file.path(output_dir, 'dge/dge_annotation_cell_all_signif.csv'))
-# 
-# # TODO redo for 1group vs 3groups all together
-# 
+
+
+########################################
 # ######################################
 # # BETWEEN SLIDES COMPARISON
 # 
@@ -436,8 +426,12 @@ dge_data_dir <- file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/na
 
 list.files(file.path(dge_data_dir, 'dge'))
 
+# ROI type doublepos vs all other together pre post separately
 dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_annotation_dual_cell_pre_post_separately.csv"))
+# doublepost post short vs long pfi
 dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_pfs_doublepos_updated.csv"))
+# doublepos pre vs post
+dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_pre_post_doublepos.csv"))
 
 # select thr
 fc_thr <- 1
@@ -478,6 +472,7 @@ msigdb_list <- lapply(unique(msigdb_df$gs_name), function(x){
 
 names(msigdb_list) <- unique(msigdb_df$gs_name)
 
+#TODO add T-cell exhaustion pathway here and rerun for previous DGE 
 
 # ORA ---------------------------------------------------------------------
 
