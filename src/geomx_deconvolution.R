@@ -11,6 +11,7 @@ library(reshape2)
 library(Seurat)
 library(tibble)
 library(BayesPrism)
+library(biomaRt)
 
 # define variables --------------------------------------------------------
 
@@ -25,10 +26,10 @@ scrna_ref_path <- '/media/iganiemi/T7-iga/st/data/scrna/vaharautio_scrnaseq_data
 
 norm_type <- 'q3_norm'
 scrna_anno <- 'cell_type' # either 'cell_type' or 'mid_lvl_ct'
+ct_nr_thr <- 20 # best 20 or 45 to rmv cell states not abundant enough in scrnaseq
 
 # imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 # main_var <- "Annotation_cell" # legend in sankey, 
-# 
 # umap_vars <- c(imp_vars, "Patient", "Sample")
 
 # make dirs and source functions ------------------------------------------
@@ -40,10 +41,169 @@ dir.create(file.path(output_dir, 'bayes-prism'), showWarnings = T, recursive = T
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
-
-# read geomx object -------------------------------------------------------
+# prepare scrnaseq reference dataset --------------------------------------
 
 geomx_obj <- readRDS(input_rds_path)
+scrna_ref_obj <- readRDS(scrna_ref_path)
+
+###################################
+###################################
+# repair synonymuous gene names
+#TODO export to function
+length(rownames(geomx_obj@assayData$exprs))
+length(rownames(scrna_ref_obj@assays$RNA@data))
+length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
+
+geo_non_ex <- setdiff(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data))
+
+ensembl = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+geo_non_ex_syn <- getBM(attributes = c('external_gene_name', 'external_synonym'),
+                        filters = 'external_gene_name',
+                        values = geo_non_ex,
+                        mart = ensembl)
+
+
+geo_syn_in_scrna <- filter(geo_non_ex_syn, external_synonym %in% rownames(scrna_ref_obj@assays$RNA@data)) %>%
+  distinct(external_gene_name, .keep_all = T) # it'll remove a handful of weird genes with multiple synonyms simultaneously present in scrna, may be ignored
+
+common_genes <- sapply(rownames(scrna_ref_obj@assays$RNA@data), function(x){
+  if(x %in% geo_syn_in_scrna$external_synonym){
+    gname <- geo_syn_in_scrna$external_gene_name[geo_syn_in_scrna$external_synonym == x]
+  } else{
+    gname <- x
+  }
+  return(gname)
+})
+
+rownames(scrna_ref_obj@assays$RNA@data) <- common_genes
+
+# TODO now there are duplicated rownames in scrnaseq!
+
+length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
+
+###########################
+###########################
+
+scrna_ref_obj@meta.data$cell_type <- ifelse(scrna_ref_obj@meta.data$cell_type == 'Epithelial cells', 
+                                            'tumor', scrna_ref_obj@meta.data$cell_type)
+
+# cell states - clustering tumor cells by patient
+scrna_ref_obj@meta.data$cell_state <- ifelse(scrna_ref_obj@meta.data$cell_type == 'tumor', 
+                                             paste0('tumor_', scrna_ref_obj@meta.data$patient), 
+                                             scrna_ref_obj@meta.data$cell_type)
+
+
+# remove cells from cell states with < thr cells
+ct_freq <- as.data.frame(table(scrna_ref_obj@meta.data$cell_state))
+low_ct_cells <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$cell_state %in% 
+                                                    as.character(ct_freq$Var1[ct_freq$Freq < ct_nr_thr])]
+
+scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% low_ct_cells]
+
+#fix  mid-lvl-ct
+scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct == 'Plasma cells', 
+                                             'Bcells', scrna_ref_obj@meta.data$mid_lvl_ct)
+scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct == 'Classical monocytes', 
+                                             'Macrophages', scrna_ref_obj@meta.data$mid_lvl_ct)
+scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct == 'Epithelial cells', 
+                                             'tumor', scrna_ref_obj@meta.data$mid_lvl_ct)
+
+# TODO check if 'other' cells should be removed or not
+# mid_ct_other_cells <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$mid_lvl_ct == 'other']
+# scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% mid_ct_other_cells]
+
+########################################
+########################################
+# QC of cell states
+
+# TODO think of changing labels for mast cells, Th17, tumor_H103
+
+# plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
+#               input.labels=scrna_ref_obj@meta.data$cell_state,
+#               title="cell state correlation",
+#               #specify pdf.prefix if need to output to pdf
+#               #pdf.prefix="gbm.cor.cs",
+#               cexRow=0.6, cexCol=0.6,
+#               margins=c(6,6))
+# 
+# dev.off()
+# 
+# plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
+#               input.labels=scrna_ref_obj@meta.data$mid_lvl_ct,
+#               title="cell type correlation",
+#               #specify pdf.prefix if need to output to pdf
+#               #pdf.prefix="gbm.cor.ct",
+#               cexRow=0.5, cexCol=0.5,
+# )
+# 
+# dev.off()
+
+#################################
+#################################
+
+# check genes outliers
+# TODO important for BayesPrism, check how it affect SpatialDecon 
+
+scrna_stat <- plot.scRNA.outlier(
+  input=t(scrna_ref_obj@assays$RNA@data), #make sure the colnames are gene symbol or ENSMEBL ID
+  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting.
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+
+View(scrna_stat)
+# 
+# geomx_stat <- plot.bulk.outlier(
+#   bulk.input=geomx_raw,#make sure the colnames are gene symbol or ENSMEBL ID 
+#   sc.input=t(scrna_ref_obj@assays$RNA@data), #make sure the colnames are gene symbol or ENSMEBL ID 
+#   cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+#   species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+#   return.raw=TRUE
+#   #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+# )
+# 
+# View(geomx_stat)
+
+# filter out outlier genes
+scrna_filt <- cleanup.genes (input=scrna_raw,
+                             input.type="count.matrix",
+                             species="hs", 
+                             gene.group=c( "Rb","Mrp","other_Rb","chrM","MALAT1","chrX","chrY") ,
+                             exp.cells=5)
+dim(scrna_raw)
+dim(scrna_filt)
+
+# geomx doen't have to be filtered since later on they took only intersection of genes
+
+
+# check expr concordance for different gene types
+#plot.bulk.vs.sc (sc.input = scrna_filt, bulk.input = geomx_raw)
+
+# subset to protein coding genes
+scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
+
+# TODO takes > 64G of memory, have to be run on linux machine
+# subset to signature genes (differentially expressed trough cell types)
+# diff_exp_stat <- get.exp.stat(sc.dat=scrna_raw[,colSums(scrna_raw>0)>3],# filter genes to reduce memory use
+#                               cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+#                               cell.state.labels=scrna_ref_obj@meta.data$cell_state,
+#                               pseudo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+#                               cell.count.cutoff=20, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+#                               n.cores=8 #number of threads
+# )
+
+# scrna_filt_pc_sig <- select.marker (sc.dat=scrna_filt_pc,
+#                                          stat=diff_exp_stat,
+#                                          pval.max=0.01,
+#                                          lfc.min=0.1)
+
+# dim(scrna_filt_pc_sig)
+
+############################################################################
+############################################################################
+############################################################################
 
 
 # prepare data for SpatialDecon -------------------------------------------
@@ -158,6 +318,160 @@ saveRDS(res_ext, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
 res_custom <- pData(decon_res_custom)[, c(res_cols, "sigmas")]
 saveRDS(res_ext, file = file.path(output_dir, 'deconvolution', 'spatial_decon', scrna_anno, 
                                   'spat_dec_res_custom.rds'))
+
+###############################################################################
+###############################################################################
+# BayesPrism
+# deconvolution by bayesprism ---------------------------------------------
+# https://github.com/Danko-Lab/BayesPrism/blob/main/tutorial_deconvolution.html
+
+
+#########################################
+# transform mtx
+
+geomx_raw <- t(geomx_obj@assayData$exprs)
+scrna_raw <- t(scrna_ref_obj@assays$RNA@data)
+
+head(rownames(geomx_raw))
+
+head(colnames(geomx_raw))
+dim(geomx_raw)
+
+head(rownames(scrna_raw))
+head(colnames(scrna_raw))
+dim(scrna_raw)
+
+# fwrite(geomx_raw, file.path(output_dir, 'bayes-prism', 'geomx_raw.csv'))
+# fwrite(as.matrix(scrna_raw), file.path(output_dir, 'bayes-prism', 'scrna_raw.csv'))
+
+#TODO 700 genes from geomx not in scrna but they are synonyms - look for them and repair
+#colnames(geomx_raw)[which(!(colnames(geomx_raw) %in% colnames(scrna_raw)))]
+
+#########################################
+# QC of cell states
+
+#TODO think of changing labels for mast cells, Th17, tumor_H103
+
+plot.cor.phi (input=scrna_raw,
+              input.labels=scrna_ref_obj@meta.data$cell_state,
+              title="cell state correlation",
+              #specify pdf.prefix if need to output to pdf
+              #pdf.prefix="gbm.cor.cs",
+              cexRow=0.6, cexCol=0.6,
+              margins=c(6,6))
+
+dev.off()
+
+plot.cor.phi (input=scrna_raw,
+              input.labels=scrna_ref_obj@meta.data$cell_type,
+              title="cell type correlation",
+              #specify pdf.prefix if need to output to pdf
+              #pdf.prefix="gbm.cor.ct",
+              cexRow=0.5, cexCol=0.5,
+)
+
+dev.off()
+############################################
+# check genes outliers
+
+scrna_stat <- plot.scRNA.outlier(
+  input=scrna_raw, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+
+View(scrna_stat)
+
+geomx_stat <- plot.bulk.outlier(
+  bulk.input=geomx_raw,#make sure the colnames are gene symbol or ENSMEBL ID 
+  sc.input=scrna_raw, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+View(geomx_stat)
+
+# filter out outlier genes
+
+scrna_filt <- cleanup.genes (input=scrna_raw,
+                             input.type="count.matrix",
+                             species="hs", 
+                             gene.group=c( "Rb","Mrp","other_Rb","chrM","MALAT1","chrX","chrY") ,
+                             exp.cells=5)
+dim(scrna_raw)
+dim(scrna_filt)
+
+# geomx doen't have to be filtered since later on they took only intersection of genes
+
+
+# check expr concordance for different gene types
+plot.bulk.vs.sc (sc.input = scrna_filt, bulk.input = geomx_raw)
+
+# subset to protein coding genes
+scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
+
+# TODO takes > 64G of memory, have to be run on linux machine
+# subset to signature genes (differentially expressed trough cell types)
+# diff_exp_stat <- get.exp.stat(sc.dat=scrna_raw[,colSums(scrna_raw>0)>3],# filter genes to reduce memory use
+#                               cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+#                               cell.state.labels=scrna_ref_obj@meta.data$cell_state,
+#                               pseudo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+#                               cell.count.cutoff=20, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+#                               n.cores=8 #number of threads
+# )
+
+# scrna_filt_pc_sig <- select.marker (sc.dat=scrna_filt_pc,
+#                                          stat=diff_exp_stat,
+#                                          pval.max=0.01,
+#                                          lfc.min=0.1)
+
+# dim(scrna_filt_pc_sig)
+
+########################################
+# make a prism object
+
+prism_obj <- new.prism(
+  reference=scrna_filt_pc, 
+  mixture=geomx_raw,
+  input.type="count.matrix", 
+  cell.type.labels = scrna_ref_obj@meta.data$cell_type, 
+  cell.state.labels = scrna_ref_obj@meta.data$cell_state,
+  key="tumor",
+  outlier.cut=0.01,
+  outlier.fraction=0.1,
+)
+
+# run bayesprism
+bprism_res <- run.prism(prism = prism_obj, n.cores=12)
+
+# save res and explore
+saveRDS(bprism_res, file = file.path(output_dir, 'bayes-prism', 'bp_res_all_ct.RDS'))
+
+slotNames(bprism_res)
+
+mean_ct_frac <- get.fraction (bp=bprism_res,
+                              which.theta="final",
+                              state.or.type="type")
+
+# TODO mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bult, 0.5 for Visium, GeoMx should be in the middle)
+# histogram suggests 0.5 as thr
+ct_frac_cv <- bprism_res@posterior.theta_f@theta.cv
+
+# extract posterior mean of cell type-specific gene expression count matrix Z  
+# TODO normalise it!
+#Clustering bulk samples by theta or Z (Z can be normalized by vst(round(t(Z.tumor))), 
+# using the vst function from the DESeq2 package.)
+tumor_gene_exp <- get.exp (bp=bprism_res,
+                           state.or.type="type",
+                           cell.name="tumor")
+
+###############################################################################
+###############################################################################
+# messy code
 
 # visualise ---------------------------------------------------------------
 
@@ -368,174 +682,7 @@ high_gains <- fread(file.path(output_dir, 'prism','results', 'geomx_gains_mid_lv
 high_weights <- fread(file.path(output_dir, 'prism','results', 'geomx_weights_mid_lvl_ct.tsv'))
 
 
-# deconvolution by bayesprism ---------------------------------------------
-# https://github.com/Danko-Lab/BayesPrism/blob/main/tutorial_deconvolution.html
 
-geomx_obj <- readRDS(input_rds_path)
-scrna_ref_obj <- readRDS(scrna_ref_path)
-
-############################################
-# filter cell types and cell states
-
-scrna_ref_obj@meta.data$cell_type <- ifelse(scrna_ref_obj@meta.data$cell_type == 'Epithelial cells', 
-                                            'tumor', scrna_ref_obj@meta.data$cell_type)
-
-# cell states - clustering tumor cells by patient
-scrna_ref_obj@meta.data$cell_state <- ifelse(scrna_ref_obj@meta.data$cell_type == 'tumor', 
-                                             paste0('tumor_', scrna_ref_obj@meta.data$patient), 
-                                             scrna_ref_obj@meta.data$cell_type)
-
-
-# remove cells from cell states with <20 cells
-ct_freq <- as.data.frame(table(scrna_ref_obj@meta.data$cell_state))
-low_ct_cells <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$cell_state %in% 
-                                                    as.character(ct_freq$Var1[ct_freq$Freq < 20])]
-
-scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% low_ct_cells]
-
-
-#########################################
-# transform mtx
-
-geomx_raw <- t(geomx_obj@assayData$exprs)
-scrna_raw <- t(scrna_ref_obj@assays$RNA@data)
-
-head(rownames(geomx_raw))
-
-head(colnames(geomx_raw))
-dim(geomx_raw)
-
-head(rownames(scrna_raw))
-head(colnames(scrna_raw))
-dim(scrna_raw)
-
-# fwrite(geomx_raw, file.path(output_dir, 'bayes-prism', 'geomx_raw.csv'))
-# fwrite(as.matrix(scrna_raw), file.path(output_dir, 'bayes-prism', 'scrna_raw.csv'))
-
-#TODO 700 genes from geomx not in scrna but they are synonyms - look for them and repair
-#colnames(geomx_raw)[which(!(colnames(geomx_raw) %in% colnames(scrna_raw)))]
-
-#########################################
-# QC of cell states
-
-#TODO think of changing labels for mast cells, Th17, tumor_H103
-
-plot.cor.phi (input=scrna_raw,
-              input.labels=scrna_ref_obj@meta.data$cell_state,
-              title="cell state correlation",
-              #specify pdf.prefix if need to output to pdf
-              #pdf.prefix="gbm.cor.cs",
-              cexRow=0.6, cexCol=0.6,
-              margins=c(6,6))
-
-dev.off()
-
-plot.cor.phi (input=scrna_raw,
-              input.labels=scrna_ref_obj@meta.data$cell_type,
-              title="cell type correlation",
-              #specify pdf.prefix if need to output to pdf
-              #pdf.prefix="gbm.cor.ct",
-              cexRow=0.5, cexCol=0.5,
-)
-
-dev.off()
-############################################
-# check genes outliers
-
-scrna_stat <- plot.scRNA.outlier(
-  input=scrna_raw, #make sure the colnames are gene symbol or ENSMEBL ID 
-  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
-  return.raw=TRUE #return the data used for plotting. 
-  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
-)
-
-View(scrna_stat)
-
-geomx_stat <- plot.bulk.outlier(
-  bulk.input=geomx_raw,#make sure the colnames are gene symbol or ENSMEBL ID 
-  sc.input=scrna_raw, #make sure the colnames are gene symbol or ENSMEBL ID 
-  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
-  return.raw=TRUE
-  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
-)
-
-View(geomx_stat)
-
-# filter out outlier genes
-
-scrna_filt <- cleanup.genes (input=scrna_raw,
-                                  input.type="count.matrix",
-                                  species="hs", 
-                                  gene.group=c( "Rb","Mrp","other_Rb","chrM","MALAT1","chrX","chrY") ,
-                                  exp.cells=5)
-dim(scrna_raw)
-dim(scrna_filt)
-
-# geomx doen't have to be filtered since later on they took only intersection of genes
-
-
-# check expr concordance for different gene types
-plot.bulk.vs.sc (sc.input = scrna_filt, bulk.input = geomx_raw)
-
-# subset to protein coding genes
-scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
-
-# TODO takes > 64G of memory, have to be run on linux machine
-# subset to signature genes (differentially expressed trough cell types)
-# diff_exp_stat <- get.exp.stat(sc.dat=scrna_raw[,colSums(scrna_raw>0)>3],# filter genes to reduce memory use
-#                               cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-#                               cell.state.labels=scrna_ref_obj@meta.data$cell_state,
-#                               pseudo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
-#                               cell.count.cutoff=20, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
-#                               n.cores=8 #number of threads
-# )
-
-# scrna_filt_pc_sig <- select.marker (sc.dat=scrna_filt_pc,
-#                                          stat=diff_exp_stat,
-#                                          pval.max=0.01,
-#                                          lfc.min=0.1)
-
-# dim(scrna_filt_pc_sig)
-
-########################################
-# make a prism object
-
-prism_obj <- new.prism(
-  reference=scrna_filt_pc, 
-  mixture=geomx_raw,
-  input.type="count.matrix", 
-  cell.type.labels = scrna_ref_obj@meta.data$cell_type, 
-  cell.state.labels = scrna_ref_obj@meta.data$cell_state,
-  key="tumor",
-  outlier.cut=0.01,
-  outlier.fraction=0.1,
-)
-
-# run bayesprism
-bprism_res <- run.prism(prism = prism_obj, n.cores=12)
-
-# save res and explore
-saveRDS(bprism_res, file = file.path(output_dir, 'bayes-prism', 'bp_res_all_ct.RDS'))
-
-slotNames(bprism_res)
-
-mean_ct_frac <- get.fraction (bp=bprism_res,
-                              which.theta="final",
-                              state.or.type="type")
-
-# TODO mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bult, 0.5 for Visium, GeoMx should be in the middle)
-# histogram suggests 0.5 as thr
-ct_frac_cv <- bprism_res@posterior.theta_f@theta.cv
-
-# extract posterior mean of cell type-specific gene expression count matrix Z  
-# TODO normalise it!
-#Clustering bulk samples by theta or Z (Z can be normalized by vst(round(t(Z.tumor))), 
-# using the vst function from the DESeq2 package.)
-tumor_gene_exp <- get.exp (bp=bprism_res,
-                    state.or.type="type",
-                    cell.name="tumor")
 
 
 ##############################################################
