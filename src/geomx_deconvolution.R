@@ -22,10 +22,11 @@ input_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 output_rds_path <- file.path(output_dir, 'geomx_qc_norm_deconv.RDS')
 
 scrna_ref_path <- '/media/iganiemi/T7-iga/st/data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS'
+scrna_ref_cleaned_path <- file.path(output_dir,'deconvolution', 'scrna_ref_cleaned.RDS')
 #output_scrna_mtx_path <- file.path(output_dir, 'oc_scrna_ref_mtx_for_spatialdecon.RDS')
 
 norm_type <- 'q3_norm'
-scrna_anno <- 'cell_type' # either 'cell_type' or 'mid_lvl_ct'
+scrna_anno <- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 ct_nr_thr <- 20 # best 20 or 45 to rmv cell states not abundant enough in scrnaseq
 
 # imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
@@ -84,7 +85,7 @@ RNA_common_genes@data@Dimnames[[1]] <- common_genes
 scrna_ref_obj@assays$RNA_common_genes <- RNA_common_genes
 
 length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
-length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA_comm_genes@data)))
+length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA_common_genes@data)))
 
 ###########################
 ###########################
@@ -98,12 +99,7 @@ scrna_ref_obj@meta.data$cell_state <- ifelse(scrna_ref_obj@meta.data$cell_type =
                                              scrna_ref_obj@meta.data$cell_type)
 
 
-# remove cells from cell states with < thr cells
-ct_freq <- as.data.frame(table(scrna_ref_obj@meta.data$cell_state))
-low_ct_cells <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$cell_state %in% 
-                                                    as.character(ct_freq$Var1[ct_freq$Freq < ct_nr_thr])]
 
-scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% low_ct_cells]
 
 #fix  mid-lvl-ct
 scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct == 'Plasma cells', 
@@ -147,7 +143,7 @@ scrna_ref_obj@meta.data$mid_lvl_ct <- ifelse(scrna_ref_obj@meta.data$mid_lvl_ct 
 #################################
 
 # check genes outliers
-# TODO important for BayesPrism, check how it affect SpatialDecon 
+# TODO important for BayesPrism, check how it affects SpatialDecon 
 
 scrna_stat <- plot.scRNA.outlier(
   input=t(scrna_ref_obj@assays$RNA_common_genes@data), #make sure the colnames are gene symbol or ENSMEBL ID
@@ -191,6 +187,15 @@ geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% geomx_stat_to_rm),  ]
 # subset to protein coding genes
 scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
 
+#  make a new assay with filtered genes
+RNA_common_genes_filt_pc <- scrna_ref_obj@assays$RNA_common_genes
+RNA_common_genes_filt_pc@counts <- RNA_common_genes_filt_pc@counts[rownames(RNA_common_genes_filt_pc@counts) %in% colnames(scrna_filt_pc),  ]
+RNA_common_genes_filt_pc@data <- RNA_common_genes_filt_pc@data[rownames(RNA_common_genes_filt_pc@data) %in% colnames(scrna_filt_pc),  ]
+scrna_ref_obj@assays$RNA_common_genes_filt_pc <- RNA_common_genes_filt_pc
+
+# save adjusted scRNAseq file
+saveRDS(scrna_ref_obj, file = scrna_ref_cleaned_path)
+
 # TODO takes > 64G of memory, have to be run on linux machine
 # subset to signature genes (differentially expressed trough cell types)
 # diff_exp_stat <- get.exp.stat(sc.dat=scrna_raw[,colSums(scrna_raw>0)>3],# filter genes to reduce memory use
@@ -217,13 +222,23 @@ scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
 # deconvolution by bayesprism ---------------------------------------------
 # https://github.com/Danko-Lab/BayesPrism/blob/main/tutorial_deconvolution.html
 
-# make a prism object
+# load cleaned scrna and geomx
+geomx_obj <- readRDS(input_rds_path)
+scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
 
+# remove cells from cell states with < thr cells in ref scrnaseq
+ct_freq <- as.data.frame(table(scrna_ref_obj@meta.data$cell_state))
+low_ct_cells <- scrna_ref_obj@meta.data$cell_name[scrna_ref_obj@meta.data$cell_state %in% 
+                                                    as.character(ct_freq$Var1[ct_freq$Freq < ct_nr_thr])]
+
+scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% low_ct_cells]
+
+# make a prism object
 prism_obj <- new.prism(
-  reference=scrna_filt_pc, 
+  reference=t(scrna_ref_obj@assays$RNA_common_genes_filt_pc@data), 
   mixture=t(geomx_obj@assayData$exprs),
   input.type="count.matrix", 
-  cell.type.labels = scrna_ref_obj@meta.data$cell_type, 
+  cell.type.labels = scrna_ref_obj@meta.data[[scrna_anno]], 
   cell.state.labels = scrna_ref_obj@meta.data$cell_state,
   key="tumor",
   outlier.cut=0.01,
@@ -260,15 +275,48 @@ tumor_gene_exp <- get.exp (bp=bprism_res,
 
 ###############################################################################
 ###############################################################################
-
-
 ############################################################################
-############################################################################
-
-
 # prepare data for SpatialDecon -------------------------------------------
 # from
 # https://bioconductor.org/packages/release/bioc/vignettes/SpatialDecon/inst/doc/SpatialDecon_vignette_NSCLC.html
+
+#TODO check geomx_obj and geomx_obj_filtered 
+
+featureType(geomx_obj) <- "Target"
+
+sampleNames(geomx_obj) <- sData(geomx_obj)[['dcc_filename']]
+
+# prepare cell profile matrix from reference scRNAseq
+
+# format annotations
+scrna_anno_dt <- scrna_ref_obj@meta.data[, c('cell_name', scrna_anno)]
+rownames(scrna_anno_dt) <- NULL
+colnames(scrna_anno_dt) <- c('cell_name', 'cell_type')
+
+# TODO examine scalingFactor: 1 or 5 or what?
+custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$SCT@data,            # cell x gene count matrix
+                                       cellAnnots = scrna_anno_dt,  # cell annotations with cell type and cell name as columns
+                                       cellTypeCol = "cell_type",  # column containing cell type
+                                       cellNameCol = "cell_name",           # column containing cell ID/name
+                                       matrixName = "oc_scrnaseq_ref_cell_type_sct", # name of final profile matrix
+                                       outDir = output_dir,                    # path to desired output directory, set to NULL if matrix should not be written
+                                       normalize = FALSE,                # Should data be normalized?
+                                       minCellNum = 50,                   # minimum number of cells of one type needed to create profile, exclusive
+                                       minGenes = 10,                    # minimum number of genes expressed in a cell, exclusive
+                                       scalingFactor = 1,                # what should all values be multiplied by for final matrix
+                                       discardCellTypes = TRUE)          # should cell types be filtered for types like mitotic, doublet, low quality, unknown, etc.
+
+
+
+
+######################################################
+######################################################
+# all bells and whistles from the vignette
+# prepare data for SpatialDecon -------------------------------------------
+# from
+# https://bioconductor.org/packages/release/bioc/vignettes/SpatialDecon/inst/doc/SpatialDecon_vignette_NSCLC.html
+
+#TODO check geomx_obj and geomx_obj_filtered 
 
 featureType(geomx_obj) <- "Target"
 
