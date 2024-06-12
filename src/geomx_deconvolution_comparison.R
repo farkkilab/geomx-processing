@@ -283,7 +283,7 @@ deconv_long$deconv_type <- gsub('_.*', '', deconv_long$variable)
 ggplot(deconv_long, aes(x = deconv_type, y = value)) + 
   geom_boxplot(aes(fill = deconv_type), alpha = .2) +
   geom_line(aes(group = dcc_filename)) + 
-  geom_point(size = 2) + 
+  geom_point(size = 1) + 
   facet_wrap(~ cell_type)
 
 ggsave(file.path(output_dir, 'deconvolution', paste0('bp_sd_mid_lvl_ct_deconv_comparison_all.png')),,
@@ -297,7 +297,7 @@ sapply(c('tumor', 'stroma'), function(seg){
   ggplot(deconv_long[deconv_long$Segment == seg, ], aes(x = deconv_type, y = value)) +
     geom_boxplot(aes(fill = deconv_type), alpha = .2) +
     geom_line(aes(group = dcc_filename)) +
-    geom_point(size = 2) +
+    geom_point(size = 1) +
     facet_wrap(~ cell_type) +
     ggtitle(seg)
 
