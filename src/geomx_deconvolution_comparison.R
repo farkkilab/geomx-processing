@@ -14,6 +14,7 @@ library(BayesPrism)
 library(biomaRt)
 library(ComplexHeatmap)
 library(circlize)
+library(tidyverse)
 
 # define variables --------------------------------------------------------
 
@@ -91,7 +92,7 @@ if(ct_type == 'cell_type'){
                     'Tem/Trm cytotoxic T cells', 'Tcm/Naive helper T cells', 'Macrophages',
                     'Mast cells', 'Migratory DCs', 'Plasma cells', 'ILC', 'pDC',
                     'CD16+ NK cells', 'NK cells', 'Naive B cells', 'DC1', 'Classical monocytes')
-  if('Type 17 helper T cells' %in% colnames(ct_frac)){cells_immune <- c(cells_immune, 'Type 17 helper T cells')} #TODO check if this or bp
+  if('Type 17 helper T cells' %in% colnames(ct_frac)){cells_immune <- c(cells_immune, 'Type 17 helper T cells')}
   ct_frac$macro_mono <- ct_frac$Macrophages + ct_frac$`Classical monocytes`
   ct_frac$immune <- rowSums(ct_frac[, cells_immune])
   ct_frac$tot <- ct_frac$tumor + ct_frac$stroma + ct_frac$immune
@@ -249,7 +250,9 @@ sapply(c('stroma', 'tumor'), function(seg){
          width = 1500, height = 1000, unit = 'px')
 })
 
-##########
+#####################################################33
+#######################################################
+# this code is messy, should be adjusted to previous paths/variables
 # paired dotplot compare 2 deconvolution types
 bp_path <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2/deconvolution/bp/bp_res_mid_lvl_ct_45.RDS'
 sd_path <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2/deconvolution/sd/sd_res_mid_lvl_ct_45_filt_scrna_geomx.RDS'
@@ -310,7 +313,6 @@ sapply(c('tumor', 'stroma'), function(seg){
 ###########################################################################
 #############################################################################
 # adjust format from adjacent cycif cell counts
-#TODO make paired dotplot comparing bp and sd
 
 cycif_counts_path <- '/home/ad/P-drive/h345/afarkkilab/Data/9-EyeMT/Data_integration/Quantified_cells/cell_count_per_AOI.csv'
 
@@ -404,6 +406,51 @@ sapply(c('tumor', 'stroma'), function(seg){
   ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post_', seg, '.png')),,
          width = 1500, height = 1000, unit = 'px')
 })
+
+########################################
+########################################
+# calculate sum of tcells/macro per roi
+# if one segment have no cell counts at all - fraction from the other segment, if some counts - sum/2
+
+cycif_counts_roi <- cycif_counts %>%
+  group_by(Sample, Roi) %>%
+  summarise(frac_roi_tumor = ifelse(any(is.nan(frac_aoi_tumor)), frac_aoi_tumor[which(!is.na(frac_aoi_tumor))], sum(frac_aoi_tumor)/2),
+            frac_roi_cd8 = ifelse(any(is.nan(frac_aoi_cd8)), frac_aoi_cd8[which(!is.na(frac_aoi_cd8))], sum(frac_aoi_cd8)/2),
+            frac_roi_macro = ifelse(any(is.nan(frac_aoi_macro)), frac_aoi_macro[which(!is.na(frac_aoi_macro))], sum(frac_aoi_macro)/2),
+            deconv_roi_tumor = sum(deconv_tumor)/2, deconv_roi_cd8 = sum(deconv_cd8)/2, deconv_roi_macro = sum(deconv_macro)/2,
+            nseg = n()) %>%
+  filter(nseg == 2) %>% # remove rois where one segment was removed due to qc 
+  ungroup()
+
+# make it wide
+# make it long
+cycif_counts_roi <- as.data.table(cycif_counts_roi)
+
+cycif_counts_roi_long <- melt(cycif_counts_roi[, -c('nseg')], id.vars = c('Sample', 'Roi'))
+cycif_counts_roi_long$cell_type <- gsub('.*_', '', cycif_counts_roi_long$variable)
+cycif_counts_roi_long$count_type <- gsub('_.*', '', cycif_counts_roi_long$variable)
+cycif_counts_roi_long$sample_roi <- paste0(cycif_counts_roi_long$Sample, '_', cycif_counts_roi_long$Roi)
+
+# make a paired plot
+ggplot(cycif_counts_roi_long, aes(x = count_type, y = value)) + 
+  geom_boxplot(aes(fill = count_type), alpha = .2) +
+  geom_line(aes(group = sample_roi)) + 
+  geom_point(size = 2) + 
+  facet_wrap(~ cell_type)
+
+ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_all_per_roi.png')),,
+       width = 1500, height = 1000, unit = 'px')
+
+# only S084_post where are cells in both
+ggplot(cycif_counts_roi_long[cycif_counts_roi_long$Sample == 'S084_post', ], aes(x = count_type, y = value)) + 
+  geom_boxplot(aes(fill = count_type), alpha = .2) +
+  geom_line(aes(group = sample_roi)) + 
+  geom_point(size = 2) + 
+  facet_wrap(~ cell_type)
+
+ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post_per_roi.png')),,
+       width = 1500, height = 1000, unit = 'px')
+
 
 #############################################
 #############################################
