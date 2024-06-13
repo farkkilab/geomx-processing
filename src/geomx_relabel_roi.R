@@ -58,7 +58,7 @@ frac_sample_all <- lapply(unique(frac_mid$Sample), function(sample_name){
   frac_sample <- frac_mid[frac_mid$Sample == sample_name,]
   
   frac_sample_roi <- group_by(frac_sample, Roi) %>%
-    summarise(macro_sum = sum(Macrophages), cd8_sum = sum(Tcells), nseg = n()) %>%
+    summarise(macro_sum = sum(Macrophages)/2, cd8_sum = sum(Tcells)/2, nseg = n()) %>%
     filter(nseg == 2) # remove rois where one segment was removed due to qc 
   
   min_macro <- frac_sample_roi$Roi[which.min(frac_sample_roi$macro_sum)]
@@ -87,4 +87,4 @@ relabeled_rois <- frac_sample_all[frac_sample_all$Annotation_cell != frac_sample
 
 # save relabeled df
 
-fwrite(frac_sample_all, file.path(output_dir, 'deconvolution', 'mid_lvl_ct_relabeled_roi.csv'))
+fwrite(frac_sample_all, file.path(output_dir, 'deconvolution', 'bp_mid_lvl_ct_relabeled_roi.csv'))
