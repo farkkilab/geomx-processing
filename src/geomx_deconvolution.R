@@ -30,6 +30,7 @@ scrna_anno <- 'cell_type' # either 'cell_type' or 'mid_lvl_ct'
 # main_var <- "Annotation_cell" # legend in sankey, 
 # 
 # umap_vars <- c(imp_vars, "Patient", "Sample")
+#TODO kurwa, nie zapisal sie caly plik, trzeva od nowa wyczyscic caly run
 
 # make dirs and source functions ------------------------------------------
 
