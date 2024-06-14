@@ -406,6 +406,8 @@ saveRDS(res_ext, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
                                   'spat_dec_res_custom.rds'))
 
 
+##############################################################################3
+#################################################################################
 # messy code
 
 # visualise ---------------------------------------------------------------
@@ -617,68 +619,3 @@ high_gains <- fread(file.path(output_dir, 'prism','results', 'geomx_gains_mid_lv
 high_weights <- fread(file.path(output_dir, 'prism','results', 'geomx_weights_mid_lvl_ct.tsv'))
 
 
-
-
-
-##############################################################
-##############################################################
-##############################################################
-
-# compare with ROI type 
-
-ct_frac <- as.data.frame(mean_ct_frac)
-ct_frac$stroma <- ct_frac$Fibroblasts + ct_frac$`Endothelial cells`
-ct_frac$immune <- ct_frac$`Regulatory T cells` + ct_frac$`Memory B cells` + ct_frac$`CD16- NK cells` + 
-  ct_frac$`Tem/Trm cytotoxic T cells` + ct_frac$`Tcm/Naive helper T cells` + ct_frac$Macrophages + ct_frac$`Mast cells` +
-  ct_frac$`Migratory DCs` + ct_frac$`Plasma cells` + ct_frac$ILC + ct_frac$pDC + ct_frac$`Type 17 helper T cells` +
-  ct_frac$`CD16+ NK cells` + ct_frac$`NK cells` + ct_frac$`Naive B cells` + ct_frac$DC1 + ct_frac$`Classical monocytes`
-
-#ct_frac <- mutate(ct_frac, immune = rowSums(select(ct_frac, -tumor, -stroma, -Fibroblasts, -`Endothelial cells`)))
-ct_frac$tot <- ct_frac$tumor + ct_frac$stroma + ct_frac$immune
-
-ct_frac <- rownames_to_column(ct_frac, 'dcc_filename')
-ct_frac <- left_join(ct_frac, sData(geomx_obj)[, c('dcc_filename', 'Patient', 'Segment', 'Sample','Nuclei', 'NACT status', 'Annotation_cell')],
-                     by = 'dcc_filename')
-
-
-ggplot(data = ct_frac, aes(x = Segment, y = tumor)) +
-  geom_violin() 
-# geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
-#            size= 0.2, alpha = 0.6) 
-
-
-ggplot(data = ct_frac, aes(x = Segment, y = stroma)) +
-  geom_violin() 
-
-ggplot(data = ct_frac, aes(x = Segment, y = immune)) +
-  geom_violin() 
-
-
-ct_frac_stroma <- ct_frac[ct_frac$Segment == 'stroma', ]
-ct_frac_tumor <- ct_frac[ct_frac$Segment == 'tumor', ]
-
-ggplot(data = ct_frac_stroma, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, shape = Annotation_cell, color = Sample)) +
-  geom_point(alpha = 0.5, size = 2)
-
-ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_stroma.pdf')),
-       width = 1500, height = 2000, unit = 'px')
-
-ggplot(data = ct_frac_tumor, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, shape = Annotation_cell, color = Sample)) +
-  geom_point(alpha = 0.5, size = 2)
-
-ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_tumor.pdf')),
-       width = 1500, height = 2000, unit = 'px')
-
-###############
-
-ggplot(data = ct_frac_stroma, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, color = Annotation_cell)) +
-  geom_point(alpha = 0.5, size = 2)
-
-ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_stroma2.pdf')),
-       width = 1500, height = 2000, unit = 'px')
-
-ggplot(data = ct_frac_tumor, aes(x = Macrophages, y = `Tem/Trm cytotoxic T cells`, color = Annotation_cell)) +
-  geom_point(alpha = 0.5, size = 2)
-
-ggsave(file.path(output_dir, 'bayes-prism', paste0('macro_cd8_tumor2.pdf')),
-       width = 1500, height = 2000, unit = 'px')
