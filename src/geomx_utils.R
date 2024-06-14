@@ -351,3 +351,42 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
   plot(gsva_boxpl)
   ggsave(output_path, height = 2000, width = 3000, unit = 'px', device='pdf')
 }
+
+############################################
+#############################################
+# adjust gene names in external vector to geomx names using ensembl synonyms
+# input: 2 vectors with HGSC gene names. names in 2nd vector will be adjusted to the 1st one
+# returns 2nd vector with common genes names if possible
+# it doesnt have to be geomx, any vector is fine, but keep it to avoid confusion
+adjust_synonym_genes <- function(geomx_gene_names, gene_vector){
+  geo_non_ex <- setdiff(geomx_gene_names, gene_vector)
+  
+  if(length(gene_vector) > 0){
+    ensembl = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+    
+    geo_non_ex_syn <- getBM(attributes = c('external_gene_name', 'external_synonym'),
+                            filters = 'external_gene_name',
+                            values = geo_non_ex,
+                            mart = ensembl)
+    
+    
+    geo_syn_in_gene_vector <- filter(geo_non_ex_syn, external_synonym %in% gene_vector) %>%
+      distinct(external_gene_name, .keep_all = T) %>% # it'll remove a handful of weird genes with multiple synonyms simultaneously present in scrna, may be ignored
+      distinct(external_synonym, .keep_all = T)
+    
+    common_genes <- sapply(gene_vector, function(x){
+      if(x %in% geo_syn_in_gene_vector$external_synonym){
+        gname <- geo_syn_in_gene_vector$external_gene_name[geo_syn_in_gene_vector$external_synonym == x]
+      } else{
+        gname <- x
+      }
+      return(gname)
+    })
+    
+    stopifnot(length(common_genes) == length(gene_vector))
+    return(common_genes)
+  } else{
+    
+    return(gene_vector)
+  }
+}

@@ -50,38 +50,16 @@ scrna_ref_obj <- readRDS(scrna_ref_path)
 ###################################
 ###################################
 # repair synonymuous gene names
-#TODO export to function
 length(rownames(geomx_obj@assayData$exprs))
 length(rownames(scrna_ref_obj@assays$RNA@data))
 length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
 
-geo_non_ex <- setdiff(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data))
-
-ensembl = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
-
-geo_non_ex_syn <- getBM(attributes = c('external_gene_name', 'external_synonym'),
-                        filters = 'external_gene_name',
-                        values = geo_non_ex,
-                        mart = ensembl)
-
-
-geo_syn_in_scrna <- filter(geo_non_ex_syn, external_synonym %in% rownames(scrna_ref_obj@assays$RNA@data)) %>%
-  distinct(external_gene_name, .keep_all = T) %>% # it'll remove a handful of weird genes with multiple synonyms simultaneously present in scrna, may be ignored
-  distinct(external_synonym, .keep_all = T)
-
-common_genes <- sapply(rownames(scrna_ref_obj@assays$RNA@data), function(x){
-  if(x %in% geo_syn_in_scrna$external_synonym){
-    gname <- geo_syn_in_scrna$external_gene_name[geo_syn_in_scrna$external_synonym == x]
-  } else{
-    gname <- x
-  }
-  return(gname)
-})
+adjusted_genes_rna <- adjust_synonym_genes(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data))
 
 #  make a new assay with renamed genes
 RNA_common_genes <- scrna_ref_obj@assays$RNA
-RNA_common_genes@counts@Dimnames[[1]] <- common_genes
-RNA_common_genes@data@Dimnames[[1]] <- common_genes
+RNA_common_genes@counts@Dimnames[[1]] <- adjusted_genes_rna
+RNA_common_genes@data@Dimnames[[1]] <- adjusted_genes_rna
 scrna_ref_obj@assays$RNA_common_genes <- RNA_common_genes
 
 length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
