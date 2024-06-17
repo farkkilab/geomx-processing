@@ -370,7 +370,8 @@ adjust_synonym_genes <- function(geomx_gene_names, gene_vector){
                             mart = ensembl)
     
     
-    geo_syn_in_gene_vector <- filter(geo_non_ex_syn, external_synonym %in% geomx_gene_names) %>%
+    geo_syn_in_gene_vector <- filter(geo_non_ex_syn, external_synonym %in% geomx_gene_names & 
+                                       !(external_synonym %in% gene_vector)) %>%
       distinct(external_gene_name, .keep_all = T) %>% # it'll remove a handful of weird genes with multiple synonyms simultaneously present in scrna, may be ignored
       distinct(external_synonym, .keep_all = T)
     
