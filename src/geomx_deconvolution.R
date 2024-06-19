@@ -133,17 +133,6 @@ scrna_stat <- plot.scRNA.outlier(
 
 View(scrna_stat)
 
-geomx_stat <- plot.bulk.outlier(
-  bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
-  sc.input=t(scrna_ref_obj@assays$RNA_common_genes@data), #make sure the colnames are gene symbol or ENSMEBL ID
-  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
-  return.raw=TRUE
-  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
-)
-
-View(geomx_stat)
-
 # filter out outlier genes
 scrna_filt <- cleanup.genes (input=t(scrna_ref_obj@assays$RNA_common_genes@data),
                              input.type="count.matrix",
@@ -155,9 +144,6 @@ dim(t(scrna_ref_obj@assays$RNA_common_genes@data))
 dim(scrna_filt)
 
 # geomx doen't have to be filtered since later on they took only intersection of genes
-# TODO but maybe it should? check if it improves SpatialDecon
-geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
-geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% geomx_stat_to_rm),  ]
 
 # check expr concordance for different gene types
 #plot.bulk.vs.sc (sc.input = scrna_filt, bulk.input = geomx_raw)
@@ -224,32 +210,13 @@ prism_obj <- new.prism(
 )
 
 # run bayesprism
-bprism_res <- run.prism(prism = prism_obj, n.cores=12)
+bprism_res <- run.prism(prism = prism_obj, n.cores=18)
 
 # save res
 saveRDS(bprism_res, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
                                      paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '.RDS')))
 
-##########################
-###########################
-# exploration
-slotNames(bprism_res)
 
-mean_ct_frac <- get.fraction (bp=bprism_res,
-                              which.theta="final",
-                              state.or.type="type")
-
-# TODO mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bult, 0.5 for Visium, GeoMx should be in the middle)
-# histogram suggests 0.5 as thr
-ct_frac_cv <- bprism_res@posterior.theta_f@theta.cv
-
-# extract posterior mean of cell type-specific gene expression count matrix Z  
-# TODO normalise it!
-#Clustering bulk samples by theta or Z (Z can be normalized by vst(round(t(Z.tumor))), 
-# using the vst function from the DESeq2 package.)
-tumor_gene_exp <- get.exp (bp=bprism_res,
-                           state.or.type="type",
-                           cell.name="tumor")
 
 ###############################################################################
 ###############################################################################
@@ -258,11 +225,32 @@ tumor_gene_exp <- get.exp (bp=bprism_res,
 # from
 # https://bioconductor.org/packages/release/bioc/vignettes/SpatialDecon/inst/doc/SpatialDecon_vignette_NSCLC.html
 
-#TODO check geomx_obj and geomx_obj_filtered 
+# load cleaned scrna and geomx
+geomx_obj <- readRDS(input_rds_path)
+scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+
+# filter geomx object from low complexity genes
+geomx_stat <- plot.bulk.outlier(
+  bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
+  sc.input=t(scrna_ref_obj@assays$RNA_common_genes@data), #make sure the colnames are gene symbol or ENSMEBL ID
+  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+View(geomx_stat)
+
+# TODO but maybe it should? check if it improves SpatialDecon
+geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
+geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% geomx_stat_to_rm),  ]
+
 
 featureType(geomx_obj) <- "Target"
-
 sampleNames(geomx_obj) <- sData(geomx_obj)[['dcc_filename']]
+
+featureType(geomx_filtered) <- "Target"
+sampleNames(geomx_filtered) <- sData(geomx_filtered)[['dcc_filename']]
 
 # prepare cell profile matrix from reference scRNAseq
 
@@ -284,8 +272,23 @@ custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$SCT@data,     
                                        scalingFactor = 1,                # what should all values be multiplied by for final matrix
                                        discardCellTypes = TRUE)          # should cell types be filtered for types like mitotic, doublet, low quality, unknown, etc.
 
+# run extended SpatialDecon with custom oc mtx ----------------------------
+
+sd_res_custom <- runspatialdecon(object = geomx_obj,
+                                    norm_elt = norm_type,                # normalized data
+                                    raw_elt = "exprs",                      # expected background counts for every data point in norm
+                                    X = custom_oc_mtx,                            # safeTME matrix, used by default
+                                    #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
+                                    #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
+                                    n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
+
+saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_decon', paste0('sd_res_', scrna_anno, 
+                                  '_filt_geomx.rds')))
 
 
+######################################################################
+######################################################################
+# OLD CODE 
 
 ######################################################
 ######################################################
