@@ -359,9 +359,10 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
 # returns 2nd vector with common genes names if possible
 # it doesnt have to be geomx, any vector is fine, but keep it to avoid confusion
 adjust_synonym_genes <- function(geomx_gene_names, gene_vector){
+  gene_vector <- unlist(gene_vector)
   geo_non_ex <- setdiff(gene_vector, geomx_gene_names)
   
-  if(length(gene_vector) > 0){
+  if(length(geo_non_ex) > 0){
     ensembl = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
     
     geo_non_ex_syn <- getBM(attributes = c('external_gene_name', 'external_synonym'),
@@ -375,19 +376,22 @@ adjust_synonym_genes <- function(geomx_gene_names, gene_vector){
       distinct(external_gene_name, .keep_all = T) %>% # it'll remove a handful of weird genes with multiple synonyms simultaneously present in scrna, may be ignored
       distinct(external_synonym, .keep_all = T)
     
-    common_genes <- sapply(gene_vector, function(x){
-      if(x %in% geo_syn_in_gene_vector$external_gene_name){
-        gname <- geo_syn_in_gene_vector$external_synonym[geo_syn_in_gene_vector$external_gene_name == x]
-      } else{
-        gname <- x
-      }
-      return(gname)
-    })
-    
-    stopifnot(length(common_genes) == length(gene_vector))
-    return(common_genes)
+    if(nrow(geo_syn_in_gene_vector) > 0){
+      common_genes <- sapply(gene_vector, function(x){
+        if(x %in% geo_syn_in_gene_vector$external_gene_name){
+          gname <- geo_syn_in_gene_vector$external_synonym[geo_syn_in_gene_vector$external_gene_name == x]
+        } else{
+          gname <- x
+        }
+        return(gname)
+      })
+      
+      stopifnot(length(common_genes) == length(gene_vector))
+      return(common_genes)
+    } else{
+      return(gene_vector)
+    }
   } else{
-    
     return(gene_vector)
   }
 }
