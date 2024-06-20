@@ -2,12 +2,17 @@
 library(NanoStringNCTools)
 library(GeomxTools)
 library(GeoMxWorkflows)
-library(GeoDiff)
+library(GSVA)
 library(plyr)
 library(dplyr)
+library(data.table)
+library(biomaRt)
+library(DESeq2)
+library(msigdbr)
+#library(GeoDiff)
 library(ggplot2)
 library(ggforce)
-library(data.table)
+
 library(cowplot)
 library(preprocessCore)
 library(Biobase)
@@ -17,11 +22,8 @@ library(umap)
 library(Rtsne)
 
 library(clusterProfiler)
-library(msigdbr)
 library(progeny)
 library(reshape2)
-library(biomaRt)
-library(GSVA)
 library(ggpubr)
 
 
@@ -31,11 +33,16 @@ output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
 
 input_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 
+input_bp_deconv_path <- file.path(output_dir, 'deconvolution', 'bp', 'bp_res_mid_lvl_ct_45.RDS')
+deconv_type <- 'mid_lvl_ct' # either mid_lvl_ct or cell_type
+
+sig_path_macro <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_macro.csv'
+sig_path_tcell <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_tcells.csv'
+#sig_name <- 'additional_macro'
+
+######
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient')
-
-sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/texh_macro_mhc_ifng_myet_forpaper.csv'
-sig_name <- 'texh_macro_mhc_ifng_myet_forpaper'
 
 norm_type <- 'q3_norm' # either 'q3_norm' or 'quant_norm'
 
@@ -48,61 +55,125 @@ dir.create(file.path(output_dir, 'progeny'), showWarnings = T, recursive = T)
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
-
 # load geomx obj from rds -------------------------------------------------
 
 geomx_obj <- readRDS(input_rds_path)
 
-# GSVA and ssGSEA ---------------------------------------------------------
+
+# load deconvoluted signal for macrophages and tcells ---------------------
+
+if(deconv_type == 'mid_lvl_ct'){
+  macro_ct <- 'Macrophages'
+  cd8_ct <- 'Tcells'
+} else if(deconv_type == 'cell_type'){
+  macro_ct <- 'Macrophages' #TODO and 'Classical monocytes' ??
+  cd8_ct <- 'Tem/Trm cytotoxic T cells'
+}
+
+deconv_res <- readRDS(input_bp_deconv_path)
+
+deconv_tcell <- get.exp (bp=deconv_res,
+                       state.or.type="type",
+                       cell.name=cd8_ct)
+
+deconv_tcell <- varianceStabilizingTransformation(round(t(deconv_tcell))) # normalisation
+
+deconv_macro <- get.exp (bp=deconv_res,
+                       state.or.type="type",
+                       cell.name=macro_ct)
+
+deconv_macro <- varianceStabilizingTransformation(round(t(deconv_macro))) # normalisation
+
+
+# TODO mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bult, 0.5 for Visium, GeoMx should be in the middle)
+# histogram suggests 0.5 as thr
+# ct_frac_cv <- bprism_res@posterior.theta_f@theta.cv
+
+# GSVA and ssGSEA on macro + tcells pathways ------------------------------
+
+# TODO Correlating Z (after normalization using vst or from bp.res@reference.update@psi_mal) 
+# with theta to understand how gene expression of each gene (in malignant cells) 
+#correlates with the cell type fraction of non-malignant cells in tumor micro-environment, 
+# followed by gene set enrichment analysis (as done in BayesPrism paper).
+
+# TODO remove redundancy tcell macro
 
 # read selected pathways
-sig_list <- as.list(fread(sig_path))
-sig_list <- lapply(sig_list, function(l){l[l !=""]})
+sig_list_macro <- as.list(fread(sig_path_macro))
+sig_list_macro <- lapply(sig_list_macro, function(l){l[l !=""]})
+sig_list_macro <- lapply(sig_list_macro, function(x){
+  adjust_synonym_genes(rownames(geomx_obj), x)})
 
-# read expression mtx
-expr_mtx <- assayDataElement(geomx_obj, elt = norm_type)
+sig_list_tcell <- as.list(fread(sig_path_tcell))
+sig_list_tcell <- lapply(sig_list_tcell, function(l){l[l !=""]})
+sig_list_tcell <- lapply(sig_list_tcell, function(x){
+  adjust_synonym_genes(rownames(geomx_obj), x)})
 
 # do gsva on pathway lists
-gsva_sel_sig <- gsva(expr_mtx, sig_list, method = 'gsva', kcdf="Poisson", min.sz = 5)
+gsva_sig_macro <- gsva(gsvaParam(deconv_macro, sig_list_macro, kcdf="Gaussian", minSize = 5))
+gsva_sig_tcell <- gsva(gsvaParam(deconv_tcell, sig_list_tcell, kcdf="Gaussian", minSize = 5))
 
 # do ssgsea on pathway lists
 # ssgsea_sel_sig <- gsva(expr_mtx, sig_list, method = 'ssgsea', kcdf="Poisson", min.sz = 5)
 
 # adjust df
-gsva_sel_sig_long <- melt(gsva_sel_sig)
-colnames(gsva_sel_sig_long) <- c('pathway','dcc_filename', 'gsva_score')
-gsva_sel_sig_long <- left_join(gsva_sel_sig_long, pData(geomx_obj)[gsva_vars])
+gsva_sig_macro_long <- melt(gsva_sig_macro)
+colnames(gsva_sig_macro_long) <- c('pathway','dcc_filename', 'gsva_score')
+gsva_sig_macro_long <- left_join(gsva_sig_macro_long, pData(geomx_obj)[gsva_vars])
 
 
-fwrite(gsva_sel_sig_long, file.path(output_dir, 'gsva', paste0('gsva_', sig_name, '_neggeo_ntc.csv')))
+fwrite(gsva_sig_macro_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_macro_additional.csv')))
 
+gsva_sig_tcell_long <- melt(gsva_sig_tcell)
+colnames(gsva_sig_tcell_long) <- c('pathway','dcc_filename', 'gsva_score')
+gsva_sig_tcell_long <- left_join(gsva_sig_tcell_long, pData(geomx_obj)[gsva_vars])
+
+
+fwrite(gsva_sig_tcell_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_tcell_additional.csv')))
+
+# GSVA on all Hallmark + CP + Go:BP ---------------------------------------
 # do GSVA on all Hallmark + CP from msigDB
+# read expression mtx
+expr_mtx <- assayDataElement(geomx_obj, elt = norm_type)
+
 if(do_gsva_hal_cp){
   # all Hallmark + CP from msigDB
   msigdb_df <- msigdbr(species = "Homo sapiens")
-  msigdb_df <- filter(msigdb_df, gs_cat == 'H' | gs_subcat %in% c('CP:BIOCARTA', 'CP:KEGG', 'CP:REACTOME'))
+  msigdb_df <- filter(msigdb_df, gs_cat == 'H' | 
+                        gs_subcat %in% c('CP:BIOCARTA', 'CP:KEGG', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP'))
+  
+  msigdb_df$gene_symbol_adj <- adjust_synonym_genes(rownames(geomx_obj), msigdb_df$gene_symbol)
   
   hal_cp_list <- lapply(unique(msigdb_df$gs_name), function(x){
     gs <- filter(msigdb_df, gs_name == x)
-    gs_genes <- unique(gs$human_gene_symbol)
+    gs_genes <- unique(gs$gene_symbol_adj)
   })
   
   names(hal_cp_list) <- unique(msigdb_df$gs_name)
   
+  saveRDS(hal_cp_list, file.path(output_dir, 'gsva', 'hal_cp_adj_names.rds'))
+  
   # do gsva
-  gsva_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'gsva', kcdf="Poisson", min.sz = 5)
+  gsva_hal_cp_all <- gsva(gsvaParam(expr_mtx, hal_cp_list, kcdf="Gaussian", minSize = 5))
+  gsva_hal_cp_macro <- gsva(gsvaParam(deconv_macro, hal_cp_list, kcdf="Gaussian", minSize = 5))
+  gsva_hal_cp_tcell <- gsva(gsvaParam(deconv_tcell, hal_cp_list, kcdf="Gaussian", minSize = 5))
   
   # do ssgsea
   # ssgsea_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'ssgsea', kcdf="Poisson", min.sz = 5)
   
-  # adjust df
-  gsva_hal_cp_long <- melt(gsva_hal_cp)
-  colnames(gsva_hal_cp_long) <- c('pathway','dcc_filename', 'gsva_score')
-  gsva_hal_cp_long <- left_join(gsva_hal_cp_long, pData(geomx_obj)[gsva_vars])
+  gsva_list <- list('all' = gsva_hal_cp_all, 'deconv_macro' = gsva_hal_cp_macro, 
+                    'deconv_tcell' = gsva_hal_cp_tcell)
   
-  fwrite(gsva_hal_cp_long, file.path(output_dir, 'gsva', 'gsva_hal_cp_all.csv'))
-}
+  sapply(1:length(gsva_list), function(x){
+    # adjust df
+    gsva_hal_cp_long <- melt(gsva_list[x])
+    colnames(gsva_hal_cp_long) <- c('pathway','dcc_filename', 'gsva_score', 'expr_signal')
+    gsva_hal_cp_long <- left_join(gsva_hal_cp_long, pData(geomx_obj)[gsva_vars])
+    
+    fwrite(gsva_hal_cp_long, file.path(output_dir, 'gsva', paste0('gsva_hal_cp_', names(gsva_list)[x], '.csv')))
+  })
 
+}
 
 # VISUALISATION IN  GSVA_VISUALISATION.R  
 
