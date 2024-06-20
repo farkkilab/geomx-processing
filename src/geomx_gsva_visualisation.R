@@ -8,21 +8,40 @@ library(ComplexHeatmap)
 library(colorspace)
 
 #TODO adjust for PROGENY
+#TODO why boxplots are not fitting dotplots??
+#TODO rescale 0-1 and then log2fc ?
 
 output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
 
-gsva_name <- 'texh_macro_mhc_ifng_myet_forpaper' # or caf or 'texh_macro_mhc' , 'pycr1
+gsva_name <- 'deconv_macro_additional_mid_lvl_ct' # or caf or 'texh_macro_mhc' , 'pycr1
 gsva_path <- file.path(output_dir, 'gsva', paste0('gsva_', gsva_name, '.csv'))
 #gsva_path <- file.path(output_dir, 'progeny', paste0('progeny_perm.csv'))
+cell_anno <- 'geomx' # either 'geomx' or 'relab' for adjusted labels after deconvolution
+relab_cell_anno_path <- file.path(output_dir, 'deconvolution', 'bp_mid_lvl_ct_relabeled_roi.csv')
 
 outp2 <- ifelse(gsva_name == 'progeny', 'progeny', 'gsva')
+outp2 <- file.path(outp2, paste0(gsva_name, '_anno_', cell_anno))
+
+imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
+gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient')
+
+########################################
 
 source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 source('/media/iganiemi/T7-iga/st/st-processing/src/visium_utils.R') # move get treatment hmap to geomx_utils
 
+dir.create(file.path(output_dir, outp2), showWarnings = T, recursive = T)
 #######################################
 # load gsva dataframe
 gsva_df <- as.data.frame(fread(gsva_path))
+
+if(cell_anno == 'relab'){
+  # load adjusted annotations
+  relab_anno <- fread(relab_cell_anno_path)
+  gsva_df <- left_join(gsva_df, relab_anno[, c('dcc_filename', 'Annotation_cell_relabeled')])
+  gsva_df$Annotation_cell <- gsva_df$Annotation_cell_relabeled
+  gsva_df <- subset(gsva_df, select=-Annotation_cell_relabeled)
+}
 
 if(gsva_name == 'progeny'){
   gsva_df <- rename(gsva_df, pathway = progeny_path, gsva_score = progeny_score)
@@ -34,31 +53,31 @@ path_names <- unique(gsva_df$pathway)
 gsva_df_post <- filter(gsva_df, `NACT status` == 'post')
 
 # make it wide
-gsva_wide <- dcast(gsva_df, dcc_filename + Segment + Annotation_cell + `NACT status` + PFS ~ pathway,
+gsva_wide <- dcast(gsva_df, dcc_filename + Segment + Annotation_cell + Patient + `NACT status` + PFS ~ pathway,
                    value.var = 'gsva_score')
 
 #calculate z-score
 gsva_wide_zscore <- scale(gsva_wide[, path_names]) 
-gsva_wide_zscore <- cbind(gsva_wide[, c('dcc_filename', 'Segment', 'Annotation_cell', 'NACT status', 'PFS')], gsva_wide_zscore)
+gsva_wide_zscore <- cbind(gsva_wide[, gsva_vars], gsva_wide_zscore)
 
 
 ########################################
 # boxplots 
 
 pathway_boxplot(gsva_df, 'pathway', 'gsva_score', 'Annotation_cell', c('Segment'), 'gsva scores',
-                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_anno2.png')))
+                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_anno2.pdf')))
 
 pathway_boxplot(gsva_df, 'pathway', 'gsva_score', 'NACT status', c('Segment'), 'gsva scores',
-                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_nact_all2.png')))
+                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_nact_all2.pdf')))
 
 pathway_boxplot(gsva_df, 'pathway', 'gsva_score', 'NACT status', c('Annotation_cell', 'Segment'), 'gsva scores',
-                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_nact_peranno2.png')))
+                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_nact_peranno2.pdf')))
 
 pathway_boxplot(gsva_df_post, 'pathway', 'gsva_score', 'PFS', c('Segment'), 'gsva scores',
-                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_pfs_all2.png')))
+                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_pfs_all2.pdf')))
 
 pathway_boxplot(gsva_df_post, 'pathway', 'gsva_score', 'PFS', c('Annotation_cell', 'Segment'), 'gsva scores',
-                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_pfs_peranno2.png')))
+                file.path(output_dir, outp2, paste0('box_gsva_', gsva_name, '_pfs_peranno2.pdf')))
 
 
 #######################################
@@ -211,6 +230,7 @@ for(value_type in c('gsva', 'zscore')){
 
 
 for(var_name in c('NACT status', 'PFS')){
+  print(var_name)
   
   if(var_name == 'PFS'){
     gsva_fordot <- gsva_wide[gsva_wide$`NACT status` == 'post',]
@@ -264,42 +284,41 @@ for(var_name in c('NACT status', 'PFS')){
   
   stats_signif_df <- filter(stats_all_df, pval <= 0.05)
   
-  library(colorspace)
-  
-  plot <- ggplot(stats_signif_df, aes(x = anno, y = path)) +
-    geom_point(aes(color = mean_diff, size = pval_for_plot)) +
-    theme_classic() +
-    xlab(NULL) +
-    ylab(NULL) +
-    scale_size_area(
-      "pval",
-      trans = "log10",
-      #max_size = ifelse(length(stats_sign_zone_noinf) < 10, 2.5, 2),
-      max_size = 1,
-      breaks = c(1e-10, 1e-5, 1e-1, 0.05),
-      limits = c(1e-10, 0.05)
-    ) +
-    theme(
-      axis.text = element_text(size = rel(0.3)),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      strip.placement = "outside",
-      strip.background = element_blank(),
-      plot.title = element_text(size = 10, face = "bold"),
-      aspect.ratio = 1,
-      panel.border = element_rect(colour = "black", size = 1.5, fill = NA)
-    ) +
-    scale_color_continuous_divergingx(palette = 'RdBu', mid = 0, rev = T) + 
-    #scale_colour_brewer(palette = 'RdBu')
-    # scale_color_gradient2(low="blue", mid="white", high="red", 
-    #                       midpoint=0, limits=c(min(stats_sign_zone_df$log2fc, na.rm = T),
-    #                                            max(stats_sign_zone_df$log2fc, na.rm = T))) +
-    ggtitle(paste(unique(gsva_fordot[[var_name]])[1], 'vs', unique(gsva_fordot[[var_name]])[2])) +
-    facet_wrap(~segment, scales = "fixed", dir="h")
-  
-  
-  plot(plot)
-  ggsave(file.path(output_dir, outp2, paste0('dotplot_', var_name, '_meandiff_signif2.png')),
-         width=2000, height = 1000, unit='px')
-  
+  if(nrow(stats_signif_df) > 0){
+    plot <- ggplot(stats_signif_df, aes(x = anno, y = path)) +
+      geom_point(aes(color = mean_diff, size = pval_for_plot)) +
+      theme_classic() +
+      xlab(NULL) +
+      ylab(NULL) +
+      scale_size_area(
+        "pval",
+        trans = "log10",
+        #max_size = ifelse(length(stats_sign_zone_noinf) < 10, 2.5, 2),
+        max_size = 1,
+        breaks = c(1e-10, 1e-5, 1e-1, 0.05),
+        limits = c(1e-10, 0.05)
+      ) +
+      theme(
+        axis.text = element_text(size = rel(0.3)),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        plot.title = element_text(size = 10, face = "bold"),
+        aspect.ratio = 1,
+        panel.border = element_rect(colour = "black", size = 1.5, fill = NA)
+      ) +
+      scale_color_continuous_divergingx(palette = 'RdBu', mid = 0, rev = T) + 
+      #scale_colour_brewer(palette = 'RdBu')
+      # scale_color_gradient2(low="blue", mid="white", high="red", 
+      #                       midpoint=0, limits=c(min(stats_sign_zone_df$log2fc, na.rm = T),
+      #                                            max(stats_sign_zone_df$log2fc, na.rm = T))) +
+      ggtitle(paste(unique(gsva_fordot[[var_name]])[1], 'vs', unique(gsva_fordot[[var_name]])[2])) +
+      facet_wrap(~segment, scales = "fixed", dir="h")
+    
+    
+    plot(plot)
+    ggsave(file.path(output_dir, outp2, paste0('dotplot_', var_name, '_meandiff_signif2.png')),
+           width=2000, height = 1000, unit='px')
+  }
 }
 
