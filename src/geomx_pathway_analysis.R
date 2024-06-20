@@ -61,6 +61,7 @@ geomx_obj <- readRDS(input_rds_path)
 
 
 # load deconvoluted signal for macrophages and tcells ---------------------
+# TODO remove redundancy tcell macro
 
 if(deconv_type == 'mid_lvl_ct'){
   macro_ct <- 'Macrophages'
@@ -72,22 +73,31 @@ if(deconv_type == 'mid_lvl_ct'){
 
 deconv_res <- readRDS(input_bp_deconv_path)
 
+# extract coeff of variation per cell type
+# mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bulk, 0.5 for Visium, GeoMx should be in the middle)
+# histogram suggests 0.2 as thr
+cell_frac_cv <- as.data.frame(deconv_res@posterior.theta_f@theta.cv)
+
+hist(cell_frac_cv[[cd8_ct]], breaks = 1000)
+hist(cell_frac_cv[[macro_ct]], breaks = 1000)
+
+tcell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[cd8_ct]] > 0.2]
+macro_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[macro_ct]] > 0.2]
+
 deconv_tcell <- get.exp (bp=deconv_res,
                        state.or.type="type",
                        cell.name=cd8_ct)
 
+deconv_tcell <- deconv_tcell[!(rownames(deconv_tcell) %in% tcell_to_rm), ]
 deconv_tcell <- varianceStabilizingTransformation(round(t(deconv_tcell))) # normalisation
+
 
 deconv_macro <- get.exp (bp=deconv_res,
                        state.or.type="type",
                        cell.name=macro_ct)
 
+deconv_macro <- deconv_macro[!(rownames(deconv_macro) %in% macro_to_rm), ]
 deconv_macro <- varianceStabilizingTransformation(round(t(deconv_macro))) # normalisation
-
-
-# TODO mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bult, 0.5 for Visium, GeoMx should be in the middle)
-# histogram suggests 0.5 as thr
-# ct_frac_cv <- bprism_res@posterior.theta_f@theta.cv
 
 # GSVA and ssGSEA on macro + tcells pathways ------------------------------
 
@@ -95,8 +105,6 @@ deconv_macro <- varianceStabilizingTransformation(round(t(deconv_macro))) # norm
 # with theta to understand how gene expression of each gene (in malignant cells) 
 #correlates with the cell type fraction of non-malignant cells in tumor micro-environment, 
 # followed by gene set enrichment analysis (as done in BayesPrism paper).
-
-# TODO remove redundancy tcell macro
 
 # read selected pathways
 sig_list_macro <- as.list(fread(sig_path_macro))
@@ -120,15 +128,11 @@ gsva_sig_tcell <- gsva(gsvaParam(deconv_tcell, sig_list_tcell, kcdf="Gaussian", 
 gsva_sig_macro_long <- melt(gsva_sig_macro)
 colnames(gsva_sig_macro_long) <- c('pathway','dcc_filename', 'gsva_score')
 gsva_sig_macro_long <- left_join(gsva_sig_macro_long, pData(geomx_obj)[gsva_vars])
-
-
 fwrite(gsva_sig_macro_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_macro_additional.csv')))
 
 gsva_sig_tcell_long <- melt(gsva_sig_tcell)
 colnames(gsva_sig_tcell_long) <- c('pathway','dcc_filename', 'gsva_score')
 gsva_sig_tcell_long <- left_join(gsva_sig_tcell_long, pData(geomx_obj)[gsva_vars])
-
-
 fwrite(gsva_sig_tcell_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_tcell_additional.csv')))
 
 # GSVA on all Hallmark + CP + Go:BP ---------------------------------------
@@ -151,7 +155,7 @@ if(do_gsva_hal_cp){
   
   names(hal_cp_list) <- unique(msigdb_df$gs_name)
   
-  saveRDS(hal_cp_list, file.path(output_dir, 'gsva', 'hal_cp_adj_names.rds'))
+  #saveRDS(hal_cp_list, file.path(output_dir, 'gsva', 'hal_cp_adj_names.rds'))
   
   # do gsva
   gsva_hal_cp_all <- gsva(gsvaParam(expr_mtx, hal_cp_list, kcdf="Gaussian", minSize = 5))
@@ -160,7 +164,6 @@ if(do_gsva_hal_cp){
   
   # do ssgsea
   # ssgsea_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'ssgsea', kcdf="Poisson", min.sz = 5)
-  
   gsva_list <- list('all' = gsva_hal_cp_all, 'deconv_macro' = gsva_hal_cp_macro, 
                     'deconv_tcell' = gsva_hal_cp_tcell)
   
