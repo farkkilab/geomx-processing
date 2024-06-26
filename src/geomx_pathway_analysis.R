@@ -9,6 +9,7 @@ library(data.table)
 library(biomaRt)
 library(DESeq2)
 library(msigdbr)
+library(tibble)
 #library(GeoDiff)
 library(ggplot2)
 library(ggforce)
@@ -36,13 +37,15 @@ input_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 input_bp_deconv_path <- file.path(output_dir, 'deconvolution', 'bp', 'bp_res_mid_lvl_ct_45.RDS')
 deconv_type <- 'mid_lvl_ct' # either mid_lvl_ct or cell_type
 
+input_sd_deconv_path <- file.path(output_dir, 'deconvolution', 'sd', 'sd_res_mid_lvl_ct_nofilt.rds')
+
 sig_path_macro <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_macro.csv'
 sig_path_tcell <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_tcells.csv'
 #sig_name <- 'additional_macro'
 
 ######
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
-gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient')
+gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient') #TODO add 'Sample
 
 norm_type <- 'q3_norm' # either 'q3_norm' or 'quant_norm'
 
@@ -128,12 +131,12 @@ gsva_sig_tcell <- gsva(gsvaParam(deconv_tcell, sig_list_tcell, kcdf="Gaussian", 
 gsva_sig_macro_long <- melt(gsva_sig_macro)
 colnames(gsva_sig_macro_long) <- c('pathway','dcc_filename', 'gsva_score')
 gsva_sig_macro_long <- left_join(gsva_sig_macro_long, pData(geomx_obj)[gsva_vars])
-fwrite(gsva_sig_macro_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_macro_additional.csv')))
+fwrite(gsva_sig_macro_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_macro_additional_', deconv_type, '.csv')))
 
 gsva_sig_tcell_long <- melt(gsva_sig_tcell)
 colnames(gsva_sig_tcell_long) <- c('pathway','dcc_filename', 'gsva_score')
 gsva_sig_tcell_long <- left_join(gsva_sig_tcell_long, pData(geomx_obj)[gsva_vars])
-fwrite(gsva_sig_tcell_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_tcell_additional.csv')))
+fwrite(gsva_sig_tcell_long, file.path(output_dir, 'gsva', paste0('gsva_deconv_tcell_additional_', deconv_type, '.csv')))
 
 # GSVA on all Hallmark + CP + Go:BP ---------------------------------------
 # do GSVA on all Hallmark + CP from msigDB
@@ -164,8 +167,8 @@ if(do_gsva_hal_cp){
   
   # do ssgsea
   # ssgsea_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'ssgsea', kcdf="Poisson", min.sz = 5)
-  gsva_list <- list('all' = gsva_hal_cp_all, 'deconv_macro' = gsva_hal_cp_macro, 
-                    'deconv_tcell' = gsva_hal_cp_tcell)
+  gsva_list <- list('all' = gsva_hal_cp_all, paste0('deconv_macro_', deconv_type) = gsva_hal_cp_macro, 
+                    paste0('deconv_tcell_', deconv_type) = gsva_hal_cp_tcell)
   
   sapply(1:length(gsva_list), function(x){
     # adjust df
@@ -177,6 +180,87 @@ if(do_gsva_hal_cp){
   })
 
 }
+
+###################
+# do GSVA on macro + tcell list on the whole signal
+gsva_macro_tcell_all <- gsva(gsvaParam(expr_mtx, c(sig_list_macro, sig_list_tcell), kcdf="Gaussian", minSize = 5))
+
+gsva_macro_tcell_all_long <- melt(gsva_macro_tcell_all)
+colnames(gsva_macro_tcell_all_long) <- c('pathway','dcc_filename', 'gsva_score')
+gsva_macro_tcell_all_long <- left_join(gsva_macro_tcell_all_long, pData(geomx_obj)[gsva_vars])
+fwrite(gsva_macro_tcell_all_long, file.path(output_dir, 'gsva', 'gsva_macro_tcell_additional_all.csv'))
+
+###############################################################################
+###############################################################################
+# adjusting gsva scores from full signal for spatialdecon cell freq -------
+
+sd_deconv <- readRDS(input_sd_deconv_path)
+sd_deconv <- data.frame(pData(sd_deconv)[, 'prop_of_all'])
+sd_deconv <- dplyr::select(sd_deconv, -Mast.cells, -other)
+colnames(sd_deconv) <- paste0('deconv_', colnames(sd_deconv))
+deconv_names <- colnames(sd_deconv)
+sd_deconv <- tibble::rownames_to_column(sd_deconv, 'dcc_filename')
+
+gsva_all_long <- fread(file.path(output_dir, 'gsva', 'gsva_hal_cp_all.csv'))
+gsva_all_long <- left_join(gsva_all_long, sd_deconv)
+
+gsva_macro_tcell_all_long <- left_join(gsva_macro_tcell_all_long, sd_deconv)
+
+###############
+gsva_df <- gsva_all_long
+
+##############
+gsva_lm <- lapply(unique(as.vector(gsva_df$pathway)), function(path_name){
+  gsva_path <- gsva_df[gsva_df$pathway == path_name, ]
+  
+  lapply(deconv_names, function(ct){
+    
+    # fit lm with ct fraction as explanatory var
+    lm_res <- lm(gsva_score~get(ct),data=gsva_path)
+    lm_coef <- summary(lm_res)$coefficients[2]
+    lm_rsq <- summary(lm_res)$adj.r.squared
+    
+    gsva_lm_res <- list('pathway' = path_name, 'deconv_ct' = ct,
+                              lm_coef = lm_coef, lm_rsq = lm_rsq)
+    
+    # png(file = file.path(output_dir, 'gsva', 'adjust_sd', paste0('scatter_', path_name, '_', ct, '.png')))
+    # plot(gsva_path[[ct]], gsva_path$gsva_score, xlab = path_name, ylab = ct)
+    # abline(lm(gsva_score~get(ct),data=gsva_path),col='red') 
+    # dev.off()
+    
+    return(gsva_lm_res)
+  })
+})
+
+gsva_lm <- unlist(gsva_lm, recursive = F)
+gsva_lm_df <- rbindlist(gsva_lm, fill=TRUE)
+
+fwrite(gsva_lm_df, file.path(output_dir, 'gsva', 'gsva_hal_cp_sd_lm.csv'))
+
+
+###############
+# testing
+path_name <- unique(as.vector(gsva_df$pathway))[4]
+
+gsva_path <- gsva_df[gsva_df$pathway == path_name, ]
+
+plot(gsva_path$deconv_Macrophages, gsva_path$gsva_score,xlab = path_name)
+abline(lm(gsva_score~deconv_Macrophages,data=gsva_path),col='red') 
+lm_res <- lm(gsva_score~deconv_Macrophages,data=gsva_path)
+summary(lm_res)
+
+# adjusted for lin reg
+# y = a + xb
+# y = a // -xb
+lm_coef <- summary(lm_res)$coefficients[2]
+lm_rsq <- summary(lm_res)$adj.r.squared
+gsva_path$gsva_adj <- (gsva_path$gsva_score) - (gsva_path$deconv_Macrophages * 2.39702)
+gsva_path$macro_adj <- gsva_path$deconv_Macrophages
+
+plot(gsva_path$macro_adj, gsva_path$gsva_adj,xlab = path_name)
+abline(lm(gsva_adj~macro_adj,data=gsva_path),col='red') 
+lm_res <- lm(gsva_adj~macro_adj,data=gsva_path)
+summary(lm_res)
 
 # VISUALISATION IN  GSVA_VISUALISATION.R  
 

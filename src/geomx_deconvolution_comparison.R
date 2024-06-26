@@ -254,6 +254,7 @@ for(res_path in c(bp_res_files, sd_res_files)){
 #######################################################
 # this code is messy, should be adjusted to previous paths/variables
 # paired dotplot compare 2 deconvolution types
+
 bp_path <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2/deconvolution/bp/bp_res_mid_lvl_ct_45.RDS'
 sd_path <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2/deconvolution/sd/sd_res_mid_lvl_ct_nofilt.rds'
 
@@ -314,14 +315,26 @@ sapply(c('tumor', 'stroma'), function(seg){
 #############################################################################
 # adjust format from adjacent cycif cell counts
 
-cycif_counts_path <- '/home/ad/P-drive/h345/afarkkilab/Data/9-EyeMT/Data_integration/Quantified_cells/cell_count_per_AOI.csv'
+#cycif_counts_path <- '/home/ad/P-drive/h345/afarkkilab/Data/9-EyeMT/Data_integration/Quantified_cells/cell_count_per_AOI.csv'
+cycif_counts_path <- '/home/ad/P-drive/h345/afarkkilab/Data/9-EyeMT/Data_integration/Quantified_cells/ROIs/tribus/tribus_output/output_label_counts.csv'
 
 cycif_counts <- fread(cycif_counts_path)
 
+#change colnames and format cols
+colnames(cycif_counts) <- c("Sample", "Treatment", "Roi", "Instroma_Stroma", "Intumor_Tumor", 
+                            "Instroma_Macrophages", "Instroma_CD8Tcells", "Intumor_CD8Tcells",
+                            "Intumor_Macrophages",  "Intumor_undefined", "Instroma_undefined",
+                            "Global_undefined", "Global_other")
+
+cycif_counts[is.na(cycif_counts)] <- 0
+cycif_counts$Sample <- paste0(cycif_counts$Sample, '_', tolower(cycif_counts$Treatment))
+cycif_counts$Instroma_Tumor <- 0
+cycif_counts$Intumor_Stroma <- 0
+####
+
 cycif_counts <- cycif_counts %>%
   mutate(all_intumor_nr = rowSums(dplyr::select(., starts_with("Intumor")))) %>%
-  mutate(all_instroma_nr = rowSums(dplyr::select(., starts_with("Instroma")))) %>%
-  filter(Note != 'ROTATE')
+  mutate(all_instroma_nr = rowSums(dplyr::select(., starts_with("Instroma"))))
 
 roi_meta <- sData(readRDS(input_rds_path))[, c('dcc_filename', 'Sample', 'Segment', 'Roi')] %>%
   mutate(Roi = as.numeric(gsub('^0*', '', Roi)))
@@ -341,15 +354,18 @@ bp_mid_lvl_ct <- get.fraction (bp= readRDS('/media/iganiemi/T7-iga/st/geomx-proc
                                which.theta="final",
                                state.or.type="type")
 
-#colnames(bp_mid_lvl_ct) <- paste0('deconv_', colnames(bp_mid_lvl_ct))
-bp_mid_lvl_ct <- rownames_to_column(as.data.frame(bp_mid_lvl_ct), 'dcc_filename')
-bp_mid_lvl_ct <- bp_mid_lvl_ct[, c('dcc_filename', 'tumor', 'Tcells', 'Macrophages')]
-colnames(bp_mid_lvl_ct) <- c('dcc_filename', 'deconv_tumor', 'deconv_cd8', 'deconv_macro')
-# bp_cell_type <- get.fraction (bp= readRDS('/media/iganiemi/T7-iga/st/geomx-processing/results/nact2/deconvolution/bp/bp_res_cell_type_45.RDS'),
-#                                which.theta="final",
-#                                state.or.type="type")
+sd_path <- "/media/iganiemi/T7-iga/st/geomx-processing/results/nact2/deconvolution/sd/sd_res_mid_lvl_ct_nofilt.rds"
+sd_mid_lvl_ct <- pData(readRDS(sd_path))[, 'prop_of_all']
 
-cycif_counts <- left_join(cycif_counts, bp_mid_lvl_ct)
+
+deconv_mid_lvl_ct <- sd_mid_lvl_ct
+
+#colnames(bp_mid_lvl_ct) <- paste0('deconv_', colnames(bp_mid_lvl_ct))
+deconv_mid_lvl_ct <- rownames_to_column(as.data.frame(deconv_mid_lvl_ct), 'dcc_filename')
+deconv_mid_lvl_ct <- deconv_mid_lvl_ct[, c('dcc_filename', 'tumor', 'Tcells', 'Macrophages')]
+colnames(deconv_mid_lvl_ct) <- c('dcc_filename', 'deconv_tumor', 'deconv_cd8', 'deconv_macro')
+
+cycif_counts <- left_join(cycif_counts, deconv_mid_lvl_ct)
 
 # make it long
 cycif_counts_long <- cycif_counts[, c('dcc_filename', 'Sample', 'Roi', 'Segment', 'cells_nr_aoi',
@@ -370,15 +386,15 @@ ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_compari
        width = 1500, height = 1000, unit = 'px')
 
 # only S084_post where are cells in both
-ggplot(cycif_counts_long[cycif_counts_long$Sample == 'S084_post', ], aes(x = count_type, y = value)) + 
-  geom_boxplot(aes(fill = count_type), alpha = .2) +
-  geom_line(aes(group = dcc_filename)) + 
-  geom_point(size = 2) + 
-  facet_wrap(~ cell_type)+
-  ggtitle('S084_post')
-
-ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post.png')),,
-       width = 1500, height = 1000, unit = 'px')
+# ggplot(cycif_counts_long[cycif_counts_long$Sample == 'S084_post', ], aes(x = count_type, y = value)) + 
+#   geom_boxplot(aes(fill = count_type), alpha = .2) +
+#   geom_line(aes(group = dcc_filename)) + 
+#   geom_point(size = 2) + 
+#   facet_wrap(~ cell_type)+
+#   ggtitle('S084_post')
+# 
+# ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post.png')),,
+#        width = 1500, height = 1000, unit = 'px')
 
 #############################################
 #############################################
@@ -395,16 +411,16 @@ sapply(c('tumor', 'stroma'), function(seg){
          width = 1500, height = 1000, unit = 'px')
   
   # only S084_post where are cells in both
-  ggplot(cycif_counts_long[(cycif_counts_long$Sample == 'S084_post' & cycif_counts_long$Segment == seg), ], 
-         aes(x = count_type, y = value)) + 
-    geom_boxplot(aes(fill = count_type), alpha = .2) +
-    geom_line(aes(group = dcc_filename)) + 
-    geom_point(size = 2) + 
-    facet_wrap(~ cell_type)+
-    ggtitle(paste0(seg, 'S084_post'))
-  
-  ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post_', seg, '.png')),,
-         width = 1500, height = 1000, unit = 'px')
+  # ggplot(cycif_counts_long[(cycif_counts_long$Sample == 'S084_post' & cycif_counts_long$Segment == seg), ], 
+  #        aes(x = count_type, y = value)) + 
+  #   geom_boxplot(aes(fill = count_type), alpha = .2) +
+  #   geom_line(aes(group = dcc_filename)) + 
+  #   geom_point(size = 2) + 
+  #   facet_wrap(~ cell_type)+
+  #   ggtitle(paste0(seg, 'S084_post'))
+  # 
+  # ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post_', seg, '.png')),,
+  #        width = 1500, height = 1000, unit = 'px')
 })
 
 ########################################
@@ -414,7 +430,7 @@ sapply(c('tumor', 'stroma'), function(seg){
 
 cycif_counts_roi <- cycif_counts %>%
   group_by(Sample, Roi) %>%
-  summarise(frac_roi_tumor = ifelse(any(is.nan(frac_aoi_tumor)), frac_aoi_tumor[which(!is.na(frac_aoi_tumor))], sum(frac_aoi_tumor)/2),
+  dplyr::summarise(frac_roi_tumor = ifelse(any(is.nan(frac_aoi_tumor)), frac_aoi_tumor[which(!is.na(frac_aoi_tumor))], sum(frac_aoi_tumor)/2),
             frac_roi_cd8 = ifelse(any(is.nan(frac_aoi_cd8)), frac_aoi_cd8[which(!is.na(frac_aoi_cd8))], sum(frac_aoi_cd8)/2),
             frac_roi_macro = ifelse(any(is.nan(frac_aoi_macro)), frac_aoi_macro[which(!is.na(frac_aoi_macro))], sum(frac_aoi_macro)/2),
             deconv_roi_tumor = sum(deconv_tumor)/2, deconv_roi_cd8 = sum(deconv_cd8)/2, deconv_roi_macro = sum(deconv_macro)/2,
@@ -441,15 +457,15 @@ ggplot(cycif_counts_roi_long, aes(x = count_type, y = value)) +
 ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_all_per_roi.png')),,
        width = 1500, height = 1000, unit = 'px')
 
-# only S084_post where are cells in both
-ggplot(cycif_counts_roi_long[cycif_counts_roi_long$Sample == 'S084_post', ], aes(x = count_type, y = value)) + 
-  geom_boxplot(aes(fill = count_type), alpha = .2) +
-  geom_line(aes(group = sample_roi)) + 
-  geom_point(size = 2) + 
-  facet_wrap(~ cell_type)
-
-ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post_per_roi.png')),,
-       width = 1500, height = 1000, unit = 'px')
+# # only S084_post where are cells in both
+# ggplot(cycif_counts_roi_long[cycif_counts_roi_long$Sample == 'S084_post', ], aes(x = count_type, y = value)) + 
+#   geom_boxplot(aes(fill = count_type), alpha = .2) +
+#   geom_line(aes(group = sample_roi)) + 
+#   geom_point(size = 2) + 
+#   facet_wrap(~ cell_type)
+# 
+# ggsave(file.path(output_dir, 'deconvolution', paste0('cycif_count_deconv_comparison_S084_post_per_roi.png')),,
+#        width = 1500, height = 1000, unit = 'px')
 
 
 #############################################
