@@ -43,6 +43,8 @@ sig_path_macro <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/ad
 sig_path_tcell <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_tcells.csv'
 #sig_name <- 'additional_macro'
 
+hal_cp_selected_path <- file.path('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/hal_cp_immune_pathways_selected.csv')
+
 ######
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient') #TODO add 'Sample
@@ -206,8 +208,12 @@ gsva_all_long <- left_join(gsva_all_long, sd_deconv)
 
 gsva_macro_tcell_all_long <- left_join(gsva_macro_tcell_all_long, sd_deconv)
 
+hal_cp_selected <- fread(hal_cp_selected_path)
+
 ###############
 gsva_df <- gsva_all_long
+
+gsva_df <- filter(gsva_df, pathway %in% hal_cp_selected$pathway)
 
 ##############
 gsva_lm <- lapply(unique(as.vector(gsva_df$pathway)), function(path_name){
@@ -223,10 +229,10 @@ gsva_lm <- lapply(unique(as.vector(gsva_df$pathway)), function(path_name){
     gsva_lm_res <- list('pathway' = path_name, 'deconv_ct' = ct,
                               lm_coef = lm_coef, lm_rsq = lm_rsq)
     
-    # png(file = file.path(output_dir, 'gsva', 'adjust_sd', paste0('scatter_', path_name, '_', ct, '.png')))
-    # plot(gsva_path[[ct]], gsva_path$gsva_score, xlab = path_name, ylab = ct)
-    # abline(lm(gsva_score~get(ct),data=gsva_path),col='red') 
-    # dev.off()
+    png(file = file.path(output_dir, 'gsva', 'sd_lm_hal_cp_selected', paste0('scatter_', path_name, '_', ct, '.png')))
+    plot(gsva_path[[ct]], gsva_path$gsva_score, xlab = path_name, ylab = ct)
+    abline(lm(gsva_score~get(ct),data=gsva_path),col='red')
+    dev.off()
     
     return(gsva_lm_res)
   })
