@@ -66,7 +66,6 @@ if(cell_anno != 'geomx'){
 
 # run through each pathway type separately
 
-path_type <- 'il2'
 #
 for(path_type in unique(selected_sig$path_type)){
   dir.create(file.path(output_dir, outp2, path_type), showWarnings = T, recursive = T)

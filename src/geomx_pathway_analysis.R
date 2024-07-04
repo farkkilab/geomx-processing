@@ -69,6 +69,7 @@ expr_mtx <- assayDataElement(geomx_obj, elt = norm_type)
 
 # load deconvoluted signal for macrophages and tcells ---------------------
 # TODO remove redundancy tcell macro
+# TODO move theta cv and normalisation to deconvolution script
 
 if(deconv_type == 'mid_lvl_ct'){
   macro_ct <- 'Macrophages'
