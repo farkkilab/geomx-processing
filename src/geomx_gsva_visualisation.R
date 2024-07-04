@@ -14,15 +14,16 @@ output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
 
 gsva_res_paths <- list.files(file.path(output_dir, 'gsva'), pattern = 'csv')
 
-gsva_name <- 'deconv_macro_mid_lvl_ct_selected' 
+gsva_name <- 'all_selected_sd_lm_adjusted_macro_0.4' 
 # or 'deconv_tcell_mid_lvl_ct_selected', 'deconv_macro_mid_lvl_ct_selected',
 # 'all_selected', 
-# 'all_selected_sd_lm_adjusted_macro_0.4', all_selected_sd_lm_adjusted_macro_0.4',
+# 'all_selected_sd_lm_adjusted_tcell_0.4', all_selected_sd_lm_adjusted_macro_0.4',
 
 gsva_path <- file.path(output_dir, 'gsva', paste0('gsva_', gsva_name, '.csv'))
 #gsva_path <- file.path(output_dir, 'progeny', paste0('progeny_perm.csv'))
-cell_anno <- 'relab_bp' # either 'geomx' or 'relab' for adjusted labels after deconvolution
-relab_cell_anno_path <- file.path(output_dir, 'deconvolution', 'bp_mid_lvl_ct_relabeled_roi.csv')
+cell_anno <- 'relab_sd' # either 'geomx' or 'relab_bp' or 'relab_sd' for adjusted labels after deconvolution
+relab_bp_path <- file.path(output_dir, 'deconvolution', 'bp_mid_lvl_ct_relabeled_roi.csv')
+relab_sd_path <- file.path(output_dir, 'deconvolution', 'sd_mid_lvl_ct_relabeled_roi.csv')
 # TODO make relab based on sd
 
 #outp2 <- ifelse(gsva_name == 'progeny', 'progeny', 'gsva')
@@ -31,7 +32,7 @@ outp2 <- file.path('gsva', paste0(gsva_name, '_anno_', cell_anno))
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient')
 
-selected_sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/immune_signatures_selected_names.csv'
+selected_sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/immune_signatures_selected_forpaper_names.csv'
 
 ########################################
 
@@ -49,7 +50,11 @@ gsva_df_allpaths <- as.data.frame(fread(gsva_path))
 
 if(cell_anno != 'geomx'){
   # load adjusted annotations
-  relab_anno <- fread(relab_cell_anno_path)
+  if(cell_anno == 'relab_bp'){
+    relab_anno <- fread(relab_bp_path)
+  } else if(cell_anno == 'relab_sd'){
+    relab_anno <- fread(relab_sd_path)
+  }
   gsva_df_allpaths <- left_join(gsva_df_allpaths, relab_anno[, c('dcc_filename', 'Annotation_cell_relabeled')])
   gsva_df_allpaths$Annotation_cell <- gsva_df_allpaths$Annotation_cell_relabeled
   gsva_df_allpaths <- subset(gsva_df_allpaths, select=-Annotation_cell_relabeled)
@@ -61,7 +66,8 @@ if(cell_anno != 'geomx'){
 
 # run through each pathway type separately
 
-#path_type <- 'il2
+path_type <- 'il2'
+#
 for(path_type in unique(selected_sig$path_type)){
   dir.create(file.path(output_dir, outp2, path_type), showWarnings = T, recursive = T)
   
@@ -92,20 +98,20 @@ for(path_type in unique(selected_sig$path_type)){
   
   pathway_boxplot(gsva_df, 'pathway', 'gsva_score', 'Annotation_cell', c('Segment'), 'gsva scores',
                   file.path(output_dir, outp2, path_type, paste0('box_gsva_', gsva_name, '_anno2.pdf')))
-  
+
   pathway_boxplot(gsva_df, 'pathway', 'gsva_score', 'NACT status', c('Segment'), 'gsva scores',
                   file.path(output_dir, outp2, path_type, paste0('box_gsva_', gsva_name, '_nact_all2.pdf')))
-  
+
   pathway_boxplot(gsva_df, 'pathway', 'gsva_score', 'NACT status', c('Annotation_cell', 'Segment'), 'gsva scores',
                   file.path(output_dir, outp2, path_type, paste0('box_gsva_', gsva_name, '_nact_peranno2.pdf')))
-  
+
   pathway_boxplot(gsva_df_post, 'pathway', 'gsva_score', 'PFS', c('Segment'), 'gsva scores',
                   file.path(output_dir, outp2, path_type, paste0('box_gsva_', gsva_name, '_pfs_all2.pdf')))
-  
+
   pathway_boxplot(gsva_df_post, 'pathway', 'gsva_score', 'PFS', c('Annotation_cell', 'Segment'), 'gsva scores',
                   file.path(output_dir, outp2, path_type, paste0('box_gsva_', gsva_name, '_pfs_peranno2.pdf')))
-  
-  
+
+
   #######################################
   # pairwise t-test, log2fc (doublepos vs doubleneg)
   
@@ -326,7 +332,8 @@ for(path_type in unique(selected_sig$path_type)){
         ) +
         theme(
           axis.text = element_text(size = rel(0.3)),
-          axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+          axis.text.y = element_text(size = 6),
           strip.placement = "outside",
           strip.background = element_blank(),
           plot.title = element_text(size = 10, face = "bold"),
@@ -341,7 +348,7 @@ for(path_type in unique(selected_sig$path_type)){
         ggtitle(paste(unique(gsva_fordot[[var_name]])[1], 'vs', unique(gsva_fordot[[var_name]])[2])) +
         facet_wrap(~segment, scales = "fixed", dir="h")
       
-      pdf(file= file.path(output_dir, outp2, path_type, paste0('dotplot_', var_name, '_meandiff_signif2.png')),
+      pdf(file= file.path(output_dir, outp2, path_type, paste0('dotplot_', var_name, '_meandiff_signif2.pdf')),
                           width=8, height=5)
       plot(plot)
       # ggsave(file.path(output_dir, outp2, path_type, paste0('dotplot_', var_name, '_meandiff_signif2.png')),
