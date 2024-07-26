@@ -1,6 +1,7 @@
 library(NanoStringNCTools)
 library(GeomxTools)
 library(GeoMxWorkflows)
+library(ComplexHeatmap)
 library(GSVA)
 library(plyr)
 library(dplyr)
@@ -92,83 +93,125 @@ sapply(1:length(gsva_type_list), function(x){
       gsva_name <- names(gsva_list)[x]
       print(gsva_name)
       
-      # make scatterplot with lm 
+      paths_to_corr <- c('DEG_NECTIN2_POS_05FC', 'DEG_TIGIT_POS_05FC', 
+                         'DEG_CD96_POS_05FC', 'DEG_CD226_POS_05FC')
+      
+      gsva_paths <- gsva_inp[gsva_inp$pathway %in% paths_to_corr]
+      gsva_paths <- dcast(gsva_paths, dcc_filename ~ pathway, value.var = 'gsva_score')
+      
+      print(paste('NECTIN-TIGIT', 'cor:',
+                   cor.test(gsva_paths$DEG_NECTIN2_POS_05FC, 
+                            gsva_paths$DEG_TIGIT_POS_05FC, method = 'pearson')$estimate,
+                   'pval:',
+            cor.test(gsva_paths$DEG_NECTIN2_POS_05FC, 
+                     gsva_paths$DEG_TIGIT_POS_05FC, method = 'pearson')$p.value))
+    
+      print(paste('NECTIN-CD96 ', 'cor:',
+                   cor.test(gsva_paths$DEG_NECTIN2_POS_05FC, 
+                            gsva_paths$DEG_CD96_POS_05FC, method = 'pearson')$estimate,
+                  'pval:',
+            cor.test(gsva_paths$DEG_NECTIN2_POS_05FC, 
+                     gsva_paths$DEG_CD96_POS_05FC, method = 'pearson')$p.value))
+      
+      print(paste('NECTIN-CD226 ', 'cor:',
+                   cor.test(gsva_paths$DEG_NECTIN2_POS_05FC, 
+                            gsva_paths$DEG_CD226_POS_05FC, method = 'pearson')$estimate,
+                  'pval:',
+            cor.test(gsva_paths$DEG_NECTIN2_POS_05FC, 
+                     gsva_paths$DEG_CD226_POS_05FC, method = 'pearson')$p.value))
+      
+      # make scatterplot with lm
       gsva_lm <- lapply(unique(as.vector(gsva_inp$pathway)), function(path_name){
-        gsva_path <- gsva_inp[gsva_inp$pathway == path_name, ]
         
-        lapply(colnames(deconv)[-1], function(ct){
+        lapply(unique(as.vector(gsva_inp$Segment)), function(seg){
+          gsva_path <- gsva_inp[gsva_inp$pathway == path_name & gsva_inp$Segment == seg, ]
           
-          print(ct)
-          # fit lm with ct fraction as explanatory var
-          lm_res <- lm(gsva_score~get(ct),data=gsva_path)
-          lm_coef <- summary(lm_res)$coefficients[2]
-          lm_rsq <- summary(lm_res)$adj.r.squared
-          
-          cor_pe <- cor.test(gsva_path$gsva_score, gsva_path[[ct]], method = 'pearson')
-          #cor_sp <- round(cor(gsva_path$gsva_score, gsva_path[[ct]], method = 'spearman'), 2)
-          
-          gsva_lm_res <- list('pathway' = path_name, 'deconv_ct' = ct,
-                              lm_coef = lm_coef, lm_rsq = lm_rsq,
-                              cor_pe_coeff = cor_pe$estimate, cor_pe_pval = cor_pe$p.value)
-          
-          png(file = file.path(output_dir, 'gsva', 'lm_gsva_deconv', gsva_type_name, deconv_name,
-                               paste0('scatter_', path_name, '_', ct, '.png')))
-          plot(gsva_path[[ct]], gsva_path$gsva_score, xlab = path_name, ylab = ct, sub = paste0('R2 = ', lm_rsq))
-          abline(lm(gsva_score~get(ct),data=gsva_path),col='red')
-          dev.off()
-          
-          return(gsva_lm_res)
+          lapply(colnames(deconv)[-1], function(ct){
+            # fit lm with ct fraction as explanatory var
+            lm_res <- lm(gsva_score~get(ct),data=gsva_path)
+            lm_coef <- summary(lm_res)$coefficients[2]
+            lm_rsq <- summary(lm_res)$adj.r.squared
+            
+            cor_pe <- cor.test(gsva_path$gsva_score, gsva_path[[ct]], method = 'pearson')
+            #cor_sp <- round(cor(gsva_path$gsva_score, gsva_path[[ct]], method = 'spearman'), 2)
+            
+            gsva_lm_res <- list(pathway = path_name, deconv_ct = ct, segment = seg,
+                                lm_coef = lm_coef, lm_rsq = lm_rsq,
+                                cor_pe_coeff = cor_pe$estimate, cor_pe_pval = cor_pe$p.value)
+            
+            png(file = file.path(output_dir, 'gsva', 'lm_gsva_deconv', gsva_type_name, deconv_name,
+                                 paste0('scatter_', path_name, '_', ct, '_', seg, '.png')))
+            plot(gsva_path[[ct]], gsva_path$gsva_score, xlab = path_name, ylab = ct, sub = paste0('R2 = ', lm_rsq))
+            abline(lm(gsva_score~get(ct),data=gsva_path),col='red')
+            dev.off()
+            
+            return(gsva_lm_res)
+          })
         })
       })
-      
+
+      gsva_lm <- unlist(gsva_lm, recursive = F)
       gsva_lm <- unlist(gsva_lm, recursive = F)
       gsva_lm_df <- rbindlist(gsva_lm, fill=TRUE)
-      
-      
+
+
       fwrite(gsva_lm_df, file.path(output_dir, 'gsva', 'lm_gsva_deconv', gsva_type_name, deconv_name,
                                    paste0('lm_gsva_', gsva_name, '.csv')))
-      
+
       # make a corrplot
-      
-      gsva_corr_coeff <- as.data.frame(dcast(gsva_lm_df, pathway ~ deconv_ct,
-                            value.var = 'cor_pe_coeff'))
-      
-      gsva_corr_pval <- as.data.frame(dcast(gsva_lm_df, pathway ~ deconv_ct,
-                                             value.var = 'cor_pe_pval'))
-      
-      sapply(unique(selected_sig$path_type), function(path_type){
-        gsva_corr_coeff_path_type <- dplyr::filter(gsva_corr_coeff, pathway %in% 
-                                           selected_sig$pathway[selected_sig$path_type == path_type]) %>%
-          tibble::column_to_rownames('pathway')
+      lapply(unique(gsva_lm_df$segment), function(seg){
+        gsva_lm_df_seg <- gsva_lm_df[gsva_lm_df$segment == seg, ]
         
-        gsva_corr_pval_path_type <- dplyr::filter(gsva_corr_pval, pathway %in% 
-                                                     selected_sig$pathway[selected_sig$path_type == path_type]) %>%
-          tibble::column_to_rownames('pathway')
+        gsva_corr_coeff <- as.data.frame(dcast(gsva_lm_df_seg, pathway ~ deconv_ct,
+                                               value.var = 'cor_pe_coeff'))
         
-        corrplot <- ggcorrplot(gsva_corr_coeff_path_type, hc.order = FALSE, outline.color = "white", # p.mat = gsva_corr_pval_path_type
-                               title = path_type, tl.cex = 3, pch.cex = 2) +
-          theme(axis.text.x = element_text(size = 8), axis.text.y = element_text(size = 8))
+        gsva_corr_pval <- as.data.frame(dcast(gsva_lm_df_seg, pathway ~ deconv_ct,
+                                              value.var = 'cor_pe_pval'))
         
-        pdf(file=file.path(output_dir, 'gsva', 'lm_gsva_deconv', gsva_type_name, deconv_name,
-                           paste0('corrplot_gsva_', gsva_name,'_', path_type, '.pdf')),
-            width=5, height=6) 
-        
-        plot(corrplot)
-        dev.off()
-        
+        sapply(unique(selected_sig$path_type), function(path_type){
+          print(path_type)
+          gsva_corr_coeff_path_type <- dplyr::filter(gsva_corr_coeff, pathway %in%
+                                                       selected_sig$pathway[selected_sig$path_type == path_type]) %>%
+            tibble::column_to_rownames('pathway')
+          
+          gsva_corr_pval_path_type <- dplyr::filter(gsva_corr_pval, pathway %in%
+                                                      selected_sig$pathway[selected_sig$path_type == path_type]) %>%
+            tibble::column_to_rownames('pathway')
+          
+          gsva_corr_coeff_path_type[gsva_corr_pval_path_type >= 0.05] <- 0 #rmv insignificant correlations
+          
+          path_type_heat <- Heatmap(as.matrix(gsva_corr_coeff_path_type),
+                                    height = unit(6, "cm") , width = unit(6, "cm"),border="white",
+                                    rect_gp = gpar(col = "white", lwd = 2), name=path_type,
+                                    cluster_columns = F, cluster_rows= T,
+                                    column_title_gp = gpar(fontsize = 12),
+                                    show_heatmap_legend = F,
+                                    column_names_gp = gpar(fontsize = 8),
+                                    row_names_gp = gpar(fontsize = 5),
+                                    column_title = paste(gsva_name, seg),
+                                    na_col = 'white', cell_fun = function(j, i, x, y, width, height, fill) {
+                                      grid.text(sprintf("%.1f", gsva_corr_coeff_path_type[i, j]), x, y, gp = gpar(fontsize = 5))
+                                    })
+          
+          pdf(file=file.path(output_dir, 'gsva', 'lm_gsva_deconv', gsva_type_name, deconv_name,
+                             paste0('corrplot_gsva_', gsva_name,'_', path_type, '_', seg, '.pdf')))
+          
+          plot(path_type_heat)
+          dev.off()
+          
+        })
       })
     })
   })
-  
 })
 
 
-
+# TODO remove unsignificant corr
+# TODO cluster rows
 
 ###################################33
 #####################################
 
-kk <- fread("/media/iganiemi/T7-iga/st/geomx-processing/results/nact2/gsva/lm_gsva_deconv/all/bp/lm_gsva_all.csv")
 
 
 
