@@ -36,7 +36,7 @@ deconv_type <- 'mid_lvl_ct' # either mid_lvl_ct or cell_type
 
 input_sd_deconv_path <- file.path(output_dir, 'deconvolution', 'sd', 'sd_res_mid_lvl_ct_nofilt.rds')
 
-sig_additional_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_macro_tcells.csv'
+sig_additional_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_macro_tcells_msigdb_filt.csv'
 
 # sig_path_macro <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_macro.csv'
 # sig_path_tcell <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_tcells.csv'
@@ -68,15 +68,16 @@ geomx_obj <- readRDS(input_rds_path)
 expr_mtx <- assayDataElement(geomx_obj, elt = norm_type)
 
 # load deconvoluted signal for macrophages and tcells ---------------------
-# TODO remove redundancy tcell macro
 # TODO move theta cv and normalisation to deconvolution script
 
 if(deconv_type == 'mid_lvl_ct'){
-  macro_ct <- 'Macrophages'
-  cd8_ct <- 'Tcells'
+  ct_names <- ct_names <- c("Tcells", "Bcells", "Fibroblasts", "NKcells", "Macrophages", "DCs", "tumor", "Endothelial cells")
 } else if(deconv_type == 'cell_type'){
-  macro_ct <- 'Macrophages' #TODO and 'Classical monocytes' ??
-  cd8_ct <- 'Tem/Trm cytotoxic T cells'
+
+  ct_names <- c("Fibroblasts","Macrophages", "tumor", "Endothelial cells", "Classical monocytes",
+                "Tem/Trm cytotoxic Tcells", "CD16+ NK cells", "pDC", "Plasma cells", "DC1", "Regulatory Tcells",
+                "Naive B cells", "Migratory DCs", "NK cells", "Type 17 helper T cells", "Memory B cells",
+                "Tcm/Naive helper Tcells", "CD16- NK cells")
 }
 
 deconv_res <- readRDS(input_bp_deconv_path)
@@ -84,28 +85,20 @@ deconv_res <- readRDS(input_bp_deconv_path)
 # extract coeff of variation per cell type
 # mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bulk, 0.5 for Visium, GeoMx should be in the middle)
 # histogram suggests 0.2 as thr
-cell_frac_cv <- as.data.frame(deconv_res@posterior.theta_f@theta.cv)
-
-hist(cell_frac_cv[[cd8_ct]], breaks = 1000)
-hist(cell_frac_cv[[macro_ct]], breaks = 1000)
-
-tcell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[cd8_ct]] > 0.2]
-macro_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[macro_ct]] > 0.2]
-
-deconv_tcell <- BayesPrism::get.exp(bp=deconv_res,
-                       state.or.type="type",
-                       cell.name=cd8_ct)
-
-deconv_tcell <- deconv_tcell[!(rownames(deconv_tcell) %in% tcell_to_rm), ]
-deconv_tcell <- varianceStabilizingTransformation(round(t(deconv_tcell))) # normalisation
-
-
-deconv_macro <- BayesPrism::get.exp(bp=deconv_res,
-                       state.or.type="type",
-                       cell.name=macro_ct)
-
-deconv_macro <- deconv_macro[!(rownames(deconv_macro) %in% macro_to_rm), ]
-deconv_macro <- varianceStabilizingTransformation(round(t(deconv_macro))) # normalisation
+# TODO move it to deconvolution script
+deconv_ct_list <- lapply(ct_names, function(ct_name){
+  cell_frac_cv <- as.data.frame(deconv_res@posterior.theta_f@theta.cv)
+  cell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[ct_name]] > 0.2]
+  
+  deconv_ct <- BayesPrism::get.exp(bp=deconv_res,
+                                      state.or.type="type",
+                                      cell.name=ct_name)
+  
+  deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
+  deconv_ct <- varianceStabilizingTransformation(round(t(deconv_ct))) # normalisation
+  
+  return(deconv_ct)
+})
 
 # GSVA on all Hallmark + CP + additional -------------------------------------
 # do GSVA on all Hallmark + CP from msigDB or on selected Hal + CP + additional pathways
@@ -136,30 +129,29 @@ sig_list_all <- c(hal_cp_list, sig_list_additional)
 if(!do_gsva_hal_cp_all){
   selected_sig <- fread(selected_sig_path)
   sig_list_all <- sig_list_all[names(sig_list_all) %in% selected_sig$pathway]
-  out_name <- 'selected'
+  out_name <- 'selected_and_additional'
 } else{
-  out_name <- 'hal_cp_full'
+  out_name <- 'hal_cp_full_and_additional'
 }
-
-# do gsva 
-gsva_all <- gsva(gsvaParam(expr_mtx, sig_list_all, kcdf="Gaussian", minSize = 5))
-gsva_deconv_macro <- gsva(gsvaParam(deconv_macro, sig_list_all, kcdf="Gaussian", minSize = 5))
-gsva_deconv_tcell <- gsva(gsvaParam(deconv_tcell, sig_list_all, kcdf="Gaussian", minSize = 5))
 
 # do ssgsea
 # ssgsea_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'ssgsea', kcdf="Gaussian", min.sz = 5)
 
-# adjust df and save
-gsva_list <- list(gsva_all, gsva_deconv_macro, gsva_deconv_tcell)
-names(gsva_list) <- c('all', paste0('deconv_macro_', deconv_type), paste0('deconv_tcell_', deconv_type))
+expr_list <- deconv_ct_list
+expr_list[[length(expr_list) + 1]] <- expr_mtx
+names(expr_list) <- c(paste0('deconv_', ct_names, '_', deconv_type), 'all')
 
-gsva_list_long <- lapply(1:length(gsva_list), function(x){
-  # adjust df
-  gsva_long <- melt(gsva_list[x])
-  colnames(gsva_long) <- c('pathway','dcc_filename', 'gsva_score', 'expr_signal')
+gsva_list_long <- lapply(1:length(expr_list), function(x){
+  # do gsva
+  gsva <- gsva(gsvaParam(expr_list[[x]], sig_list_all, kcdf="Gaussian", minSize = 5))
+  
+  # adjust df and save
+  gsva_long <- melt(gsva)
+  colnames(gsva_long) <- c('pathway','dcc_filename', 'gsva_score')
+  gsva_long$expr_signal <- names(expr_list)[x]
   gsva_long <- left_join(gsva_long, pData(geomx_obj)[gsva_vars])
   
-  fwrite(gsva_long, file.path(output_dir, 'gsva', paste0('gsva_', names(gsva_list)[x], '_', out_name,  '.csv')))
+  fwrite(gsva_long, file.path(output_dir, 'gsva', paste0('gsva_', names(expr_list)[x], '_', out_name,  '.csv')))
   
   return(gsva_long)
 })
@@ -167,7 +159,7 @@ gsva_list_long <- lapply(1:length(gsva_list), function(x){
 ###############################################################################
 ###############################################################################
 # adjusting gsva scores from full signal for spatialdecon cell freq -------
-dir.create(file.path(output_dir, 'gsva', 'sd_lm_selected'), showWarnings = T, recursive = T)
+dir.create(file.path(output_dir, 'gsva', 'sd_lm_additional_msigdb_filt'), showWarnings = T, recursive = T)
 
 sd_deconv <- readRDS(input_sd_deconv_path)
 sd_deconv <- data.frame(pData(sd_deconv)[, 'prop_of_all'])
@@ -199,7 +191,7 @@ gsva_lm <- lapply(unique(as.vector(gsva_df$pathway)), function(path_name){
                               lm_coef = lm_coef, lm_rsq = lm_rsq)
     
     if(!do_gsva_hal_cp_all){
-      png(file = file.path(output_dir, 'gsva', 'sd_lm_selected', paste0('scatter_', path_name, '_', ct, '.png')))
+      png(file = file.path(output_dir, 'gsva', 'sd_lm_additional_msigdb_filt', paste0('scatter_', path_name, '_', ct, '.png')))
       plot(gsva_path[[ct]], gsva_path$gsva_score, xlab = path_name, ylab = ct)
       abline(lm(gsva_score~get(ct),data=gsva_path),col='red')
       dev.off()
@@ -249,10 +241,10 @@ gsva_lm_adj_tcell <- do.call(rbind, gsva_lm_adj_tcell)
 gsva_lm_adj_macro <- do.call(rbind, gsva_lm_adj_macro)
 
 fwrite(gsva_lm_adj_tcell, file.path(output_dir, 'gsva', 
-                                 paste0('gsva_all_', out_name, '_sd_lm_adjusted_tcell_', as.character(rsq_thr), '.csv')))
+                                 paste0('gsva_all_', out_name, '_sd_lm_adjusted_tcell_additional_msigdb_filt_', as.character(rsq_thr), '.csv')))
 
 fwrite(gsva_lm_adj_macro, file.path(output_dir, 'gsva', 
-                                    paste0('gsva_all_', out_name, '_sd_lm_adjusted_macro_', as.character(rsq_thr), '.csv')))
+                                    paste0('gsva_all_', out_name, '_sd_lm_adjusted_macro_additional_msigdb_filt_', as.character(rsq_thr), '.csv')))
 
 
 
