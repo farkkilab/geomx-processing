@@ -117,6 +117,15 @@ hal_cp_list <- lapply(unique(msigdb_df$gs_name), function(x){
 
 names(hal_cp_list) <- unique(msigdb_df$gs_name)
 
+# filter list to selected pathways
+if(!do_gsva_hal_cp_all){
+  selected_sig <- fread(selected_sig_path)
+  hal_cp_list <- hal_cp_list[names(hal_cp_list) %in% selected_sig$pathway]
+  out_name <- 'selected_and_additional'
+} else{
+  out_name <- 'hal_cp_full_and_additional'
+}
+
 # prepare additional signatures list
 sig_list_additional <- as.list(fread(sig_additional_path))
 sig_list_additional <- lapply(sig_list_additional, function(l){l[l !=""]})
@@ -125,14 +134,7 @@ sig_list_additional <- lapply(sig_list_additional, function(x){
 
 sig_list_all <- c(hal_cp_list, sig_list_additional)
 
-# filter list to selected pathways
-if(!do_gsva_hal_cp_all){
-  selected_sig <- fread(selected_sig_path)
-  sig_list_all <- sig_list_all[names(sig_list_all) %in% selected_sig$pathway]
-  out_name <- 'selected_and_additional'
-} else{
-  out_name <- 'hal_cp_full_and_additional'
-}
+
 
 # do ssgsea
 # ssgsea_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'ssgsea', kcdf="Gaussian", min.sz = 5)
