@@ -1,28 +1,12 @@
-# TODO check if all packages are needed
+library(Biobase)
 library(NanoStringNCTools)
 library(GeomxTools)
-library(GeoMxWorkflows)
 library(GeoDiff)
+
+library(ggforce)
 library(plyr)
 library(dplyr)
-library(ggplot2)
-library(ggforce)
-library(data.table)
-library(cowplot)
-library(preprocessCore)
-library(Biobase)
-library(reshape2)
 
-library(umap)
-library(Rtsne)
-
-library(clusterProfiler)
-library(msigdbr)
-library(progeny)
-library(reshape2)
-library(biomaRt)
-library(GSVA)
-library(ggpubr)
 
 # define variables --------------------------------------------------------
 

@@ -1,27 +1,23 @@
-# TODO check if all packages are needed
 library(NanoStringNCTools)
 library(GeomxTools)
-library(GeoMxWorkflows)
-library(GeoDiff)
-library(plyr)
-library(dplyr)
-library(ggplot2)
-library(ggforce)
-library(data.table)
-library(cowplot)
-library(preprocessCore)
 library(Biobase)
-library(reshape2)
 library(DESeq2)
+#install preprocessCore manually from source
+# BiocManager::install("preprocessCore", configure.args = c(preprocessCore = "--disable-threading"), 
+# force= TRUE, update=TRUE, type = "source")
+library(preprocessCore)
 
 library(umap)
 library(Rtsne)
 
+library(ggplot2)
+library(cowplot)
+library(reshape2)
 
 # get variables -----------------------------------------------------------
 data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
-output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
-input_rds_path <- file.path(output_dir, 'geomx_qc.RDS')
+output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact3'
+input_rds_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 output_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
