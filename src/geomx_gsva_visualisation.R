@@ -14,25 +14,30 @@ output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
 
 gsva_res_paths <- list.files(file.path(output_dir, 'gsva'), pattern = 'csv')
 
-gsva_name <- 'all_selected_sd_lm_adjusted_macro_0.4' 
+gsva_name <- 'deconv_Macrophages_mid_lvl_ct_selected_and_additional' 
 # or 'deconv_tcell_mid_lvl_ct_selected', 'deconv_macro_mid_lvl_ct_selected',
 # 'all_selected', 
-# 'all_selected_sd_lm_adjusted_tcell_0.4', all_selected_sd_lm_adjusted_macro_0.4',
+# 'all_selected_sd_lm_adjusted_tcell_0.4', all_selected_sd_lm_adjusted_macro_0.4'
+# gsva_deconv_Tcells_mid_lvl_ct_selected_and_additional
+# deconv_Macrophages_mid_lvl_ct_selected_and_additional
 
 gsva_path <- file.path(output_dir, 'gsva', paste0('gsva_', gsva_name, '.csv'))
+#gsva_path <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact_median_pfs/gsva/gsva_texh_macro_mhc_forpaper.csv'
 #gsva_path <- file.path(output_dir, 'progeny', paste0('progeny_perm.csv'))
-cell_anno <- 'relab_sd' # either 'geomx' or 'relab_bp' or 'relab_sd' for adjusted labels after deconvolution
+cell_anno <- 'geomx' # either 'geomx' or 'relab_bp' or 'relab_sd' for adjusted labels after deconvolution
 relab_bp_path <- file.path(output_dir, 'deconvolution', 'bp_mid_lvl_ct_relabeled_roi.csv')
 relab_sd_path <- file.path(output_dir, 'deconvolution', 'sd_mid_lvl_ct_relabeled_roi.csv')
 # TODO make relab based on sd
 
 #outp2 <- ifelse(gsva_name == 'progeny', 'progeny', 'gsva')
-outp2 <- file.path('gsva', paste0(gsva_name, '_anno_', cell_anno))
+outp2 <- file.path('gsva', paste0(gsva_name, '_anno_', cell_anno, '_suppl'))
 
 imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient')
 
-selected_sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/immune_signatures_selected_forpaper_names.csv'
+selected_sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/immune_signatures_selected_names_suppl.csv'
+#  '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/immune_signatures_selected_forpaper_oldplot_names.csv'
+#selected_sig_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/immune_signatures_selected_forpaper_less_names2.csv'
 
 ########################################
 
@@ -65,7 +70,6 @@ if(cell_anno != 'geomx'){
 # }
 
 # run through each pathway type separately
-
 #
 for(path_type in unique(selected_sig$path_type)){
   dir.create(file.path(output_dir, outp2, path_type), showWarnings = T, recursive = T)
@@ -76,6 +80,10 @@ for(path_type in unique(selected_sig$path_type)){
   path_names <- selected_sig$pathway[selected_sig$path_type == path_type]
   
   gsva_df <- gsva_df_allpaths[gsva_df_allpaths$pathway %in% path_names, ]
+  
+  #rename the pathways
+  gsva_df <- left_join(gsva_df, selected_sig[, c('pathway', 'path_shortname')])
+  gsva_df$pathway <- gsva_df$path_shortname
   
   path_names <- unique(gsva_df$pathway) # some pathways have not been computed
   
@@ -195,11 +203,12 @@ for(path_type in unique(selected_sig$path_type)){
       # adjust length and height depending on nr of plots
       png(filename=file.path(output_dir, outp2, path_type, paste0('heatmap_', var_name, '_', value_type, '2.png')),
           width=length(var_heatmap_list)*2 + 3,
-          height=5,units="in",res=1200)
+          height=9,units="in",res=1200)
       
       draw(all_hmaps, ht_gap = unit(1, "cm"), 
            column_title = paste0(heat_value_title),
-           column_title_gp = gpar(fontsize = 15))
+           column_title_gp = gpar(fontsize = 15),
+           heatmap_legend_side = "left")
       
       dev.off()
       
@@ -238,13 +247,13 @@ for(path_type in unique(selected_sig$path_type)){
         
         #TODO plot in a grid (?)
         # adjust length and height depending on nr of plots
-        png(filename=file.path(output_dir, outp2, path_type, paste0('heatmap_', var_name, '_', value_type, '_peranno2.png')),
+        pdf(file=file.path(output_dir, outp2, path_type, paste0('heatmap_', var_name, '_', value_type, '_peranno2.pdf')),
             width=length(seg_var_heatmap_list)*2 + 3,
-            height=5,units="in",res=1200)
+            height=7)
         
         draw(all_hmaps, ht_gap = unit(1, "cm"), 
              column_title = paste0(heat_value_title),
-             column_title_gp = gpar(fontsize = 15))
+             column_title_gp = gpar(fontsize = 15), heatmap_legend_side = "left")
         
         dev.off()
       }
@@ -274,7 +283,8 @@ for(path_type in unique(selected_sig$path_type)){
     
     stats_path <- lapply(path_names, function(path){
       
-      stats_segment_anno <- lapply(unique(gsva_fordot$Segment), function(s){
+      stats_segment_anno <- lapply(c('stroma'), function(s){
+      #stats_segment_anno <- lapply(unique(gsva_fordot$Segment), function(s){
         
         stats_anno <- lapply(unique(gsva_fordot$Annotation_cell), function(a){
           
@@ -325,17 +335,17 @@ for(path_type in unique(selected_sig$path_type)){
           "pval",
           trans = "log10",
           #max_size = ifelse(length(stats_sign_zone_noinf) < 10, 2.5, 2),
-          max_size = 1,
+          max_size = 4,
           breaks = c(1e-10, 1e-5, 1e-1, 0.05),
           limits = c(1e-10, 0.05)
         ) +
         theme(
-          axis.text = element_text(size = rel(0.3)),
-          axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
-          axis.text.y = element_text(size = 6),
+          axis.text = element_text(size = rel(0.5)),
+          axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+          axis.text.y = element_text(size = 12),
           strip.placement = "outside",
           strip.background = element_blank(),
-          plot.title = element_text(size = 10, face = "bold"),
+          plot.title = element_text(size = 12, face = "bold"),
           aspect.ratio = 1,
           panel.border = element_rect(colour = "black", size = 1.5, fill = NA)
         ) +
@@ -347,7 +357,7 @@ for(path_type in unique(selected_sig$path_type)){
         ggtitle(paste(unique(gsva_fordot[[var_name]])[1], 'vs', unique(gsva_fordot[[var_name]])[2])) +
         facet_wrap(~segment, scales = "fixed", dir="h")
       
-      pdf(file= file.path(output_dir, outp2, path_type, paste0('dotplot_', var_name, '_meandiff_signif2.pdf')),
+      pdf(file= file.path(output_dir, outp2, path_type, paste0('dotplot_', var_name, '_meandiff_signif3.pdf')),
                           width=8, height=5)
       plot(plot)
       # ggsave(file.path(output_dir, outp2, path_type, paste0('dotplot_', var_name, '_meandiff_signif2.png')),
@@ -357,4 +367,3 @@ for(path_type in unique(selected_sig$path_type)){
   }
   gc()
 }
-

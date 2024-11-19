@@ -134,18 +134,15 @@ sig_list_additional <- lapply(sig_list_additional, function(x){
 
 sig_list_all <- c(hal_cp_list, sig_list_additional)
 
-
-
-# do ssgsea
-# ssgsea_hal_cp <- gsva(expr_mtx, hal_cp_list, method = 'ssgsea', kcdf="Gaussian", min.sz = 5)
-
 expr_list <- deconv_ct_list
 expr_list[[length(expr_list) + 1]] <- expr_mtx
 names(expr_list) <- c(paste0('deconv_', ct_names, '_', deconv_type), 'all')
 
 gsva_list_long <- lapply(1:length(expr_list), function(x){
   # do gsva
-  gsva <- gsva(gsvaParam(expr_list[[x]], sig_list_all, kcdf="Gaussian", minSize = 5))
+  #gsva <- gsva(gsvaParam(expr_list[[x]], sig_list_all, kcdf="Gaussian", minSize = 5))
+  # do ssgsea
+  gsva <- gsva(ssgseaParam(expr_list[[x]], sig_list_all, minSize = 5, normalize = F))
   
   # adjust df and save
   gsva_long <- melt(gsva)
@@ -153,7 +150,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   gsva_long$expr_signal <- names(expr_list)[x]
   gsva_long <- left_join(gsva_long, pData(geomx_obj)[gsva_vars])
   
-  fwrite(gsva_long, file.path(output_dir, 'gsva', paste0('gsva_', names(expr_list)[x], '_', out_name,  '.csv')))
+  fwrite(gsva_long, file.path(output_dir, 'gsva', paste0('ssgsea_notnorm_', names(expr_list)[x], '_', out_name,  '.csv')))
   
   return(gsva_long)
 })
