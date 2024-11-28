@@ -1,27 +1,27 @@
-library(NanoStringNCTools)
-library(GeomxTools)
-library(Biobase)
-library(DESeq2)
-#install preprocessCore manually from source
-# BiocManager::install("preprocessCore", configure.args = c(preprocessCore = "--disable-threading"), 
-# force= TRUE, update=TRUE, type = "source")
-library(preprocessCore)
-
-library(umap)
-library(Rtsne)
-
-library(ggplot2)
-library(cowplot)
-library(reshape2)
+# library(NanoStringNCTools)
+# library(GeomxTools)
+# library(Biobase)
+# library(DESeq2)
+# #install preprocessCore manually from source
+# # BiocManager::install("preprocessCore", configure.args = c(preprocessCore = "--disable-threading"), 
+# # force= TRUE, update=TRUE, type = "source")
+# library(preprocessCore)
+# 
+# library(umap)
+# library(Rtsne)
+# 
+# library(ggplot2)
+# library(cowplot)
+# library(reshape2)
 
 # get variables -----------------------------------------------------------
-data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
-output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact3'
-input_rds_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
-output_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
-
-imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
-main_var <- "Annotation_cell" # legend in sankey, 
+# data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
+# output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact3'
+# geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
+# geomx_norm_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
+# 
+imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots,
+main_var <- "Annotation_cell" # legend in sankey,
 
 umap_vars <- c(imp_vars, "Patient", "Sample")
 # make dirs and source functions ------------------------------------------
@@ -30,11 +30,11 @@ dir.create(file.path(output_dir, 'umap_tsne', 'all'), showWarnings = T, recursiv
 dir.create(file.path(output_dir, 'umap_tsne', 'tumor'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'umap_tsne', 'stroma'), showWarnings = T, recursive = T)
 
-source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
+#source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
 # load qc geomx data ------------------------------------------------------
 
-geomx_obj <- readRDS(input_rds_path)
+geomx_obj <- readRDS(geomx_qc_path)
 
 # Q3 normalisation --------------------------------------------------------
 
@@ -166,4 +166,4 @@ rm(geomx_list_dim_red)
 
 # save geomx as RDS
 
-saveRDS(geomx_obj, file = output_rds_path)
+saveRDS(geomx_obj, file = geomx_norm_path)
