@@ -20,10 +20,8 @@
 # geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 # geomx_norm_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 # 
-imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots,
-main_var <- "Annotation_cell" # legend in sankey,
-
-umap_vars <- c(imp_vars, "Patient", "Sample")
+main_var <- "Annotation_cell" 
+umap_vars <- c("Segment", "Annotation_cell", "NACT status", "Patient", "Sample")
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'umap_tsne', 'all'), showWarnings = T, recursive = T)

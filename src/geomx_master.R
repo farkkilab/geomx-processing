@@ -26,18 +26,21 @@ data_dir <- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/'
 dcc_path <- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
                 full.names = TRUE, recursive = TRUE)
 pkc_path <- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
-anno_path <- file.path(data_dir, 'metadata', 'dcc_metadata_all.xlsx')
 
-output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2')
+# anno file have to contain sheet named 'Sheet1' and following column names:
+# 'Sample_ID', 'Aoi', 'Roi' 
+anno_path <- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx')
+
+output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-test')
 
 # load utils functions ----------------------------------------------------
 
 source(file.path(proj_dir, 'st-processing', 'src', 'visium_utils.R')) #TODO add needed functions to geomx_utils
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-# define intermediate output paths ----------------------------------------
-
 dir.create(output_dir, recursive = T, showWarnings = F)
+
+# define intermediate output paths ----------------------------------------
 
 geomx_qc_path <<- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
@@ -55,7 +58,7 @@ run_unless_exists('Preprocessing', geomx_qc_path,
 
 # conditionally run normalisation -----------------------------------------
 
-run_unless_exists('Preprocessing', geomx_norm_path, 
+run_unless_exists('Normalisation', geomx_norm_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_normalisation.R'))
 
 

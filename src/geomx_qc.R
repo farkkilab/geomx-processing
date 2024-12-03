@@ -7,6 +7,9 @@
 # library(plyr)
 # library(dplyr)
 
+# GeoMX vignette
+# https://www.bioconductor.org/packages/release/workflows/vignettes/GeoMxWorkflows/inst/doc/GeomxTools_RNA-NGS_Analysis.html
+
 
 # define variables --------------------------------------------------------
 
@@ -20,8 +23,15 @@
 # output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
 # geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 
-imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS") # vals used for sankey, detection rate plots, 
+#PFS
+imp_vars <- c("Segment", "Annotation_cell", "NACT status") # vals used for sankey, detection rate plots, 
 main_var <- "Annotation_cell" # legend in sankey, 
+
+# parameters for removing genes based on LOQ
+# TODO adjustment may be needed: 10% for batch 1, 5% for batch2
+gene_detect_thr <- 0.05 # segment is removed if <5% of genes > LOQ
+# TODO adjustments may be needed - thr is very low bcs we expect high biological variability
+segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less than 1% of segments
 
 
 # create dirs and source functions ----------------------------------------
@@ -29,7 +39,7 @@ main_var <- "Annotation_cell" # legend in sankey,
 #dir.create(output_dir, showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
 
-source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
+# source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
 # load geomx dataset ------------------------------------------------------
 
@@ -39,7 +49,7 @@ geomx_obj <- readNanoStringGeoMxSet(dccFiles = dcc_path,
                                     phenoDataSheet = "Sheet1",
                                     phenoDataDccColName = "Sample_ID",
                                     protocolDataColNames = c("Aoi", "Roi"),
-                                    experimentDataColNames = c("Panel")) # TODO dunno if this is needed
+                                    experimentDataColNames = c("Panel")) 
 
 pkcs <- annotation(geomx_obj)
 modules <- gsub(".pkc", "", pkcs)
@@ -61,29 +71,36 @@ print(dim(geomx_obj))
 
 # manualfix of NTC --------------------------------------------------------
 
-# manually add messed up info for NTC to sData()
-
 sdt <- sData(geomx_obj)
+# manually add messed up info for NTC to sData()
+# TODO do it once to batch1 (2023) metadata and move out from here
+
+# sdt$NTC_ID <- apply(sdt, 1, function(x){
+#   # one NTC/batch
+#   if(x[['batch_nr']] %in% c(1,2,3,4,7,8)){
+#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
+#   } else{
+#     ntc <- NA
+#   }
+#   
+#   # the same NTC for batch 4 and 6
+#   if(x[['batch_nr']] == 6){
+#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 4]
+#   }
+#   
+#   # 2 different NTC for batch 5
+#   if(x[['batch_nr']] == 5 & grepl('-E-', x[['dcc_filename']])){
+#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-E-', sdt$dcc_filename)]
+#   } else if(x[['batch_nr']] == 5 & grepl('-B-', x[['dcc_filename']])){
+#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-B-', sdt$dcc_filename)]
+#   }
+#   
+#   return(ntc)
+# })
+
 sdt$NTC_ID <- apply(sdt, 1, function(x){
   # one NTC/batch
-  if(x[['batch_nr']] %in% c(1,2,3,4,7,8)){
-    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
-  } else{
-    ntc <- NA
-  }
-  
-  # the same NTC for batch 4 and 6
-  if(x[['batch_nr']] == 6){
-    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 4]
-  }
-  
-  # 2 different NTC for batch 5
-  if(x[['batch_nr']] == 5 & grepl('-E-', x[['dcc_filename']])){
-    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-E-', sdt$dcc_filename)]
-  } else if(x[['batch_nr']] == 5 & grepl('-B-', x[['dcc_filename']])){
-    ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-B-', sdt$dcc_filename)]
-  }
-  
+  ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
   return(ntc)
 })
 
@@ -118,11 +135,12 @@ qc_params <-
        percentAligned = 75,    # Minimum % of reads aligned (80%)
        percentSaturation = 50, # Minimum sequencing saturation (50%)
        minNegativeCount = 1,   # Minimum negative control counts (10, 1 in log scale)
-       maxNTCCount = 9000,     # Maximum counts observed in NTC well (1000)
+       maxNTCCount = 1000,     # Maximum counts observed in NTC well (1000)
        minNuclei = 20,         # Minimum # of nuclei estimated (100) 
        minArea = 1000)         # Minimum segment area (5000)
 
 #TODO maxNTCCount basic param is 60 in default function. Ask Geomx ppl !
+# but in qc vignette 1000 is mentioned
 
 # set up qc flags for segments
 geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
@@ -221,7 +239,7 @@ notes(geomx_diag)$disper_sp
 
 table(sData(geomx_obj)$NTC)
 
-#TODO !!!!! HighNTC - one sample which was included before
+#TODO !!!!! HighNTC - one sample which was included before in batch1 
 #qc_results_segment <- qc_results_segment[, -which(names(qc_results_segment) == 'HighNTC')]
 
 qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
@@ -287,10 +305,6 @@ print(dim(geomx_obj))
 
 loq_cutoff <- 2
 loq_min <- 2
-
-gene_detect_thr <- 0.1 # segment is removed if <10% of genes > LOQ
-# TODO adjustment may be needed:
-segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less than 1% of segments
 
 # Calculate LOQ for each segment
 LOQ <- data.frame(row.names = colnames(geomx_obj))
