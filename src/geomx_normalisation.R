@@ -19,14 +19,15 @@
 # output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact3'
 # geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 # geomx_norm_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
-# 
+
+
 main_var <- "Annotation_cell" 
-umap_vars <- c("Segment", "Annotation_cell", "NACT status", "Patient", "Sample")
+umap_vars <- c("Segment", "Annotation_cell", "NACT status", "Patient", "Sample", "Segment_tCycIF")
+aoi_segment_var <- "Segment"
+
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'umap_tsne', 'all'), showWarnings = T, recursive = T)
-dir.create(file.path(output_dir, 'umap_tsne', 'tumor'), showWarnings = T, recursive = T)
-dir.create(file.path(output_dir, 'umap_tsne', 'stroma'), showWarnings = T, recursive = T)
 
 #source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
@@ -39,6 +40,7 @@ geomx_obj <- readRDS(geomx_qc_path)
 negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative") # 1 bcs already collapsed to targets
 neg_probes <- unique(negativeProbefData$TargetName)
 
+# this plot only makes sense for Q3 norm since it explores q3 value against NegGeoMean 
 plot_q3_stats(geomx_obj, main_var, file.path(output_dir, 'qc/q3_stats.png'))
 
 
@@ -105,12 +107,22 @@ plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_norm"),
 
 # make UMAP and t-SNE -----------------------------------------------------
 
-# TODO change for any segment type
-# divide for tumor and stroma and do dimentionality reduction for all
-geomx_obj_tumor <- geomx_obj[, geomx_obj@phenoData@data$Segment == "tumor"]
-geomx_obj_stroma <- geomx_obj[, geomx_obj@phenoData@data$Segment == "stroma"]
+# divide for segment and do dimentionality reduction for all
 
-geomx_list <- list(all = geomx_obj, tumor = geomx_obj_tumor, stroma = geomx_obj_stroma)
+seg_types <- unique(sData(geomx_obj)[, aoi_segment_var])
+
+geomx_obj_seg_list <- lapply(seg_types, function(seg){
+  print(seg)
+  dir.create(file.path(output_dir, 'umap_tsne', seg), showWarnings = T, recursive = T)
+  
+  geomx_obj_seg <- geomx_obj[, geomx_obj@phenoData@data$Segment == seg]
+  
+  return(geomx_obj_seg)
+})
+
+names(geomx_obj_seg_list) <- seg_types
+geomx_list <- c(all = geomx_obj, geomx_obj_seg_list)
+
 
 geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
   
@@ -143,6 +155,7 @@ geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
   for(method in c('UMAP', 'tSNE')){
     for(norm in c('q3', 'quant', 'deseq2')){
       for(color_var in umap_vars){
+        print(color_var)
         plot_umap_tsne(pData(geomx), method_type = method, 
                        norm_type = norm, color_var = color_var,
                        output_name = file.path(output_dir, 'umap_tsne', names(geomx_list)[n], 

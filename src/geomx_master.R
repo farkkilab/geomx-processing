@@ -31,7 +31,7 @@ pkc_path <- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 # 'Sample_ID', 'Aoi', 'Roi' 
 anno_path <- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx')
 
-output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-test')
+output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2')
 
 # load utils functions ----------------------------------------------------
 
@@ -42,7 +42,7 @@ dir.create(output_dir, recursive = T, showWarnings = F)
 
 # define intermediate output paths ----------------------------------------
 
-geomx_qc_path <<- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
+geomx_qc_path <<- file.path(output_dir, 'geomx_qc.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
 
 # start the pipeline ------------------------------------------------------

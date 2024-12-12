@@ -24,7 +24,7 @@
 # geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 
 #PFS
-imp_vars <- c("Segment", "Annotation_cell", "NACT status") # vals used for sankey, detection rate plots, 
+imp_vars <- c("Segment", "Annotation_cell", "NACT status", "Segment_tCycIF") # vals used for sankey, detection rate plots, 
 main_var <- "Annotation_cell" # legend in sankey, 
 
 # parameters for removing genes based on LOQ
