@@ -22,7 +22,7 @@
 
 
 main_var <- "Annotation_cell" 
-umap_vars <- c("Segment", "Annotation_cell", "NACT status", "Patient", "Sample", "Segment_tCycIF")
+umap_vars <- c("Segment", "Annotation_cell", "NACT status", "Patient", "Sample", "Segment_tCycIF", "Slide Name")
 aoi_segment_var <- "Segment"
 
 # make dirs and source functions ------------------------------------------

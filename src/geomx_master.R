@@ -28,7 +28,7 @@ dcc_path <- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
 pkc_path <- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # anno file have to contain sheet named 'Sheet1' and following column names:
-# 'Sample_ID', 'Aoi', 'Roi' 
+# 'Sample_ID', 'Aoi', 'Roi', 'Sample' 
 anno_path <- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx')
 
 output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2')
