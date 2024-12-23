@@ -1,12 +1,13 @@
 #TODO check if all needed
-# library(GeoMxWorkflows)
 
-# problems with Matrix package
-devtools::install_version("Matrix","1.2-7")
+# WARNING: DGE with mixed model will take around 30G RAM
+# best to run in >10 cores
+# 
+
+# problems with Matrix package - i has to be lower that 1.7 to work with lmer
+#devtools::install_version("Matrix","1.6.4")
 
 library(data.table)
-#library(parallelly)
-library(parallel)
 #library(clusterProfiler)
 # library(msigdbr)
 # library(progeny)
@@ -24,19 +25,49 @@ library(parallel)
 # output_dir <- '~/Documents/phd/st/geomx-processing/results/batch2'
 # 
 
-#TODO check if all needed
-imp_vars <- c("Segment", "Annotation_cell", "NACT status", "Segment_tCycIF") 
-gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient')
 
-aoi_segment_var <- "Segment"
+comparison_type <- 'within' 
+# 'within' when you compare different ROI types within sample
+# between - comparisons between slides
 
+cofounder_name <- 'Sample' # don't change it
+# then 'Sample' is added as a cofounder (random intercept in LLM model)
 
-# value among main_var which needs to be compare against all other vals
-# or part of the value eg 'CD8' within values for comparison
-main_var <- "Annotation_cell" 
+main_var_name <- "Annotation_cell" 
+# main_var - main variable to make comparison 
+
+main_var_is_bin <- TRUE 
+# if main_var_is_bin is True, main_var_main_val will be compared 
+# with all other categories in main_var
+# if False - each category in main_var will be compared with every other one
+# main_var_main_val is set to NULL
+
 main_var_main_val <- 'CD4_CD8_CD11_Iba1' 
+# main_var_main_val value among main_var which needs to be compare against all other vals
+# or part of the value eg 'CD8' within values for comparison
+
+
+dge_categories <- c('Segment', 'NACT status')
+# dge_categories - all conditions for which we want to make DGE separately
+
+################
+# comparison_type <- 'within'
+# cofounder_name <- 'Sample'
+# main_var_name <- "Annotation_cell" 
+# main_var_is_bin <- TRUE 
+# main_var_main_val <- 'CD4_CD8_CD11_Iba1' 
+# dge_categories <- c('Segment', 'NACT status')
+################
+comparison_type <- 'between'
+cofounder_name <- 'Sample'
+main_var_name <- "NACT status"
+main_var_is_bin <- FALSE
+dge_categories <- c('Segment', 'Annotation_cell')
+###############
 
 norm_type <- 'q3_norm' # either 'q3_norm', 'quant_norm' or 'deseq2_norm'
+
+multicore = TRUE # if Linux or macOS, for Windows multicore = FALSE
 
 # make dirs and source functions ------------------------------------------
 
@@ -53,412 +84,98 @@ assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
   assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
 
 
-# DGE within slides with binary main variable comparison ------------------
+# DGE with main variable comparison ---------------------------------------
 
-# make binary vector - either main variable has the desired value or not
-pData(geomx_obj)$main_var_bin <- ifelse(grepl(main_var_main_val, pData(geomx_obj)[, main_var]),
-                                                main_var_main_val, 'other_roi_type')
+if(main_var_is_bin){
+  # make binary vector - either main variable has the desired value or not
+  pData(geomx_obj)$main_var <- ifelse(grepl(main_var_main_val, pData(geomx_obj)[, main_var_name]),
+                                          main_var_main_val, 'other_roi_type')
+} else{
+  pData(geomx_obj)$main_var <- pData(geomx_obj)[, main_var_name]
+}
+
 
 # convert test variables to factors
-for(col in c(imp_vars, 'Sample', 'main_var_bin')){
+for(col in c(dge_categories, 'main_var')){
   pData(geomx_obj)[[paste0(col, "_factor")]] <- factor(pData(geomx_obj)[[col]])
 }
 
-# create one variable with all groups fow which we want to make DGE separately
-#TODO move it up
-within_slide_vars <- c('Segment', 'NACT status')
+pData(geomx_obj)$cofounder_factor <- factor(pData(geomx_obj)[[cofounder_name]])
 
-pData(geomx_obj)$within_slide_group <- apply(pData(geomx_obj), 1, function(row){
-  group <- sapply(within_slide_vars, function(var){
+# make variable with all dge categories
+pData(geomx_obj)$dge_group <- apply(pData(geomx_obj), 1, function(row){
+  group <- sapply(dge_categories, function(var){
     paste(row[var])
   })
   group <- paste(group, collapse = '_')
   return(group)
 })
 
-# within slide analysis - with random slope in LLM
-# comparison between main_var_main_val and other ROI groups
-# Sample is used as a cofounder
+# create formula for the LLM model:
+# Sample is used as a mixed effect (cofounder)
+if(comparison_type == 'within'){
+  # within slide analysis - with random slope in LLM
+  model_formula <- ~ main_var_factor + (1 + main_var_factor | cofounder_factor) # random slope + random intercept
+} else if(comparison_type == 'between'){
+  model_formula <- ~ main_var_factor + (1 | cofounder_factor) # random intercept
+} else{stop('comparison type can be either "within" or "between"')}
+
 
 # run LMM:
 # formula follows conventions defined by the lme4 package
-data_group <- 'stroma_post'
 
-results <- c()
-for(data_group in unique(pData(geomx_obj)[, 'within_slide_group'])){
+dge_results <- c()
+for(data_group in unique(pData(geomx_obj)[, 'dge_group'])){
   
   print(data_group)
-  ind <- geomx_obj@phenoData@data$within_slide_group == data_group
-
+  ind <- geomx_obj@phenoData@data$dge_group == data_group
   
-  # require(doParallel)
-  # cores <- makeCluster(19, type='PSOCK')
-  # registerDoParallel(cores)
-  # #Sys.setenv("MC_CORES"=cores)
-  # 
-  # require(parallel)
-  # options("mc.cores"=cores)
-  # 
-  
-  ###
-  i <- featureNames(geomx_obj)[1]
-  groupVar <- 'main_var_bin_factor'
-  pDat <- pData(geomx_obj)
-  modelFormula <- formula(paste("expr", 
-                                as.character(~ main_var_bin_factor + (1 + main_var_bin_factor | Sample_factor))[2], sep = " ~ "))
-  exprs <- new.env()
-  exprs$exprs <- assayDataElement(geomx_obj, elt = paste0("log_", norm_type))
-  pairwise = TRUE
-  ###
-  
-  deFunc <- function(i, groupVar, pDat, modelFormula, 
-                     exprs, pairwise = TRUE) {
-    dat <- data.frame(expr = exprs$exprs[i, ], pDat)
-    lmOut <- lmerTest::lmer(modelFormula, data = dat, subset = rep(TRUE, nrow(dat))) #TODO!!!! this aborts the session
+  mixed_result <- tryCatch({
+    mixedOutmc <- mixedModelDE(
+      geomx_obj[, ind],
+      elt = paste0("log_", norm_type),
+      modelFormula = model_formula, 
+      groupVar = 'main_var_factor',
+      nCores = (parallel::detectCores() - 2),
+      multiCore = multicore
+    )
+    mixedOutmc  # Return the result of mixedModelDE
+  }, error = function(e) {
+    # Return an empty dataframe if an error occurs eg to little ROIs
+    data.frame()
     
-    if (pairwise == FALSE) {
-      lsm <- lmerTest::ls_means(lmOut, which = groupVar, 
-                                pairwise = FALSE)
-    }
-    else {
-      lsm <- lmerTest::ls_means(lmOut, which = groupVar, 
-                                pairwise = TRUE)
-    }
-    lmOut <- matrix(stats::anova(lmOut)[groupVar, "Pr(>F)"], 
-                    ncol = 1, dimnames = list(groupVar, "Pr(>F)"))
-    lsmOut <- matrix(cbind(lsm[, "Estimate"], lsm[, 
-                                                  "Pr(>|t|)"]), ncol = 2, dimnames = list(gsub(groupVar, 
-                                                                                               "", rownames(lsm)), c("Estimate", "Pr(>|t|)")))
-    return(list(anova = lmOut, lsmeans = lsmOut))
+  })
+  
+  gc()
+  
+  if(nrow(mixed_result) > 1){
+    # format results as data.frame
+    r_test <- do.call(rbind, mixed_result["lsmeans", ])
+    tests <- rownames(r_test)
+    r_test <- as.data.frame(r_test)
+    r_test$Contrast <- tests
+    
+    # use lapply in case you have multiple levels of your test factor to
+    # correctly associate gene name with it's row in the results table
+    r_test$Gene <-
+      unlist(lapply(colnames(mixed_result),
+                    rep, nrow(mixed_result["lsmeans", ][[1]])))
+    r_test$data_group <- data_group
+    r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
+    r_test <- r_test[, c("Gene", "data_group",  "Contrast", "Estimate",
+                         "Pr(>|t|)", "FDR")]
+    dge_results <- rbind(dge_results, r_test)
+  } else{
+    print('error while computing dge. probably too little ROI for comparison')
+    dge_results <- dge_results
   }
   
-
-  
-  mixedOut <- rbind(array(lapply(mixedOut, function(x) x[["anova"]])), 
-                    array(lapply(mixedOut, function(x) x[["lsmeans"]])))
-  colnames(mixedOut) <- featureNames(object)
-  rownames(mixedOut) <- c("anova", "lsmeans")
-  
-  if (!is.null(pAdjust)) {
-    mixedOut["anova", ] <- p.adjust(mixedOut["anova", ], 
-                                    method = pAdjust)
-  }
-  
-  
-  
-  mixedOut <- parallel::mclapply(featureNames(object), 
-                                 deFunc, groupVar, pDat, formula(paste("expr", 
-                                                                       as.character(modelFormula)[2], sep = " ~ ")), 
-                                 exprs, mc.cores = nCores)
-  
-
-    
-    
-  
-  mixedOutmc <-
-    mixedModelDE(geomx_obj[, ind],
-                 elt = paste0("log_", norm_type),
-                 modelFormula = ~ main_var_bin_factor + (1 + main_var_bin_factor | Sample_factor), # random slope
-                 groupVar = 'main_var_bin_factor',
-                 nCores = 4, #(parallel::detectCores() - 2),
-                 multiCore = TRUE)
-  
-  
-  
-  
-  # format results as data.frame
-  r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
-  tests <- rownames(r_test)
-  r_test <- as.data.frame(r_test)
-  r_test$Contrast <- tests
-  
-  # use lapply in case you have multiple levels of your test factor to
-  # correctly associate gene name with it's row in the results table
-  r_test$Gene <-
-    unlist(lapply(colnames(mixedOutmc),
-                  rep, nrow(mixedOutmc["lsmeans", ][[1]])))
-  r_test$data_group <- data_group
-  r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-  r_test <- r_test[, c("Gene", "data_group",  "Contrast", "Estimate",
-                       "Pr(>|t|)", "FDR")]
-  results <- rbind(results, r_test)
 }
 
-fwrite(results, file.path(output_dir, 'dge', paste0('dge_', main_var, '_bin_', paste0(within_slide_vars, collapse = '_'))))
-
-########################################
-# ######################################
-# # BETWEEN SLIDES COMPARISON
-# 
-# # run LMM without random slope:
-# # formula follows conventions defined by the lme4 package
-# # results_pre_post_per_cell <- c()
-# # for(segment in c("tumor", "stroma")){
-# #   # careful! this is from all table with umap made for all ROIs - should be change to avoid confusion
-# #   geomx_segment <- geomx_obj[, geomx_obj@phenoData@data$Segment == segment]
-# #   for(anno_cell in unique(geomx_obj@phenoData@data$Annotation_cell)) {
-# #     ind <- geomx_segment@phenoData@data$Annotation_cell == anno_cell
-# #
-# #     # TODO trycatch if too litle nr of ROIs - return empty frame
-# #     mixedOutmc <-
-# #       mixedModelDE(geomx_segment[, ind],
-# #                    elt = "log_q3_norm",
-# #                    modelFormula = ~ NACT_status_factor + (1 | Sample_factor), # random slope
-# #                    groupVar = "NACT_status_factor",
-# #                    nCores = (parallel::detectCores() - 1),
-# #                    multiCore = FALSE)
-# #
-# #
-# #     # format results as data.frame
-# #     r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
-# #     tests <- rownames(r_test)
-# #     r_test <- as.data.frame(r_test)
-# #     r_test$Contrast <- tests
-# #
-# #     # use lapply in case you have multiple levels of your test factor to
-# #     # correctly associate gene name with it's row in the results table
-# #     r_test$Gene <-
-# #       unlist(lapply(colnames(mixedOutmc),
-# #                     rep, nrow(mixedOutmc["lsmeans", ][[1]])))
-# #     r_test$Annotation_cell <- anno_cell
-# #     r_test$Segment <- segment
-# #     r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-# #     r_test <- r_test[, c("Gene", "Annotation_cell", "Segment",  "Contrast", "Estimate",
-# #                          "Pr(>|t|)", "FDR")]
-# #     results_pre_post_per_cell <- rbind(results_pre_post_per_cell, r_test)
-# #   }
-# # }
-# #
-# # fwrite(results_pre_post_per_cell, file.path(output_dir, 'dge/dge_pre_post_per_cell_separately.csv'))
-# 
-# #########################
-# ##########################
-# # all cell anno mixed together doesnt give any meaningful results!!!
-# 
-# results_pre_post_doublepos <- c()
-# for(segment in c("tumor", "stroma")){
-#   # careful! this is from all table with umap made for all ROIs - should be change to avoid confusion
-#   geomx_segment <- geomx_obj[, geomx_obj@phenoData@data$Segment == segment]
-#   geomx_segment_doublepos <- geomx_segment[, geomx_segment@phenoData@data$Annotation_cell == "posCD8_posIBA1"]
-# 
-#   mixedOutmc <-
-#     mixedModelDE(geomx_segment_doublepos,
-#                  elt = "log_q3_norm",
-#                  modelFormula = ~ NACT_status_factor + (1 | Sample_factor), # random slope
-#                  groupVar = "NACT_status_factor",
-#                  nCores = (parallel::detectCores() - 1),
-#                  multiCore = FALSE)
-# 
-# 
-#   # format results as data.frame
-#   r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
-#   tests <- rownames(r_test)
-#   r_test <- as.data.frame(r_test)
-#   r_test$Contrast <- tests
-# 
-#   # use lapply in case you have multiple levels of your test factor to
-#   # correctly associate gene name with it's row in the results table
-#   r_test$Gene <-
-#     unlist(lapply(colnames(mixedOutmc),
-#                   rep, nrow(mixedOutmc["lsmeans", ][[1]])))
-#   r_test$Segment <- segment
-#   r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-#   r_test <- r_test[, c("Gene", "Segment",  "Contrast", "Estimate",
-#                        "Pr(>|t|)", "FDR")]
-#   results_pre_post_doublepos <- rbind(results_pre_post_doublepos, r_test)
-# }
-# 
-# fwrite(results_pre_post_doublepos, file.path(output_dir, 'dge/dge_pre_post_doublepos.csv'))
-# results_pre_post_doublepos_signif <- results_pre_post_doublepos[results_pre_post_doublepos$FDR <= 0.05, ]
-# fwrite(results_pre_post_doublepos_signif, file.path(output_dir, 'dge/dge_pre_post_doublepos_signif.csv'))
-# 
-# ################################
-# for alltogether post samples long vs short pfs
-geomx_post <- geomx_obj[, geomx_obj@phenoData@data$`NACT status` == 'post']
-
-results_pfs_doublepos <- c()
-for(segment in c("tumor", "stroma")){
-  # careful! this is from all table with umap made for all ROIs - should be change to avoid confusion
-  geomx_segment <- geomx_post[, geomx_post@phenoData@data$Segment == segment]
-  geomx_segment_doublepos <- geomx_segment[, geomx_segment@phenoData@data$Annotation_cell == "posCD8_posIBA1"]
-
-  mixedOutmc <-
-    mixedModelDE(geomx_segment_doublepos,
-                 elt = "log_q3_norm",
-                 modelFormula = ~ PFS_factor + (1 | Sample_factor), # random slope
-                 groupVar = "PFS_factor",
-                 nCores = (parallel::detectCores() - 1), # parallel doesnt work :/
-                 multiCore = FALSE)
-
-
-  # format results as data.frame
-  r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
-  tests <- rownames(r_test)
-  r_test <- as.data.frame(r_test)
-  r_test$Contrast <- tests
-
-  # use lapply in case you have multiple levels of your test factor to
-  # correctly associate gene name with it's row in the results table
-  r_test$Gene <-
-    unlist(lapply(colnames(mixedOutmc),
-                  rep, nrow(mixedOutmc["lsmeans", ][[1]])))
-  r_test$Segment <- segment
-  r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-  r_test <- r_test[, c("Gene", "Segment",  "Contrast", "Estimate",
-                       "Pr(>|t|)", "FDR")]
-  results_pfs_doublepos <- rbind(results_pfs_doublepos, r_test)
-}
-
-fwrite(results_pfs_doublepos, '/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge/old/dge_pfs_doublepos_updated.csv')
-
-
-# #############################################################
-# #############################################################
-# # separately per each patient pre and post, all
-# paired_patients <- c("S015", "S027", "S032", "S084", "S139")
-# 
-# results_patient_pairs <- c()
-# for(segment in c("tumor", "stroma")){
-#   # careful! this is from all table with umap made for all ROIs - should be change to avoid confusion
-#   geomx_segment <- geomx_obj[, geomx_obj@phenoData@data$Segment == segment]
-# 
-#   for(patient in paired_patients){
-#     geomx_patient <- geomx_segment[, geomx_segment@phenoData@data$Patient == patient]
-# 
-#     mixedOutmc <-
-#       mixedModelDE(geomx_patient,
-#                    elt = "log_q3_norm",
-#                    modelFormula = ~ NACT_status_factor + (1 | Sample_factor), # random slope
-#                    groupVar = "NACT_status_factor",
-#                    nCores = (parallel::detectCores() - 1),
-#                    multiCore = FALSE)
-# 
-# 
-#     # format results as data.frame
-#     r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
-#     tests <- rownames(r_test)
-#     r_test <- as.data.frame(r_test)
-#     r_test$Contrast <- tests
-# 
-#     # use lapply in case you have multiple levels of your test factor to
-#     # correctly associate gene name with it's row in the results table
-#     r_test$Gene <-
-#       unlist(lapply(colnames(mixedOutmc),
-#                     rep, nrow(mixedOutmc["lsmeans", ][[1]])))
-#     r_test$Segment <- segment
-#     r_test$Patient <- patient
-#     r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-#     r_test <- r_test[, c("Gene", "Segment", 'Patient',  "Contrast", "Estimate",
-#                          "Pr(>|t|)", "FDR")]
-#     results_patient_pairs <- rbind(results_patient_pairs, r_test)
-#   }
-# }
-# 
-# fwrite(results_patient_pairs, file.path(output_dir, 'dge/dge_patient_pairs.csv'))
-# results_patient_pairs_signif <- results_patient_pairs[results_patient_pairs$FDR <= 0.05, ]
-# fwrite(results_patient_pairs_signif, file.path(output_dir, 'dge/dge_patient_pairs_signif.csv'))
-# 
-# ############
-# # separately for patients, only doublepos
-# results_patient_pairs_doublepos <- c()
-# for(segment in c("tumor", "stroma")){
-#   # careful! this is from all table with umap made for all ROIs - should be change to avoid confusion
-#   geomx_segment <- geomx_obj[, geomx_obj@phenoData@data$Segment == segment]
-#   geomx_segment_doublepos <- geomx_segment[, geomx_segment@phenoData@data$Annotation_cell == "posCD8_posIBA1"]
-# 
-#   for(patient in paired_patients){
-#     geomx_patient <- geomx_segment_doublepos[, geomx_segment_doublepos@phenoData@data$Patient == patient]
-# 
-#     mixedOutmc <-
-#       mixedModelDE(geomx_patient,
-#                    elt = "log_q3_norm",
-#                    modelFormula = ~ NACT_status_factor + (1 | Sample_factor), # random slope
-#                    groupVar = "NACT_status_factor",
-#                    nCores = (parallel::detectCores() - 1),
-#                    multiCore = FALSE)
-# 
-# 
-#     # format results as data.frame
-#     r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
-#     tests <- rownames(r_test)
-#     r_test <- as.data.frame(r_test)
-#     r_test$Contrast <- tests
-# 
-#     # use lapply in case you have multiple levels of your test factor to
-#     # correctly associate gene name with it's row in the results table
-#     r_test$Gene <-
-#       unlist(lapply(colnames(mixedOutmc),
-#                     rep, nrow(mixedOutmc["lsmeans", ][[1]])))
-#     r_test$Segment <- segment
-#     r_test$Patient <- patient
-#     r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-#     r_test <- r_test[, c("Gene", "Segment", 'Patient',  "Contrast", "Estimate",
-#                          "Pr(>|t|)", "FDR")]
-#     results_patient_pairs_doublepos <- rbind(results_patient_pairs_doublepos, r_test)
-#   }
-# }
-# 
-# fwrite(results_patient_pairs_doublepos, file.path(output_dir, 'dge/dge_patient_pairs_doublepos.csv'))
-# results_patient_pairs_doublepos_signif <- results_patient_pairs_doublepos[results_patient_pairs_doublepos$FDR <= 0.05, ]
-# fwrite(results_patient_pairs_doublepos_signif, file.path(output_dir, 'dge/dge_patient_pairs_doublepos_signif.csv'))
-# 
-
-
-
-# # make DGE between selected ROI groups ------------------------------------
-# 
-# # within slide analysis - with random slope in LLM
-# # comparison between ++ (posCD8_posIBA1) and other groups
-# 
-# # convert test variables to factors
-# for(col in c(imp_vars, 'Sample')){
-#   pData(geomx_obj)[[paste0(col, "_factor")]] <- factor(pData(geomx_obj)[[col]])
-# }
-# 
-# # convert normalized counts to log scale
-# assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
-#   assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
-# 
-# # run LMM:
-# # formula follows conventions defined by the lme4 package
-# results <- c()
-# for(segment in c("tumor", "stroma")){
-#   # careful! this is from all table with umap made for all ROIs - should be change to avoid confusion
-#   geomx_segment <- geomx_obj[, geomx_obj@phenoData@data$Segment == segment]
-#   for(status in c("pre", "post")) {
-#     ind <- geomx_segment@phenoData@data$`NACT status` == status
-# 
-#     mixedOutmc <-
-#       mixedModelDE(geomx_segment[, ind],
-#                    elt = "log_q3_norm",
-#                    modelFormula = ~ Annotation_cell_factor + (1 + Annotation_cell_factor | Sample_factor), # random slope
-#                    groupVar = "Annotation_cell_factor",
-#                    nCores = (parallel::detectCores() - 1),
-#                    multiCore = FALSE)
-# 
-# 
-#     # format results as data.frame
-#     r_test <- do.call(rbind, mixedOutmc["lsmeans", ])
-#     tests <- rownames(r_test)
-#     r_test <- as.data.frame(r_test)
-#     r_test$Contrast <- tests
-# 
-#     # use lapply in case you have multiple levels of your test factor to
-#     # correctly associate gene name with it's row in the results table
-#     r_test$Gene <-
-#       unlist(lapply(colnames(mixedOutmc),
-#                     rep, nrow(mixedOutmc["lsmeans", ][[1]])))
-#     r_test$Subset <- status
-#     r_test$Segment <- segment
-#     r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-#     r_test <- r_test[, c("Gene", "Subset", "Segment",  "Contrast", "Estimate",
-#                          "Pr(>|t|)", "FDR")]
-#     results <- rbind(results, r_test)
-#   }
-# }
-# 
-# fwrite(results, file.path(output_dir, 'dge/dge_annotation_cell_pre_post_separately.csv'))
-
+fwrite(dge_results, file.path(output_dir, 'dge', 
+                          paste('dge', comparison_type, 'slide', main_var_name, 
+                                 'bin', main_var_is_bin, paste0(dge_categories, collapse = '_'), 
+                                sep = '_')))
 
 # enrichment on DGE -------------------------------------------------------
 
