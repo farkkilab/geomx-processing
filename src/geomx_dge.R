@@ -77,7 +77,7 @@ dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
 
 # load geomx obj from rds -------------------------------------------------
 
-geomx_obj <- readRDS(geomx_norm_path)
+geomx_obj <- readRDS(geomx_now_path)
 
 # convert normalized counts to log scale
 assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
@@ -179,23 +179,26 @@ fwrite(dge_results, file.path(output_dir, 'dge',
 
 # enrichment on DGE -------------------------------------------------------
 
-dge_data_dir <- file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge")
-
-list.files(file.path(dge_data_dir, 'dge'))
-
-# ROI type doublepos vs all other together pre post separately
-dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_annotation_dual_cell_pre_post_separately.csv"))
-# doublepost post short vs long pfi
-dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_pfs_doublepos_updated.csv"))
-# doublepos pre vs post
-dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_pre_post_doublepos.csv"))
+# dge_data_dir <- file.path("/media/iganiemi/T7-iga/st/geomx-processing/results/nact/dge")
+# 
+# list.files(file.path(dge_data_dir, 'dge'))
+# 
+# # ROI type doublepos vs all other together pre post separately
+# dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_annotation_dual_cell_pre_post_separately.csv"))
+# # doublepost post short vs long pfi
+# dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_pfs_doublepos_updated.csv"))
+# # doublepos pre vs post
+# dge_df <- fread(file.path(dge_data_dir, "dge",  "dge_pre_post_doublepos.csv"))
 
 # select thr
 fc_thr <- 1
 pval_thr <- 0.05
 # filter to post and significant
 
-dge_df_sig <- filter(dge_df, Subset == 'post' & FDR <= pval_thr & (Estimate >= fc_thr | Estimate <= -fc_thr))
+#dge_df_sig <- filter(dge_df, Subset == 'post' & FDR <= pval_thr & (Estimate >= fc_thr | Estimate <= -fc_thr))
+
+# filter to significant
+dge_df_sig <- filter(dge_results, FDR <= pval_thr & (Estimate >= fc_thr | Estimate <= -fc_thr))
 
 table(dge_df$Contrast)
 

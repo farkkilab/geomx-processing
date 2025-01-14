@@ -68,12 +68,15 @@ dds <- DESeqDataSetFromMatrix(countData = expr_int,
 
 # normalise
 dds <- estimateSizeFactors(dds)
+deseq2_norm_counts <- counts(dds, normalized=TRUE)
 
 # sizeFactors(dds)[1:10] # have a look at size factors
 
 #make df
-deseq2_norm_counts <- counts(dds, normalized=TRUE)
 dimnames(deseq2_norm_counts) = dimnames(geomx_obj@assayData$exprs)
+
+#TODO vst_counts <- varianceStabilizingTransformation(dds) may be added
+# and then make PCA based on this!!!
 
 # add quantile and dseq2 to geomx_obj -------------------------------------
 
