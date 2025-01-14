@@ -4,6 +4,34 @@ library(pvca)
 library(harmony)
 library(dplyr)
 
+##########################3
+#TODO !!!
+
+# There are multiple tools live SVA, COMBAT, edgeR function, limma function, RUVSEq, etc.
+# 
+# PVCA is doing PCA + Variance component analysis to extract factors that influence your variability using linear mixed model Steps :
+#   
+# So normalized data + PVCA = confounders of batch effects (Assessing and identifying confounders)
+# Perform correction or adjustments of the confounders extracted from 1 using any standard batcheffect 
+# adjustment methods and perform again PVCA to visualize on normalized-adjusted- log transformed data to see 
+# if confounders are assessed and what you see as primary gnee variability is due to biological phenotypic variation.
+# ( Viewing post-batch adjustments on all the genes expressed in all samples)
+# However, for DE analysis it is the model matrix and the model effects/covariates that will be pulled out 
+# from 1(batch effect confounders) . These effects should be modeled around your count data for any linear model 
+# fitting. Any results of DE should be then viewed in with log transformed/corrected (from 2) data for 
+# visualizations like heatmaps, expression box plots, etc. (using confounders as covariates in model 
+# design for linear fit with limma on counts data to perform DEA)
+# My only two cents are, batch effect removal is not the key, one needs to adjust for it 
+# rather not deduct it. You are trying to understand what are the confounders in your data 
+# and how they mess around. You do it from counts data and any normalization that entails should be 
+# used while performing the effect analysis. What you see for plots later can be viewed via log transformation. 
+# However, for downstream differential analysis you dont use log2 transformed batch corrected data. 
+# One uses the counts data, pulls out the effect information, adds it either as covariates in model design 
+# for differential expression or use it for adjustments. I suggest to you take a look at the below links 
+# to understand how it is done, what is the underlying statistics and variance associated , and that you do not make any over-fitting.
+
+
+
 #########################
 proj_dir <- '~/Documents/phd/st'
 output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2')
@@ -21,7 +49,7 @@ phenoData <- new("AnnotatedDataFrame", data=geomx_obj@phenoData@data,
 featureData <- new("AnnotatedDataFrame", data=geomx_obj@featureData@data, 
                  varMetadata=geomx_obj@featureData@varMetadata)
 
-exprset_deseq2_norm_log <- ExpressionSet(assayData=expr_norm_log, 
+exprset_deseq2_norm <- ExpressionSet(assayData=geomx_obj@assayData$deseq2_norm, 
                                          phenoData = phenoData,
                                          featureData = featureData)
 
@@ -31,7 +59,7 @@ exprset_deseq2_norm_log <- ExpressionSet(assayData=expr_norm_log,
 pData(geomx_obj) <- rename(pData(geomx_obj), Slide_Name = `Slide Name`)
 
 # change vars into factors
-batch_factors <- c('Slide_Name', 'Sample', 'Patient', 'Site', 'batch_nr')
+batch_factors <- c('Slide_Name', 'Sample', 'Patient', 'Site', 'batch_nr') #TODO check more
 for(colname in batch_factors){
   pData(geomx_obj)[[paste0(colname, '_factor')]] <- as.factor(pData(geomx_obj)[[colname]])
 }
@@ -40,7 +68,7 @@ batch_factors_names <- paste0(batch_factors, '_factor')
 
 pct_threshold <- 0.6
 
-pvcaObj <- pvcaBatchAssess(exprset_deseq2_norm_log, batch_factors_names, pct_threshold) 
+pvcaObj <- pvcaBatchAssess(exprset_deseq2_norm, batch_factors_names, pct_threshold) 
 
 
 bp <- barplot(pvcaObj$dat,  xlab = "Effects",
