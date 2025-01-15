@@ -24,8 +24,9 @@
 # geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 
 #PFS
-imp_vars <- c("Segment", "Annotation_cell", "NACT status", "Segment_tCycIF") # vals used for sankey, detection rate plots, 
+imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "Segment_tCycIF") # vals used for sankey, detection rate plots, 
 main_var <- "Annotation_cell" # legend in sankey, 
+aoi_segment_var <- "Segment"
 
 # parameters for removing genes based on LOQ
 # TODO adjustment may be needed: 10% for batch 1, 5% for batch2
@@ -100,7 +101,7 @@ sdt <- sData(geomx_obj)
 
 sdt$NTC_ID <- apply(sdt, 1, function(x){
   # one NTC/batch
-  ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
+  ntc <- sdt$dcc_filename[sdt$`Slide_Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
   return(ntc)
 })
 
@@ -147,7 +148,7 @@ geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
 
 # rmv NTC segments
 #TODO check if this is not messing up with latter functions
-geomx_obj <- geomx_obj[, !(geomx_obj$`Slide Name` == 'No Template Control')]
+geomx_obj <- geomx_obj[, !(geomx_obj$`Slide_Name` == 'No Template Control')]
 
 qc_results_segment <- protocolData(geomx_obj)[["QCFlags"]]
 qc_summary <- qc_summarize(qc_results_segment)
@@ -157,22 +158,22 @@ print(qc_summary)
 
 # plot qc histograms
 # duplicated cause you have to iterate trough 2 lists of names
-QC_histogram(sData(geomx_obj), "Trimmed (%)", "Segment", qc_params[["percentTrimmed"]], 
+QC_histogram(sData(geomx_obj), "Trimmed (%)", aoi_segment_var, qc_params[["percentTrimmed"]], 
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_trim.png'))
 
-QC_histogram(sData(geomx_obj), "Stitched (%)", "Segment", qc_params[["percentStitched"]],
+QC_histogram(sData(geomx_obj), "Stitched (%)", aoi_segment_var, qc_params[["percentStitched"]],
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_stich.png'))
 
-QC_histogram(sData(geomx_obj), "Aligned (%)", "Segment", qc_params[["percentAligned"]],
+QC_histogram(sData(geomx_obj), "Aligned (%)", aoi_segment_var, qc_params[["percentAligned"]],
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_align.png'))
 
-QC_histogram(sData(geomx_obj), "Saturated (%)", "Segment", qc_params[["percentSaturation"]],
+QC_histogram(sData(geomx_obj), "Saturated (%)", aoi_segment_var, qc_params[["percentSaturation"]],
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_satur.png'))
 
-QC_histogram(sData(geomx_obj), "area", "Segment", qc_params[["minArea"]], 
+QC_histogram(sData(geomx_obj), "area", aoi_segment_var, qc_params[["minArea"]], 
              scale_trans = "log10", file.path(output_dir, 'qc/qc_hist_area.png'))
 
-QC_histogram(sData(geomx_obj), "nuclei", "Segment", qc_params[["minNuclei"]],
+QC_histogram(sData(geomx_obj), "nuclei", aoi_segment_var, qc_params[["minNuclei"]],
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_nuclei.png'))
 
 
@@ -194,7 +195,7 @@ negCols <- paste0("NegGeoMean_", modules)
 pData(geomx_obj)[, negCols] <- sData(geomx_obj)[["NegGeoMean"]]
 
 for(ann in paste0("NegGeoMean_", modules)) {
-  QC_histogram(sData(geomx_obj), ann, "Segment", 2, scale_trans = "log10",
+  QC_histogram(sData(geomx_obj), ann, aoi_segment_var, 2, scale_trans = "log10",
                file.path(output_dir, 'qc/qc_hist_neggeomean.png')) #TODO? why exactly thr = 2?
 }
 
@@ -228,7 +229,7 @@ length(which(assayDataElement(geomx_diag, "up_outlier") == 1, arr.ind = TRUE))
 # Or if a batch effect is assumed, the poisson model can be adjusted to take 
 # different groups into account. Here we are grouping the ROIs by slide.
 
-geomx_obj <- fitPoisBG(geomx_obj, groupvar = "Slide Name")
+geomx_obj <- fitPoisBG(geomx_obj, groupvar = "Slide_Name")
 
 set.seed(123)
 geomx_diag <- diagPoisBG(geomx_obj, split = TRUE)
