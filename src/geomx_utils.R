@@ -248,6 +248,23 @@ plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'),
 }
 
 ############################################################
+# pvca_obj returned by pvcaBatchAssess()
+plot_pvca <- function(pvca_obj, plot_name, output_dir){
+  pvca_dt <- data.frame(effect_name = pvca_obj$label, var = t(pvca_obj$dat))
+  pvca_dt$effect_name <- gsub('_factor', '', pvca_dt$effect_name)
+  
+  pvca_plot <- ggplot(pvca_dt, aes(x = effect_name, y = var)) +
+    geom_col() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 6)) +
+    geom_text(aes(label = round(var, 3)), angle = 90, vjust = 0.5, hjust = 0, size = 2) +
+    ylab('Weighted average proportion variance') +
+    xlab('Effects') +
+    ylim(0, max(pvca_dt$var)+0.1)
+  
+  ggsave(file.path(output_dir, paste0('pvca_', plot_name, '.png')))
+}
+
+############################################################
 calculate_ora <- function(gene_vect, bcg_gene_vect, msigdb_df, padj = 0.1){
   ora <- enricher(
     gene = gene_vect,

@@ -11,6 +11,10 @@ library(preprocessCore, quietly =T)
 library(umap, quietly =T)
 library(Rtsne, quietly =T)
 
+library(limma)
+library(pvca)
+library(harmony)
+
 library(ggforce, quietly =T)
 library(plyr, quietly =T)
 library(dplyr, quietly =T)
@@ -44,6 +48,7 @@ dir.create(output_dir, recursive = T, showWarnings = F)
 
 geomx_qc_path <<- file.path(output_dir, 'geomx_qc.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
+geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
 
 # start the pipeline ------------------------------------------------------
 
@@ -62,3 +67,7 @@ run_unless_exists('Normalisation', geomx_norm_path,
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_normalisation.R'))
 
 
+# conditonally run batch effect removal -----------------------------------
+
+run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path, 
+                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_batch_effect_rmv.R'))
