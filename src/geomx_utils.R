@@ -172,28 +172,39 @@ plot_q3_stats <- function(geomx_obj, ann_of_interest, output_name){
 ###########################################################
 # plot normalisation effects
 
-plot_norm_effect <- function(expr_data, norm_name, output_name){
+plot_norm_effect <- function(expr_data, norm_name, output_name, log = T){
   png(filename=output_name, width=1000, height=750, units="px")
   
-  boxplot(expr_data,
-          col = "#9EDAE5", main = norm_name,
-          log='y', names = seq(1:ncol(expr_data)), xlab = "Segment",
-          ylab = norm_name)
+  if(log){
+    boxplot(expr_data,
+            col = "#9EDAE5", main = norm_name,
+            log='y', names = seq(1:ncol(expr_data)), xlab = "Segment",
+            ylab = norm_name)
+  } else{
+    boxplot(expr_data,
+            col = "#9EDAE5", main = norm_name,
+            names = seq(1:ncol(expr_data)), xlab = "Segment",
+            ylab = norm_name)
+  }
+
   
   dev.off()
 }
 
 ############################################################
 plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'), 
-                           norm_type = c('q3', 'quant'), color_var, shape_var = 'Segment',
+                           norm_type, color_var, shape_var = 'Segment',
                            output_name){
+  
+  pheno_data[[color_var]] <- as.character(pheno_data[[color_var]])
+  
   ggplot(pheno_data,
-         aes(x = get(paste0(method_type, '1_', norm_type, '_norm')), 
-             y = get(paste0(method_type, '2_', norm_type, '_norm')), 
+         aes(x = get(paste0(method_type, '1_', norm_type)), 
+             y = get(paste0(method_type, '2_', norm_type)), 
              color = get(color_var), shape = get(shape_var))) +
     geom_point(size = 3) +
-    xlab(paste0(method_type, '1_', norm_type, '_norm')) +
-    ylab(paste0(method_type, '2_', norm_type, '_norm')) +
+    xlab(paste0(method_type, '1_', norm_type)) +
+    ylab(paste0(method_type, '2_', norm_type)) +
     scale_color_discrete(name = color_var) + 
     scale_shape_discrete(name = shape_var) + 
     theme_bw()
@@ -325,8 +336,8 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
   gsva_boxpl <- ggplot(data = df, aes(x = get(pathway_colname), y = get(score_colname), fill = get(color_colname))) +
     #geom_boxplot() +
     geom_violin() +
-    geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
-               size= 0.2, alpha = 0.6) +
+    # geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+    #            size= 0.2, alpha = 0.6) +
     stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
     geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
     theme(axis.text.x = element_text(angle=45, hjust=1, size = 5)) +
