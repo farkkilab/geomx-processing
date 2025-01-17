@@ -191,6 +191,41 @@ plot_norm_effect <- function(expr_data, norm_name, output_name, log = T){
   dev.off()
 }
 
+###########################################################
+# geomx - geomx_obj
+# assay_name - name of assay (eg normalised expression mtx) to make dim reduction on
+# assay_is_log - T/F if the expr mtx from 'assay_name' is in the log scale or not
+make_umap_tsne <- function(geomx, assay_name, assay_is_log = F){
+  
+  # set the seed for UMAP
+  custom_umap <- umap::umap.defaults
+  custom_umap$random_state <- 42
+  
+  # log2 have to be used if the data are not in the log scale
+  if(assay_is_log){
+    inp_expr <- assayDataElement(geomx , elt = assay_name)
+  } else{
+    inp_expr <- log2(assayDataElement(geomx , elt = assay_name))
+  }
+  
+  # make umap
+  umap_out <- umap(t(inp_expr), config = custom_umap)
+  
+  # save UMAP1 and 2 results to pData
+  pData(geomx)[, c(paste0("UMAP1_", assay_name), paste0("UMAP2_", assay_name))] <- umap_out$layout[, c(1,2)]
+  
+  # set the seed for tSNE 
+  set.seed(42) 
+  
+  # make tsne
+  tsne_out <- Rtsne(t(inp_expr), perplexity = ncol(geomx)*.15)
+  
+  # save tSNE1 and 2 results to pData
+  pData(geomx)[, c(paste0("tSNE1_", assay_name), paste0("tSNE2_", assay_name))] <- tsne_out$Y[, c(1,2)]
+  
+  return(geomx)
+}
+
 ############################################################
 plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'), 
                            norm_type, color_var, shape_var = 'Segment',

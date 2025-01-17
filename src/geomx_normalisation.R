@@ -79,11 +79,11 @@ dimnames(deseq2_norm_counts) = dimnames(geomx_obj@assayData$exprs)
 # https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#dimensional-reduction
 deseq2_vst <- vst(dds, blind = FALSE)
 deseq2_vst_counts <- assay(deseq2_vst)
-deseq2_vst_counts <- scale(deseq2_vst_counts)
-dimnames(deseq2_vst_counts) = dimnames(geomx_obj@assayData$exprs)
+deseq2_vst_scaled <- scale(deseq2_vst_counts)
+dimnames(deseq2_vst_scaled) = dimnames(geomx_obj@assayData$exprs)
 
 
-# add norm matriced to geomx obj ------------------------------------------
+# add norm matrices to geomx obj ------------------------------------------
 
 # hacking GeoMx class object 
 # TODO this is experimental - newassay is not identical and it may cause problems
@@ -93,7 +93,7 @@ newassay$exprs <- geomx_obj@assayData$exprs
 newassay$q3_norm <- geomx_obj@assayData$q3_norm
 newassay$quant_norm <- norm.quantile
 newassay$deseq2_norm <- deseq2_norm_counts
-newassay$deseq2_vst_norm <- deseq2_vst_counts
+newassay$deseq2_vst_scaled <- deseq2_vst_scaled
 
 geomx_obj@assayData <- newassay
 
@@ -113,20 +113,17 @@ plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "quant_norm"),
 plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_norm"),
                  'DESeq2 normalised', file.path(output_dir, 'qc/norm_deseq2.png'))
 
-plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst_norm"), log = F,
+plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst_scaled"), log = F,
                  'DESeq2 normalised', file.path(output_dir, 'qc/norm_deseq2_vst.png'))
 
 
 # make UMAP and t-SNE -----------------------------------------------------
 
 # divide for segment and do dimentionality reduction for all
-
 seg_types <- unique(sData(geomx_obj)[, aoi_segment_var])
 
 geomx_obj_seg_list <- lapply(seg_types, function(seg){
-  print(seg)
   dir.create(file.path(output_dir, 'umap_tsne', seg), showWarnings = T, recursive = T)
-  
   geomx_obj_seg <- geomx_obj[, geomx_obj@phenoData@data$Segment == seg]
   
   return(geomx_obj_seg)
@@ -135,30 +132,14 @@ geomx_obj_seg_list <- lapply(seg_types, function(seg){
 names(geomx_obj_seg_list) <- seg_types
 geomx_list <- c(all = geomx_obj, geomx_obj_seg_list)
 
-norm <- 'deseq2_vst_norm'
+
+norm <- 'deseq2_vst_scaled'
 
 geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
-  
   geomx <- geomx_list[[n]]
   
   # run UMAP and tSNE on deseq2 vst counts
-  custom_umap <- umap::umap.defaults
-  custom_umap$random_state <- 42
-  
-  # log2 have to be used if the data are not in the log scale, but deseq2_vst_norm is already log
-  # umap_out <- umap(t(log2(assayDataElement(geomx , elt = norm))), config = custom_umap)
-  umap_out <- umap(t(assayDataElement(geomx , elt = norm)), config = custom_umap)
-  
-  # save UMAP1 and 2 results to pData
-  pData(geomx)[, c(paste0("UMAP1_", norm), paste0("UMAP2_", norm))] <- umap_out$layout[, c(1,2)]
-  
-  # set the seed for tSNE as well
-  set.seed(42) 
-  # tsne_out <- Rtsne(t(log2(assayDataElement(geomx , elt = norm))), perplexity = ncol(geomx)*.15)
-  tsne_out <- Rtsne(t(assayDataElement(geomx , elt = norm)), perplexity = ncol(geomx)*.15)
-  
-  # save tSNE1 and 2 results to pData
-  pData(geomx)[, c(paste0("tSNE1_", norm), paste0("tSNE2_", norm))] <- tsne_out$Y[, c(1,2)]
+  geomx <- make_umap_tsne(geomx, norm, assay_is_log = T)
 
   # generate umap and tsne plots and color by variables
   for(method in c('UMAP', 'tSNE')){

@@ -19,7 +19,6 @@ library(cowplot, quietly =T)
 library(reshape2, quietly =T)
 
 # define variables and paths ----------------------------------------------
-# TODO move it finally to the 'geomx_runner'
 proj_dir <- '~/Documents/phd/st'
 data_dir <- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/'
 
@@ -28,7 +27,8 @@ dcc_path <- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
 pkc_path <- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # anno file have to contain sheet named 'Sheet1' and following column names:
-# 'Sample_ID', 'Aoi', 'Roi', 'Sample' 
+# 'Sample_ID', 'Aoi', 'Roi', 'Sample', 'Slide_Name'
+# '_' instead of whitespace in all column names!!!
 anno_path <- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx')
 
 output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2')
