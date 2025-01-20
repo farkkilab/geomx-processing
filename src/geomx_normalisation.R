@@ -1,25 +1,6 @@
-# library(NanoStringNCTools)
-# library(GeomxTools)
-# library(Biobase)
-# library(DESeq2)
-# #install preprocessCore manually from source
-# # BiocManager::install("preprocessCore", configure.args = c(preprocessCore = "--disable-threading"), 
-# # force= TRUE, update=TRUE, type = "source")
-# library(preprocessCore)
-# 
-# library(umap)
-# library(Rtsne)
-# 
-# library(ggplot2)
-# library(cowplot)
-# library(reshape2)
 
-# get variables -----------------------------------------------------------
-# data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
-# output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact3'
-# geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
-# geomx_norm_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
 
+# define variables --------------------------------------------------------
 
 main_var <- "Annotation_cell" 
 umap_vars <- c("Segment", "Annotation_cell", "NACT_status", "Patient", "Sample",
