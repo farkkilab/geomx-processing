@@ -59,7 +59,8 @@ main_var_is_bin <- FALSE
 dge_categories <- c('Segment', 'Annotation_cell')
 ###############
 
-norm_type <- 'q3_norm' # either 'q3_norm', 'quant_norm' or 'deseq2_norm'
+norm_type <- 'limma_batch_corr' # best on batch-effect corrected data: 'limma_batch_corr' or 'harmony_batch_corr'
+norm_is_log <- TRUE # if normalised expr matrix is in the log scale, both limma and harmony batch corr are
 
 multicore = TRUE # if Linux or macOS, for Windows multicore = FALSE
 
@@ -73,9 +74,12 @@ dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
 
 geomx_obj <- readRDS(geomx_now_path)
 
-# convert normalized counts to log scale
-assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
-  assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
+if(!norm_is_log){
+  # convert normalized counts to log scale
+  assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
+    assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
+  norm_type <- paste0("log_", norm_type)
+}
 
 
 # DGE with main variable comparison ---------------------------------------
@@ -127,7 +131,7 @@ for(data_group in unique(pData(geomx_obj)[, 'dge_group'])){
   mixed_result <- tryCatch({
     mixedOutmc <- mixedModelDE(
       geomx_obj[, ind],
-      elt = paste0("log_", norm_type),
+      elt = norm_type,
       modelFormula = model_formula, 
       groupVar = 'main_var_factor',
       nCores = (parallel::detectCores() - 2),
