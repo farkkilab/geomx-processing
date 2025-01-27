@@ -17,31 +17,34 @@ library(data.table)
 # library(fpc)
 # library(dbscan)
 
+#TODO add visualsation to DGE script
+#TODO clean calling variables
+
 
 # get variables -----------------------------------------------------------
 
-comparison_type <- 'within' 
+# comparison_type <- 'within' 
 # 'within' when you compare different ROI types within sample
-# between - comparisons between slides
+# 'between' - comparisons between slides
 
-cofounder_name <- 'Sample' # don't change it
+# cofounder_name <- 'Sample' # don't change it
 # then 'Sample' is added as a cofounder (random intercept in LLM model)
 
-main_var_name <- "Annotation_cell" 
+# main_var_name <- "Annotation_cell" 
 # main_var - main variable to make comparison 
 
-main_var_is_bin <- TRUE 
+# main_var_is_bin <- TRUE 
 # if main_var_is_bin is True, main_var_main_val will be compared 
 # with all other categories in main_var
 # if False - each category in main_var will be compared with every other one
 # main_var_main_val is set to NULL
 
-main_var_main_val <- 'CD4_CD8_CD11_Iba1' 
+# main_var_main_val <- 'CD4_CD8_CD11_Iba1' 
 # main_var_main_val value among main_var which needs to be compare against all other vals
 # or part of the value eg 'CD8' within values for comparison
 
 
-dge_categories <- c('Segment', 'NACT status')
+# dge_categories <- c('Segment', 'NACT status')
 # dge_categories - all conditions for which we want to make DGE separately
 
 ################
@@ -52,11 +55,11 @@ dge_categories <- c('Segment', 'NACT status')
 # main_var_main_val <- 'CD4_CD8_CD11_Iba1' 
 # dge_categories <- c('Segment', 'NACT status')
 ################
-comparison_type <- 'between'
-cofounder_name <- 'Sample'
-main_var_name <- "NACT status"
-main_var_is_bin <- FALSE
-dge_categories <- c('Segment', 'Annotation_cell')
+# comparison_type <- 'between'
+# cofounder_name <- 'Sample'
+# main_var_name <- "NACT status"
+# main_var_is_bin <- FALSE
+# dge_categories <- c('Segment', 'Annotation_cell')
 ###############
 
 norm_type <- 'limma_batch_corr' # best on batch-effect corrected data: 'limma_batch_corr' or 'harmony_batch_corr'
@@ -181,10 +184,7 @@ fwrite(dge_results, file.path(output_dir, 'dge',
 
 # write logs with parameters ----------------------------------------------
 
-logs <- file(file.path(output_dir,'dge', paste('dge_', comparison_type, '_slide_', main_var_name, 
-                                               '_bin_', main_var_is_bin, '_', paste0(dge_categories, collapse = '_'), 
-                                               '_logs.txt')))
 writeLines(c('DGE logs:',
              'Comparison type: ', comparison_type, 
-             '; ', main_var_name, ' bin ', main_var_is_bin, '; categories to compare: ', dge_categories), logs)
-close(logs)
+             '; ', main_var_name, ' bin ', main_var_is_bin, '; categories to compare: ', dge_categories), dge_logs_path)
+close(dge_logs_path)
