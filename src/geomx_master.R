@@ -4,6 +4,7 @@ library(GeomxTools, quietly =T)
 library(GeoDiff, quietly =T)
 library(Biobase, quietly =T)
 library(DESeq2, quietly =T)
+library(SpatialDecon, quietly =T)
 #install preprocessCore manually from source
 # BiocManager::install("preprocessCore", configure.args = c(preprocessCore = "--disable-threading"), 
 # force= TRUE, update=TRUE, type = "source")
@@ -25,7 +26,12 @@ library(dplyr, quietly =T)
 library(ggplot2, quietly =T)
 library(cowplot, quietly =T)
 library(reshape2, quietly =T)
-library(data.table)
+library(data.table, quietly =T)
+library(tibble, quietly =T)
+
+library(Seurat, quietly =T)
+library(BayesPrism, quietly =T)
+library(biomaRt, quietly =T)
 
 # define variables and paths ----------------------------------------------
 proj_dir <- '~/Documents/phd/st'
@@ -39,6 +45,10 @@ pkc_path <- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 # 'Sample_ID', 'Aoi', 'Roi', 'Sample', 'Slide_Name'
 # '_' instead of whitespace in all column names!!!
 anno_path <- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx')
+
+# path to reference scRNAseq dataset for deconvolution
+# have to contain 'cell_type' column name
+scrna_ref_path <- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS')
 
 output_dir <- file.path(proj_dir, 'geomx-processing', 'results', 'batch2')
 
@@ -54,6 +64,7 @@ dir.create(output_dir, recursive = T, showWarnings = F)
 geomx_qc_path <<- file.path(output_dir, 'geomx_qc.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
+geomx_deconvolution_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_deconv.RDS')
 
 # start the pipeline ------------------------------------------------------
 
@@ -96,3 +107,12 @@ dge_logs_path <<- file.path(output_dir,'dge',
 
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
+
+
+# conditionally run deconvolution -----------------------------------------
+
+scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
+# column name of cell type label in scRNAseq metadata
+
+run_unless_exists('Deconvolution', geomx_deconvolution_path, 
+                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
