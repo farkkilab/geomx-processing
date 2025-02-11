@@ -5,8 +5,8 @@
 # problems with Matrix package - i has to be lower that 1.7 to work with lmer
 #devtools::install_version("Matrix","1.6.4")
 
-library(data.table)
-#library(clusterProfiler)
+# library(data.table)
+# library(clusterProfiler)
 # library(msigdbr)
 # library(progeny)
 # library(biomaRt)
@@ -76,7 +76,7 @@ dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
 
 # load geomx obj from rds -------------------------------------------------
 
-geomx_obj <- readRDS(geomx_now_path)
+geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 
 if(!norm_is_log){
   # convert normalized counts to log scale
@@ -96,6 +96,8 @@ if(main_var_is_bin){
   pData(geomx_obj)$main_var <- pData(geomx_obj)[, main_var_name]
 }
 
+print('groups which will be compared:')
+print(table(pData(geomx_obj)[, c(main_var_name, 'main_var')]))
 
 # convert test variables to factors
 for(col in c(dge_categories, 'main_var')){
@@ -177,15 +179,16 @@ for(data_group in unique(pData(geomx_obj)[, 'dge_group'])){
 
 # write results table -----------------------------------------------------
 
-fwrite(dge_results, file.path(output_dir, 'dge', 
-                          paste('dge_', comparison_type, '_slide_', main_var_name, 
-                                 '_bin_', main_var_is_bin, '_', paste0(dge_categories, collapse = '_'), 
-                                '.csv')))
+out_path <- gsub('_logs', '', dge_logs_path)
+out_path <- gsub('txt', 'csv', out_path)
+fwrite(dge_results, gsub('_logs', '', dge_logs_path))
 
 
 # write logs with parameters ----------------------------------------------
 
 writeLines(c('DGE logs:',
              'Comparison type: ', comparison_type, 
-             '; ', main_var_name, ' bin ', main_var_is_bin, '; categories to compare: ', dge_categories), dge_logs_path)
-close(dge_logs_path)
+             '; ', main_var_name, ' bin ', main_var_is_bin, 
+             '; main var value: ', main_var_main_val,
+             '; categories to compare: ', dge_categories), dge_logs_path)
+#close(dge_logs_path)

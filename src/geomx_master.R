@@ -91,19 +91,23 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 
 # conditionally run differential gene expression --------------------------
 
-comparison_type <<- 'between' 
+#TODO add comparison between 1 and 2nd group (eg 'CD8_IBA1' vs CD8-_IBA1)
+
+comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
 cofounder_name <<- 'Sample' # better don't change
-main_var_name <<- 'NACT status' # main variable to make comparison between
-main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
-main_var_main_val <- 'CD4_CD8_CD11_Iba1' # if main_var_is_bin - TRUE - name of the main value to make comparison
-dge_categories <<- c('Segment', 'Annotation_cell') # categories to divide to when making DGE separately
+main_var_name <<- 'Annotation_cell' # main variable to make comparison between
+main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
+# if FALSE all labels in main_var_name will be compared as they are
+main_var_main_val <- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex)
+dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
 
-dge_logs_path <<- file.path(output_dir,'dge', 
-                           paste('dge_', comparison_type, '_slide_', main_var_name, 
-                                 '_bin_', main_var_is_bin, '_', 
-                                 paste0(dge_categories, collapse = '_'), '_logs.txt'))
+dge_logs_path <<- file.path(output_dir, 'dge', 
+                            paste0('dge_', comparison_type, '_slide_', main_var_name, 
+                                   '_bin_', main_var_is_bin, '_', main_var_main_val, '_',
+                                   paste0(dge_categories, collapse = '_'), 
+                                   '_logs.txt'))
 
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
