@@ -15,7 +15,9 @@
 
 #TODO add here normalisation from (probably) deconvolution_comparison script
 #TODO when is the output written?
-#TODO check if this may be in the log scale. either norm or batch-eff corrected expr mtx
+
+# recommended usage is raw counts, although not log transofrmation of both sc and bulk is also ok
+#TODO normalise scRNAseq with deseq2norm and compare to raw
 
 
 # define variables --------------------------------------------------------
@@ -31,11 +33,13 @@
 #TODO what is this output_scrna_mtx_path ??
 #output_scrna_mtx_path <- file.path(output_dir, 'oc_scrna_ref_mtx_for_spatialdecon.RDS')
 
-norm_type <- 'q3_norm'
-ct_nr_thr <- 45 # best 20 or 45 to rmv cell states not abundant enough in scrnaseq
+norm_type <- 'deseq2_norm'
+ct_nr_thr <- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
 tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
-adjust_synonym_gene_names <- F #whether or not to adjust synonymical gene names between scRNAsea and GeoMX
+adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
 # that help rescue typically around 300 genes with synonym names, but sometimes Ensembl not work
+
+meta_names <- c('dcc_filename', 'Patient', 'Segment', 'Sample', 'NACT_status', 'Annotation_cell')
 
 # make dirs and source functions ------------------------------------------
 
@@ -50,121 +54,130 @@ scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_
 # prepare scrnaseq reference dataset --------------------------------------
 
 #TODO can be moved to some other script
-geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
-scrna_ref_obj <- readRDS(scrna_ref_path)
 
-
-if(adjust_synonym_gene_names){
-  # repair synonymuous gene names
-  length(rownames(geomx_obj@assayData$exprs))
-  length(rownames(scrna_ref_obj@assays$RNA@data))
-  length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
+if(!file.exists(scrna_ref_cleaned_path)){
+  geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
+  scrna_ref_obj <- readRDS(scrna_ref_path)
   
-  adjusted_genes_rna <- adjust_synonym_genes(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data))
   
-  #  make a new assay with renamed genes
-  RNA_common_genes <- scrna_ref_obj@assays$RNA
-  RNA_common_genes@counts@Dimnames[[1]] <- adjusted_genes_rna
-  RNA_common_genes@data@Dimnames[[1]] <- adjusted_genes_rna
-  scrna_ref_obj@assays$RNA_common_genes <- RNA_common_genes
+  if(adjust_synonym_gene_names){
+    # repair synonymuous gene names
+    length(rownames(geomx_obj@assayData$exprs))
+    length(rownames(scrna_ref_obj@assays$RNA@data))
+    length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
+    
+    adjusted_genes_rna <- adjust_synonym_genes(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data))
+    
+    #  make a new assay with renamed genes
+    RNA_common_genes <- scrna_ref_obj@assays$RNA
+    RNA_common_genes@counts@Dimnames[[1]] <- adjusted_genes_rna
+    RNA_common_genes@data@Dimnames[[1]] <- adjusted_genes_rna
+    scrna_ref_obj@assays$RNA_common_genes <- RNA_common_genes
+    
+    length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
+    length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA_common_genes@data)))
+    
+    rna_mtx_touse <- 'RNA_common_genes'
+  } else{
+    rna_mtx_touse <- 'RNA'
+  }
+  #TODO save is somehow different to use flexibly
   
-  length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA@data)))
-  length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_ref_obj@assays$RNA_common_genes@data)))
   
-  rna_mtx_touse <- 'RNA_common_genes'
+  # clean cell labels
+  scrna_ref_obj@meta.data$cell_type <- ifelse(scrna_ref_obj@meta.data$cell_type == tumor_ct_name, 
+                                              'tumor', scrna_ref_obj@meta.data$cell_type)
+  
+  # cell states - clustering tumor cells by patient
+  scrna_ref_obj@meta.data$cell_state <- ifelse(scrna_ref_obj@meta.data$cell_type == 'tumor', 
+                                               paste0('tumor_', scrna_ref_obj@meta.data$patient), 
+                                               scrna_ref_obj@meta.data$cell_type)
+  
+  ########################################
+  # QC of cell states
+  # TODO think of changing labels for mast cells, Th17, tumor_H103
+  
+  # plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
+  #               input.labels=scrna_ref_obj@meta.data$cell_state,
+  #               title="cell state correlation",
+  #               #specify pdf.prefix if need to output to pdf
+  #               #pdf.prefix="gbm.cor.cs",
+  #               cexRow=0.6, cexCol=0.6,
+  #               margins=c(6,6))
+  # 
+  # dev.off()
+  # 
+  # plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
+  #               input.labels=scrna_ref_obj@meta.data$mid_lvl_ct,
+  #               title="cell type correlation",
+  #               #specify pdf.prefix if need to output to pdf
+  #               #pdf.prefix="gbm.cor.ct",
+  #               cexRow=0.5, cexCol=0.5,
+  # )
+  # 
+  # dev.off()
+  #################################
+  
+  # check genes outliers
+  scrna_stat <- plot.scRNA.outlier(
+    input=t(scrna_ref_obj@assays[[rna_mtx_touse]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
+    cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+    species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+    return.raw=TRUE, #return the data used for plotting.
+    pdf.prefix= gsub('.RDS', '', scrna_ref_cleaned_path) # specify pdf.prefix if need to output to pdf
+  )
+  
+  
+  # filter out outlier genes
+  scrna_filt <- cleanup.genes (input=t(scrna_ref_obj@assays[[rna_mtx_touse]]@data),
+                               input.type="count.matrix",
+                               species="hs", 
+                               gene.group=c( "Rb","Mrp","other_Rb","chrM","MALAT1","chrX","chrY") ,
+                               exp.cells=5)
+  
+  dim(t(scrna_ref_obj@assays[[rna_mtx_touse]]@data))
+  dim(scrna_filt)
+  
+  # geomx doen't have to be filtered since later on they took only intersection of genes
+  
+  # subset to protein coding genes
+  scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
+  
+  #  make a new assay with filtered genes
+  RNA_filt_pc <- scrna_ref_obj@assays[[rna_mtx_touse]]
+  RNA_filt_pc@counts <- RNA_filt_pc@counts[rownames(RNA_filt_pc@counts) %in% colnames(scrna_filt_pc),  ]
+  RNA_filt_pc@data <- RNA_filt_pc@data[rownames(RNA_filt_pc@data) %in% colnames(scrna_filt_pc),  ]
+  scrna_ref_obj@assays[[paste0(rna_mtx_touse, '_filt_pc')]] <- RNA_filt_pc
+  
+  # save adjusted scRNAseq file
+  saveRDS(scrna_ref_obj, file = scrna_ref_cleaned_path)
+  
+  
+  ###########################
+  # TODO takes > 64G of memory, if needed have to be run on linux machine 
+  # subset to signature genes (differentially expressed trough cell types)
+  # diff_exp_stat <- get.exp.stat(sc.dat=scrna_raw[,colSums(scrna_raw>0)>3],# filter genes to reduce memory use
+  #                               cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+  #                               cell.state.labels=scrna_ref_obj@meta.data$cell_state,
+  #                               pseudo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+  #                               cell.count.cutoff=20, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+  #                               n.cores=8 #number of threads
+  # )
+  
+  # scrna_filt_pc_sig <- select.marker (sc.dat=scrna_filt_pc,
+  #                                          stat=diff_exp_stat,
+  #                                          pval.max=0.01,
+  #                                          lfc.min=0.1)
+  
+  # dim(scrna_filt_pc_sig)
+  ##############################
+  
 } else{
-  rna_mtx_touse <- 'RNA'
+  print(paste0("cleaned reference scRNAseq dataset made from ", scrna_ref_path,
+  " already exists under the path: ", scrna_ref_cleaned_path))
 }
-#TODO save is somehow different to use flexibly
 
 
-# clean cell labels
-scrna_ref_obj@meta.data$cell_type <- ifelse(scrna_ref_obj@meta.data$cell_type == tumor_ct_name, 
-                                            'tumor', scrna_ref_obj@meta.data$cell_type)
-
-# cell states - clustering tumor cells by patient
-scrna_ref_obj@meta.data$cell_state <- ifelse(scrna_ref_obj@meta.data$cell_type == 'tumor', 
-                                             paste0('tumor_', scrna_ref_obj@meta.data$patient), 
-                                             scrna_ref_obj@meta.data$cell_type)
-
-########################################
-# QC of cell states
-# TODO think of changing labels for mast cells, Th17, tumor_H103
-
-# plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
-#               input.labels=scrna_ref_obj@meta.data$cell_state,
-#               title="cell state correlation",
-#               #specify pdf.prefix if need to output to pdf
-#               #pdf.prefix="gbm.cor.cs",
-#               cexRow=0.6, cexCol=0.6,
-#               margins=c(6,6))
-# 
-# dev.off()
-# 
-# plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
-#               input.labels=scrna_ref_obj@meta.data$mid_lvl_ct,
-#               title="cell type correlation",
-#               #specify pdf.prefix if need to output to pdf
-#               #pdf.prefix="gbm.cor.ct",
-#               cexRow=0.5, cexCol=0.5,
-# )
-# 
-# dev.off()
-#################################
-
-# check genes outliers
-scrna_stat <- plot.scRNA.outlier(
-  input=t(scrna_ref_obj@assays[[rna_mtx_touse]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
-  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
-  return.raw=TRUE, #return the data used for plotting.
-  pdf.prefix= gsub('.RDS', '', scrna_ref_cleaned_path) # specify pdf.prefix if need to output to pdf
-)
-
-
-# filter out outlier genes
-scrna_filt <- cleanup.genes (input=t(scrna_ref_obj@assays[[rna_mtx_touse]]@data),
-                             input.type="count.matrix",
-                             species="hs", 
-                             gene.group=c( "Rb","Mrp","other_Rb","chrM","MALAT1","chrX","chrY") ,
-                             exp.cells=5)
-
-dim(t(scrna_ref_obj@assays[[rna_mtx_touse]]@data))
-dim(scrna_filt)
-
-# geomx doen't have to be filtered since later on they took only intersection of genes
-
-# subset to protein coding genes
-scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
-
-#  make a new assay with filtered genes
-RNA_filt_pc <- scrna_ref_obj@assays[[rna_mtx_touse]]
-RNA_filt_pc@counts <- RNA_filt_pc@counts[rownames(RNA_filt_pc@counts) %in% colnames(scrna_filt_pc),  ]
-RNA_filt_pc@data <- RNA_filt_pc@data[rownames(RNA_filt_pc@data) %in% colnames(scrna_filt_pc),  ]
-scrna_ref_obj@assays[[paste0(rna_mtx_touse, '_filt_pc')]] <- RNA_filt_pc
-
-# save adjusted scRNAseq file
-saveRDS(scrna_ref_obj, file = scrna_ref_cleaned_path)
-
-
-###########################
-# TODO takes > 64G of memory, if needed have to be run on linux machine 
-# subset to signature genes (differentially expressed trough cell types)
-# diff_exp_stat <- get.exp.stat(sc.dat=scrna_raw[,colSums(scrna_raw>0)>3],# filter genes to reduce memory use
-#                               cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-#                               cell.state.labels=scrna_ref_obj@meta.data$cell_state,
-#                               pseudo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
-#                               cell.count.cutoff=20, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
-#                               n.cores=8 #number of threads
-# )
-
-# scrna_filt_pc_sig <- select.marker (sc.dat=scrna_filt_pc,
-#                                          stat=diff_exp_stat,
-#                                          pval.max=0.01,
-#                                          lfc.min=0.1)
-
-# dim(scrna_filt_pc_sig)
-##############################
 
 # deconvolution by bayesprism ---------------------------------------------
 # https://github.com/Danko-Lab/BayesPrism/blob/main/tutorial_deconvolution.html
@@ -182,7 +195,7 @@ scrna_ref_obj <- scrna_ref_obj[, !colnames(scrna_ref_obj) %in% low_ct_cells]
 
 # make a prism object
 prism_obj <- new.prism(
-  reference=t(scrna_ref_obj@assays$RNA_common_genes_filt_pc@data), 
+  reference=t(scrna_ref_obj@assays$RNA_filt_pc@data), 
   mixture=t(geomx_obj@assayData$exprs),
   input.type="count.matrix", 
   cell.type.labels = scrna_ref_obj@meta.data[[scrna_anno]], 
@@ -199,7 +212,47 @@ bprism_res <- run.prism(prism = prism_obj, n.cores=18)
 saveRDS(bprism_res, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
                                      paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '.RDS')))
 
+# extract and save ct fractions 
+ct_frac <- get.fraction (bp=bprism_res,
+                         which.theta="final",
+                         state.or.type="type")
 
+ct_names <- colnames(ct_frac)
+
+ct_frac <- rownames_to_column(as.data.frame(ct_frac), 'dcc_filename')
+ct_frac <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
+                     by = 'dcc_filename')
+
+fwrite(ct_frac, file.path(output_dir,'deconvolution', 'bayes_prism', 
+                          paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_ct_fraction.RDS')))
+
+
+# normalise deconvolution expr mtx
+deconv_ct_list <- lapply(ct_names, function(ct_name){
+  cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
+  # mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bulk, 0.5 for Visium, GeoMx should be in the middle)
+  # histogram from batch 1 suggests 0.2 as thr
+  cell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[ct_name]] > 0.2]
+  
+  deconv_ct <- BayesPrism::get.exp(bp=bprism_res,
+                                   state.or.type="type",
+                                   cell.name=ct_name)
+  
+  deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
+  deconv_ct <- varianceStabilizingTransformation(round(t(deconv_ct))) # normalisation
+  
+  return(deconv_ct)
+})
+
+names(deconv_ct_list) <- ct_names
+
+saveRDS(deconv_ct_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
+                                     paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_norm.RDS')))
+
+rm(prism_obj)
+rm(bprism_res)
+rm(ct_frac)
+rm(deconv_ct)
 
 ###############################################################################
 ###############################################################################
@@ -212,19 +265,19 @@ saveRDS(bprism_res, file = file.path(output_dir,'deconvolution', 'bayes_prism',
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
 
+scrna_mtx_name <- ifelse('RNA_common_genes' %in% colnames(scrna_ref_obj@meta.data), 'RNA_common_genes', 'RNA')
+
 # filter geomx object from low complexity genes
 geomx_stat <- plot.bulk.outlier(
   bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
-  sc.input=t(scrna_ref_obj@assays$RNA_common_genes@data), #make sure the colnames are gene symbol or ENSMEBL ID
+  sc.input=t(scrna_ref_obj@assays[[scrna_mtx_name]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
   cell.type.labels=scrna_ref_obj@meta.data$cell_type,
   species="hs", #currently only human(hs) and mouse(mm) annotations are supported
-  return.raw=TRUE
-  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+  return.raw=TRUE,
+  pdf.prefix= file.path(output_dir, 'deconvolution', 'spatial_decon', 
+                        paste0('sd_res_', scrna_anno, '_', ct_nr_thr)) #specify pdf.prefix if need to output to pdf
 )
 
-View(geomx_stat)
-
-# TODO but maybe it should? check if it improves SpatialDecon
 geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
 geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% geomx_stat_to_rm),  ]
 
@@ -243,21 +296,24 @@ rownames(scrna_anno_dt) <- NULL
 colnames(scrna_anno_dt) <- c('cell_name', 'cell_type')
 
 # TODO examine scalingFactor: 1 or 5 or what?
-custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$SCT@data,            # cell x gene count matrix
+custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$RNA_filt_pc@data,            # cell x gene count matrix
                                        cellAnnots = scrna_anno_dt,  # cell annotations with cell type and cell name as columns
                                        cellTypeCol = "cell_type",  # column containing cell type
                                        cellNameCol = "cell_name",           # column containing cell ID/name
-                                       matrixName = "oc_scrnaseq_ref_cell_type_sct", # name of final profile matrix
+                                       matrixName = "oc_scrnaseq_ref_cell_type_filt_pc", # name of final profile matrix
                                        outDir = output_dir,                    # path to desired output directory, set to NULL if matrix should not be written
                                        normalize = FALSE,                # Should data be normalized?
-                                       minCellNum = 50,                   # minimum number of cells of one type needed to create profile, exclusive
+                                       minCellNum = ct_nr_thr,                   # minimum number of cells of one type needed to create profile, exclusive
                                        minGenes = 10,                    # minimum number of genes expressed in a cell, exclusive
                                        scalingFactor = 1,                # what should all values be multiplied by for final matrix
                                        discardCellTypes = TRUE)          # should cell types be filtered for types like mitotic, doublet, low quality, unknown, etc.
 
 # run extended SpatialDecon with custom oc mtx ----------------------------
 
-sd_res_custom <- runspatialdecon(object = geomx_obj,
+# TODO run also with geomx_filtered and check results
+# TODO run with nuclei_counts when it will be counted reliably from cycif 
+
+sd_res_custom <- runspatialdecon(object = geomx_filtered,
                                     norm_elt = norm_type,                # normalized data
                                     raw_elt = "exprs",                      # expected background counts for every data point in norm
                                     X = custom_oc_mtx,                            # safeTME matrix, used by default
@@ -266,129 +322,13 @@ sd_res_custom <- runspatialdecon(object = geomx_obj,
                                     n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
 
 saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_decon', paste0('sd_res_', scrna_anno, 
-                                  '_filt_geomx.rds')))
+                                  '_geomx_', norm_type, '_', ct_nr_thr, '.RDS')))
 
+# extract and save ct fractions 
+ct_frac_st <- rownames_to_column(data.frame(pData(sd_res_custom)[, 'prop_of_all']), 'dcc_filename')
+ct_frac_st <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
+                     by = 'dcc_filename')
 
-######################################################################
-######################################################################
-# OLD CODE 
-
-######################################################
-######################################################
-# all bells and whistles from the vignette
-# prepare data for SpatialDecon -------------------------------------------
-# from
-# https://bioconductor.org/packages/release/bioc/vignettes/SpatialDecon/inst/doc/SpatialDecon_vignette_NSCLC.html
-
-#TODO check geomx_obj and geomx_obj_filtered 
-
-featureType(geomx_obj) <- "Target"
-
-sampleNames(geomx_obj) <- sData(geomx_obj)[['dcc_filename']]
-
-# get negative probes (aggregated to features already) names
-negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative")
-
-# estimate bcg for every segment based on neg probes 
-# TODO re-check if >1 module
-geomx_bg <- derive_GeoMx_background(norm = geomx_obj@assayData[[norm_type]],
-                                    probepool = fData(geomx_obj)$Module,
-                                    negnames = negativeProbefData$TargetName)
-
-# load pre-defined TME cell profile matrix
-tme_mtx <- download_profile_matrix(species = "Human",
-                                   age_group = "Adult", 
-                                   matrixname = "ImmuneTumor_safeTME")
-
-data("safeTME")
-data("safeTME.matches")
-
-# prepare cell profile matrix from reference scRNAseq ---------------------
-
-scrna_ref_obj <- readRDS(scrna_ref_path)
-
-# format annotations
-scrna_anno_dt <- scrna_ref_obj@meta.data[, c('cell_name', scrna_anno)]
-rownames(scrna_anno_dt) <- NULL
-colnames(scrna_anno_dt) <- c('cell_name', 'cell_type')
-
-# TODO examine scalingFactor: 1 or 5 or what?
-custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$SCT@data,            # cell x gene count matrix
-                                       cellAnnots = scrna_anno_dt,  # cell annotations with cell type and cell name as columns
-                                       cellTypeCol = "cell_type",  # column containing cell type
-                                       cellNameCol = "cell_name",           # column containing cell ID/name
-                                       matrixName = "oc_scrnaseq_ref_cell_type_sct", # name of final profile matrix
-                                       outDir = output_dir,                    # path to desired output directory, set to NULL if matrix should not be written
-                                       normalize = FALSE,                # Should data be normalized?
-                                       minCellNum = 50,                   # minimum number of cells of one type needed to create profile, exclusive
-                                       minGenes = 10,                    # minimum number of genes expressed in a cell, exclusive
-                                       scalingFactor = 1,                # what should all values be multiplied by for final matrix
-                                       discardCellTypes = TRUE)          # should cell types be filtered for types like mitotic, doublet, low quality, unknown, etc.
-
-
-
-# run basic SpatialDecon --------------------------------------------------
-decon_res <-  runspatialdecon(object = geomx_obj,
-                              norm_elt = norm_type,
-                              raw_elt = "exprs",
-                              X = tme_mtx,
-                              align_genes = TRUE)
-
-#heatmap(t(decon_res$beta), cexCol = 0.5, cexRow = 0.7, margins = c(10,7))
-
-# run extended SpatialDecon -----------------------------------------------
-
-#give info about tumor
-geomx_obj$istumor = geomx_obj$Segment == "tumor"
-
-# TODO nuclei counts from geomx are unreliable - match with info from cycif
-# TODO examine if istumor should be used - it's not pure in our case
-# TODO examine n_tumor_clusters param with different n
-
-decon_res_ext <- runspatialdecon(object = geomx_obj,
-                                 norm_elt = norm_type,                # normalized data
-                                 raw_elt = "exprs",                      # expected background counts for every data point in norm
-                                 X = safeTME,                            # safeTME matrix, used by default
-                                 cellmerges = safeTME.matches,           # safeTME.matches object, used by default
-                                 #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
-                                 #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
-                                 n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
-
-heatmap(sweep(decon_res_ext@experimentData@other$SpatialDeconMatrix, 1, apply(decon_res_ext@experimentData@other$SpatialDeconMatrix, 1, max), "/"),
-        labRow = NA, margins = c(10, 5))
-
-# run extended SpatialDecon with custom oc mtx ----------------------------
-
-decon_res_custom <- runspatialdecon(object = geomx_obj,
-                                    norm_elt = norm_type,                # normalized data
-                                    raw_elt = "exprs",                      # expected background counts for every data point in norm
-                                    X = custom_oc_mtx,                            # safeTME matrix, used by default
-                                    #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
-                                    #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
-                                    n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
-
-# run extended SpatialDecon with custom oc mtx and estimated bg------------
-
-#TODO to use bg geomx obj have to be converted to seurat
-decon_res_custom_bg <- runspatialdecon(object = geomx_obj,
-                                       bg = geomx_bg,                      # expected background counts for every data point in norm
-                                       X = custom_oc_mtx,                            # safeTME matrix, used by default
-                                       #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
-                                       #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
-                                       n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
-
-
-# save spatialdecon results -----------------------------------------------
-
-# colnames from output
-res_cols <- c("beta", "p", "t", "se", "prop_of_all", "prop_of_nontumor")
-
-res_ext <- pData(decon_res_ext)[, c(res_cols, "sigma")]
-saveRDS(res_ext, file = file.path(output_dir, 'deconvolution', 'spatial_decon', scrna_anno, 
-                                  'spat_dec_res_ext.rds'))
-
-res_custom <- pData(decon_res_custom)[, c(res_cols, "sigmas")]
-saveRDS(res_ext, file = file.path(output_dir, 'deconvolution', 'spatial_decon', scrna_anno, 
-                                  'spat_dec_res_custom.rds'))
-
-
+fwrite(ct_frac_st, file.path(output_dir,'deconvolution', 'spatial_decon', 
+                             paste0('sd_res_', scrna_anno, 
+                                    '_filt_geomx_', norm_type, '_', ct_nr_thr, '_ct_fraction.RDS')))

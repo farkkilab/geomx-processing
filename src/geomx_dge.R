@@ -19,6 +19,7 @@ library(data.table)
 
 #TODO add visualsation to DGE script
 #TODO clean calling variables
+#TODO adjust for deconvoluted data as well
 
 
 # get variables -----------------------------------------------------------
