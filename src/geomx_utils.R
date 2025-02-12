@@ -284,7 +284,9 @@ calculate_ora <- function(gene_vect, bcg_gene_vect, msigdb_df, padj = 0.1){
 }
 
 ##########################################################
-plot_volcano_deg <- function(results, plot_name, top_n_lab, group_pos, group_neg){
+# have to be used for each data group[ and contrast separately!!
+# remeber to always use Segment as a data grouping variable in DEG
+plot_volcano_deg <- function(results, plot_name, top_n_lab, group_pos, group_neg, output_dir){
   # Categorize Results based on P-value & FDR for plotting
   results$Color <- "NS or FC < 0.5"
   results$Color[results$`Pr(>|t|)` < 0.05] <- "P < 0.05"
@@ -298,16 +300,22 @@ plot_volcano_deg <- function(results, plot_name, top_n_lab, group_pos, group_neg
   # pick top genes for either side of volcano to label
   # order genes for convenience:
   results$invert_P <- (-log10(results$`Pr(>|t|)`)) * sign(results$Estimate)
-  top_g <- c()
-  for(cond in c("tumor", "stroma")) {
-    ind <- results$Segment == cond
-    top_g <- c(top_g,
-               results[ind, 'Gene'][
-                 order(results[ind, 'invert_P'], decreasing = TRUE)[1:top_n_lab]],
-               results[ind, 'Gene'][
-                 order(results[ind, 'invert_P'], decreasing = FALSE)[1:top_n_lab]])
-  }
-  top_g <- unique(unlist(top_g))
+  # top_g <- c()
+  # for(cond in c("tumor", "stroma")) {
+  #   ind <- results$Segment == cond
+  #   top_g <- c(top_g,
+  #              results[ind, 'Gene'][
+  #                order(results[ind, 'invert_P'], decreasing = TRUE)[1:top_n_lab]],
+  #              results[ind, 'Gene'][
+  #                order(results[ind, 'invert_P'], decreasing = FALSE)[1:top_n_lab]])
+  # }
+  # top_g <- unique(unlist(top_g))
+  
+  top_g <- unique(c(results$Gene[
+               order(results$invert_P, decreasing = TRUE)[1:top_n_lab]],
+             results$Gene[
+               order(results$invert_P, decreasing = FALSE)[1:top_n_lab]]))
+  
   results <- results[, -'invert_P'] # remove invert_P from matrix
   
   # Graph results
@@ -332,10 +340,10 @@ plot_volcano_deg <- function(results, plot_name, top_n_lab, group_pos, group_neg
                     max.overlaps = 50) +
     theme_bw(base_size = 16) +
     theme(legend.position = "bottom") +
-    facet_wrap(~Segment, scales = "fixed") +
+    #facet_wrap(~Segment, scales = "fixed") +
     ggtitle(paste(plot_name, group_pos, group_neg))
   
-  ggsave(file.path(output_dir, 'dge', paste0('volc_', plot_name, '_', group_pos, '_', group_neg,  '.png')), width = 4000, height = 2000, unit='px')
+  ggsave(file.path(output_dir, paste0('volc_', plot_name, '_', group_pos, '_', group_neg,  '.png')), width = 4000, height = 2000, unit='px')
 }
 
 ################################################################
