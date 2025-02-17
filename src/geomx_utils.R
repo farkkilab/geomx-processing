@@ -468,3 +468,53 @@ adjust_synonym_genes <- function(geomx_gene_names, gene_vector){
     return(gene_vector)
   }
 }
+
+###################################################
+###################################################
+# prepare signatures list from msigdb
+# adjust_synonym - useful to rescue couple hundred synonym genes, but often ensembl does not work 
+# hal - use or not hallmark db
+# db_subcat_list - list of gs_subcat values 
+prepare_msigdb_sign_list <- function(adjust_synonym = T, geomx_obj = NULL, hal = T, 
+                                      db_subcat_list = c('CP:BIOCARTA', 'CP:KEGG', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')){
+  
+  # prepare msigdb signatures list
+  msigdb_df <- msigdbr(species = "Homo sapiens")
+  if(hal){
+    msigdb_df <- filter(msigdb_df, gs_cat == 'H' | gs_subcat %in% db_subcat_list)
+  } else{
+    msigdb_df <- filter(msigdb_df, gs_subcat %in% db_subcat_list)
+  }
+  
+  if(adjust_synonym){
+    msigdb_df$gene_symbol_adj <- adjust_synonym_genes(rownames(geomx_obj), msigdb_df$gene_symbol)
+    gene_colname <- 'gene_symbol_adj'
+  } else{
+    gene_colname <- 'gene_symbol_adj'
+  }
+
+  hal_cp_list <- lapply(unique(msigdb_df$gs_name), function(x){
+    gs <- filter(msigdb_df, gs_name == x)
+    gs_genes <- unique(gs[[gene_colname]])
+  })
+  
+  names(hal_cp_list) <- unique(msigdb_df$gs_name)
+  
+  return(hal_cp_list)
+}
+
+###################################################
+###################################################
+# prepare signatures list from custom file
+prepare_custom_sign_list <- function(custom_sign_df, adjust_synonym = T, geomx_obj = NULL){
+  sign_list <- as.list(custom_sign_df)
+  sign_list <- lapply(sign_list, function(l){l[l !=""]})
+  
+  if(adjust_synonym){
+    sign_list <- lapply(sign_list, function(x){
+      adjust_synonym_genes(rownames(geomx_obj), x)})
+  }
+  
+  return(sign_list)
+}
+  
