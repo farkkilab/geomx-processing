@@ -19,8 +19,14 @@ dir.create(file.path(output_dir, 'batch_correction'), showWarnings = T, recursiv
 main_batch_var <- 'batch_nr'
 secondary_batch_var <- NULL
 
+# normalisation used for batch effect correction calculation
+norm_type <- 'deseq2_vst' # best to use vst data, eventually deseq2_norm
+norm_is_log <- TRUE # vst is already in the log-like scale, other norm types not
+
 # PVCA threshold
 pct_threshold <- 0.6 
+
+dir.create(file.path(output_dir, 'batch_correction'), recursive = T, showWarnings = F)
 
 # load geomx object and create expression set -----------------------------
 
@@ -38,13 +44,17 @@ phenoData <- new("AnnotatedDataFrame", data=geomx_obj@phenoData@data,
 featureData <- new("AnnotatedDataFrame", data=geomx_obj@featureData@data, 
                  varMetadata=geomx_obj@featureData@varMetadata)
 
+# !! by default deseq2_norm is used to check for initial batch effect by pvca
 exprset_deseq2_norm <- ExpressionSet(assayData=geomx_obj@assayData$deseq2_norm, 
-                                         phenoData = phenoData,
-                                         featureData = featureData)
+                              phenoData = phenoData,
+                              featureData = featureData)
 
-# make log2 transformed normalised counts
-expr_norm_log <- log2(geomx_obj@assayData$deseq2_norm + 1)
-
+if(!norm_is_log){
+  # make log2 transformed normalised counts if norm_type not in log scale
+  expr_norm_log <- log2(geomx_obj@assayData[[norm_type]] + 1)
+} else{
+  expr_norm_log <- geomx_obj@assayData[[norm_type]]
+}
 
 # check initial batch effect with PVCA ------------------------------------
 
@@ -58,7 +68,7 @@ cov <- NULL
 design <- model.matrix(exp_design, data = sData(geomx_obj))
 batch <-  sData(geomx_obj)[[main_batch_var]]
 
-if(!is.character(secondary_batch_var)){
+if(is.null(secondary_batch_var)){
   # if there are 1 main variable responsible for batcheffect
   limma_res <- limma::removeBatchEffect(expr_norm_log, batch = batch, covariates = cov,
                                         design = design)
@@ -75,7 +85,7 @@ if(!is.character(secondary_batch_var)){
 # remove batch effect with harmony
 meta_dt <- pData(geomx_obj)[, c(batch_vars, aoi_segment_var, 'dcc_filename')]
 
-if(!is.character(secondary_batch_var)){
+if(is.null(secondary_batch_var)){
   # if there are 1 main variable responsible for batcheffect
   # harmony res have to be flipped
   harmony_res <- t(HarmonyMatrix(expr_norm_log, 
