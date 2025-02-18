@@ -11,8 +11,6 @@ aoi_segment_var <- "Segment"
 
 dir.create(file.path(output_dir, 'umap_tsne', 'all'), showWarnings = T, recursive = T)
 
-#source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
-
 # load qc geomx data ------------------------------------------------------
 
 geomx_obj <- readRDS(geomx_qc_path)
@@ -35,8 +33,9 @@ geomx_obj <- normalize(geomx_obj ,
 # from
 # https://github.com/LevivanHijfte/NanoString_normalization_methods/blob/main/Data_preprocessing.R
 
-norm.quantile = normalize.quantiles(as.matrix(geomx_obj@assayData$exprs))
-dimnames(norm.quantile) = dimnames(geomx_obj@assayData$exprs)
+# probably not needed
+# norm.quantile = normalize.quantiles(as.matrix(geomx_obj@assayData$exprs))
+# dimnames(norm.quantile) = dimnames(geomx_obj@assayData$exprs)
 
 # DESeq2 normalisation ----------------------------------------------------
 
@@ -56,24 +55,24 @@ dimnames(deseq2_norm_counts) = dimnames(geomx_obj@assayData$exprs)
 # sizeFactors(dds)[1:10] # have a look at size factors
 
 # do variance stabilising transformation - for PCA and other downstream analysis
-# these counts are in log-scale !
+# output is in log-like-scale !
 # https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#dimensional-reduction
 deseq2_vst <- vst(dds, blind = FALSE)
 deseq2_vst_counts <- assay(deseq2_vst)
-deseq2_vst_scaled <- scale(deseq2_vst_counts)
-dimnames(deseq2_vst_scaled) = dimnames(geomx_obj@assayData$exprs)
+dimnames(deseq2_vst_counts) = dimnames(geomx_obj@assayData$exprs)
 
+# scaling is better for PCA
+deseq2_vst_scaled <- scale(deseq2_vst_counts)
 
 # add norm matrices to geomx obj ------------------------------------------
 
 # hacking GeoMx class object 
-# TODO this is experimental - newassay is not identical and it may cause problems
-# if so, store this in another mtx and use when needed
 newassay <- new.env(parent=geomx_obj@assayData)
 newassay$exprs <- geomx_obj@assayData$exprs
 newassay$q3_norm <- geomx_obj@assayData$q3_norm
-newassay$quant_norm <- norm.quantile
+#newassay$quant_norm <- norm.quantile
 newassay$deseq2_norm <- deseq2_norm_counts
+newassay$deseq2_vst <- deseq2_vst_counts
 newassay$deseq2_vst_scaled <- deseq2_vst_scaled
 
 geomx_obj@assayData <- newassay
@@ -87,16 +86,18 @@ plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "q3_norm"),
                  'Q3 normalised', file.path(output_dir, 'qc/norm_q3.png'))
 
 # TODO I don't like sth with this plot, why all outliers are the same in each segment?
-plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "quant_norm"),
-                 'Quantile normalised', file.path(output_dir, 'qc/norm_quant.png'))
+# plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "quant_norm"),
+#                  'Quantile normalised', file.path(output_dir, 'qc/norm_quant.png'))
 
 # super similar to Q3 :0
 plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_norm"),
                  'DESeq2 normalised', file.path(output_dir, 'qc/norm_deseq2.png'))
 
-plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst_scaled"), log = F,
-                 'DESeq2 normalised', file.path(output_dir, 'qc/norm_deseq2_vst.png'))
+plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst"), log = F,
+                 'DESeq2 vst', file.path(output_dir, 'qc/deseq2_vst.png'))
 
+plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst_scaled"), log = F,
+                 'DESeq2 vst', file.path(output_dir, 'qc/deseq2_vst_scaled.png'))
 
 # make UMAP and t-SNE -----------------------------------------------------
 
@@ -138,12 +139,9 @@ geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
 
 # update objects
 geomx_obj <- geomx_list_dim_red[[1]]
-# geomx_qc_tumor <- geomx_list_dim_red[[2]]
-# geomx_qc_stroma <- geomx_list_dim_red[[3]]
 
 rm(geomx_list)
 rm(geomx_list_dim_red)
 
 # save geomx as RDS
-
 saveRDS(geomx_obj, file = geomx_norm_path)
