@@ -8,10 +8,15 @@
 norm_type <- 'q3_norm' # quantile is best for sd, bp works on raw counts
 ct_nr_thr <- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
 tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
-adjust_synonym_gene_names <- T # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
+adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
 # that help rescue typically around 300 genes with synonym names, but sometimes Ensembl not work
 
 meta_names <- c('dcc_filename', 'Patient', 'Segment', 'Sample', 'NACT_status', 'Annotation_cell')
+
+# main cause of the batch effect, from 1st PVCA plot
+# should be the same as in batch effect rm script
+main_batch_var <- 'batch_nr'
+secondary_batch_var <- NULL
 
 # make dirs and source functions ------------------------------------------
 
@@ -194,8 +199,7 @@ ct_frac <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
 fwrite(ct_frac, file.path(output_dir,'deconvolution', 'bayes_prism', 
                           paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_ct_fraction.RDS')))
 
-
-# normalise deconvolution expr mtx
+# normalise deconvolution expr mtx 
 deconv_ct_list <- lapply(ct_names, function(ct_name){
   cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
   # mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bulk, 0.5 for Visium, GeoMx should be in the middle)
@@ -207,15 +211,41 @@ deconv_ct_list <- lapply(ct_names, function(ct_name){
                                    cell.name=ct_name)
   
   deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
+  
+  # do vst normalisation
   deconv_ct <- varianceStabilizingTransformation(round(t(deconv_ct))) # normalisation
   
+
   return(deconv_ct)
 })
 
 names(deconv_ct_list) <- ct_names
 
 saveRDS(deconv_ct_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                     paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_norm.RDS')))
+                                     paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_vst.RDS')))
+
+# do batch effect removal with harmony
+
+# make metadata for batch effect correction
+meta_dt <- pData(geomx_obj)[, c(meta_names, main_batch_var, secondary_batch_var)]
+
+deconv_batch_rm_list <- lapply(ct_names, function(ct_name){
+  print(ct_name)
+  deconv_vst <- deconv_ct_list[[ct_name]]
+  
+  # filter meta if some ROI does not contain given ct
+  mata_dt_ct <- meta_dt[meta_dt$dcc_filename %in% colnames(deconv_vst), ]
+  
+  deconv_harmony_res <- t(HarmonyMatrix(deconv_vst, 
+                                        meta_data = mata_dt_ct,
+                                        vars_use = c(main_batch_var, secondary_batch_var)))
+  return(deconv_harmony_res)
+})
+
+names(deconv_batch_rm_list) <- ct_names
+
+saveRDS(deconv_batch_rm_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
+                                         paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')))
 
 rm(prism_obj)
 rm(bprism_res)

@@ -85,18 +85,9 @@ if(is.null(secondary_batch_var)){
 # remove batch effect with harmony
 meta_dt <- pData(geomx_obj)[, c(batch_vars, aoi_segment_var, 'dcc_filename')]
 
-if(is.null(secondary_batch_var)){
-  # if there are 1 main variable responsible for batcheffect
-  # harmony res have to be flipped
-  harmony_res <- t(HarmonyMatrix(expr_norm_log, 
-                                 meta_data = meta_dt,
-                                 vars_use = main_batch_var))
-} else{
-  #if there are 2 variables responsible for batcheffect
-  harmony_res <- t(HarmonyMatrix(expr_norm_log, 
-                                             meta_data = meta_dt,
-                                             vars_use = c(main_batch_var, secondary_batch_var)))
-}
+harmony_res <- t(HarmonyMatrix(expr_norm_log, 
+                               meta_data = meta_dt,
+                               vars_use = c(main_batch_var, secondary_batch_var)))
 
 # additional scaling and PCA before harmony -------------------------------
 # https://htmlpreview.github.io/?https://github.com/immunogenomics/harmony/blob/master/doc/detailedWalkthrough.html
