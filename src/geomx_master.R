@@ -34,11 +34,11 @@ library(tibble, quietly =T)
 library(Seurat, quietly =T)
 library(BayesPrism, quietly =T)
 library(biomaRt, quietly =T)
-library(msigdbr)
+library(msigdbr, quietly =T)
 
-library(GSVA)
-library(clusterProfiler)
-library(progeny)
+library(GSVA, quietly =T)
+library(clusterProfiler, quietly =T)
+library(progeny, quietly =T)
 
 
 # possibly for pathway analysis in dge
@@ -54,6 +54,9 @@ library(progeny)
 proj_dir <<- '~/Documents/phd/st'
 data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/'
 
+output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1802')
+
+# input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
                 full.names = TRUE, recursive = TRUE)
 pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
@@ -70,8 +73,6 @@ scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_d
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
                               'stromal_cell_subtype_signatures_symbols_ensembl_ids_revised.csv')
-
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2')
 
 # load utils functions ----------------------------------------------------
 
@@ -113,12 +114,8 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 
 # conditionally run deconvolution -----------------------------------------
 
-# TODO add batch effect correction
-# TODO recheck sd usage with edgeR vignette - eg negative probes
-# https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
-
-scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 # column name of cell type label in scRNAseq metadata
+scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
 run_unless_exists('Deconvolution', geomx_deconvolution_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))

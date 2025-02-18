@@ -5,7 +5,7 @@
 
 # define variables --------------------------------------------------------
 
-norm_type <- 'q3_norm' # quantile is best for sd, bp works on raw counts
+norm_type <- 'q3_norm' # quantile is best for sd, bp works on raw counts, for sd norm cannot be in the log scale
 ct_nr_thr <- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
 tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
 adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
@@ -250,7 +250,8 @@ saveRDS(deconv_batch_rm_list, file = file.path(output_dir,'deconvolution', 'baye
 rm(prism_obj)
 rm(bprism_res)
 rm(ct_frac)
-rm(deconv_ct)
+rm(deconv_ct_list)
+rm(deconv_batch_rm_list)
 
 
 # prepare data for SpatialDecon -------------------------------------------
@@ -311,20 +312,50 @@ custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$RNA_filt_pc@da
 
 sd_res_custom <- runspatialdecon(object = geomx_filtered,
                                     norm_elt = norm_type,                # normalized data
-                                    raw_elt = "exprs",                      # expected background counts for every data point in norm
-                                    X = custom_oc_mtx,                            # safeTME matrix, used by default
+                                    raw_elt = "exprs",                    
+                                    X = custom_oc_mtx,                            
                                     #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
                                     #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
                                     n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
 
-saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_decon', paste0('sd_res_', scrna_anno, 
-                                  '_geomx_', norm_type, '_', ct_nr_thr, '.RDS')))
+# run spatial decon with bg estimated genes
+# estimate bcg for every segment based on neg probes 
+# TODO re-check if >1 module
+negativeProbefData <- subset(fData(geomx_filtered), CodeClass == "Negative")
+geomx_bg <- derive_GeoMx_background(norm = geomx_filtered@assayData[[norm_type]],
+                                    probepool = fData(geomx_filtered)$Module,
+                                    negnames = negativeProbefData$TargetName)
+
+sd_res_custom_bg <- spatialdecon(norm = geomx_filtered@assayData[[norm_type]],                # normalized data
+                                 bg = geomx_bg, # expected background counts for every data point in norm
+                                 raw = geomx_filtered@assayData$exprs,                      
+                                 X = custom_oc_mtx,                            
+                                 #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
+                                 #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
+                                 n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
+
+
+
+saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
+                                        paste0('sd_res_', scrna_anno, '_geomx_', norm_type, '_', ct_nr_thr, '.RDS')))
+
+saveRDS(sd_res_custom_bg, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
+                                        paste0('sd_res_bg', scrna_anno, '_geomx_', norm_type, '_', ct_nr_thr, '.RDS')))
+
 
 # extract and save ct fractions 
 ct_frac_st <- rownames_to_column(data.frame(pData(sd_res_custom)[, 'prop_of_all']), 'dcc_filename')
-ct_frac_st <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
+ct_frac_st <- left_join(ct_frac_st, sData(geomx_obj)[, meta_names],
                      by = 'dcc_filename')
 
 fwrite(ct_frac_st, file.path(output_dir,'deconvolution', 'spatial_decon', 
                              paste0('sd_res_', scrna_anno, 
+                                    '_filt_geomx_', norm_type, '_', ct_nr_thr, '_ct_fraction.RDS')))
+
+ct_frac_st_bg <- rownames_to_column(data.frame(t(sd_res_custom_bg$prop_of_all)), 'dcc_filename')
+ct_frac_st_bg <- left_join(ct_frac_st_bg, sData(geomx_obj)[, meta_names],
+                        by = 'dcc_filename')
+
+fwrite(ct_frac_st_bg, file.path(output_dir,'deconvolution', 'spatial_decon', 
+                             paste0('sd_res_bg', scrna_anno, 
                                     '_filt_geomx_', norm_type, '_', ct_nr_thr, '_ct_fraction.RDS')))
