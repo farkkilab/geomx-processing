@@ -1,20 +1,3 @@
-# TODO check if all packages are needed
-# library(NanoStringNCTools)
-# library(GeomxTools)
-# library(GeoMxWorkflows)
-# library(SpatialDecon)
-# library(plyr)
-# library(dplyr)
-# library(ggplot2)
-# library(data.table)
-# library(reshape2)
-# library(Seurat)
-# library(tibble)
-# library(BayesPrism)
-# library(biomaRt)
-
-#TODO add here normalisation from (probably) deconvolution_comparison script
-#TODO when is the output written?
 
 # recommended usage is raw counts, although not log transofrmation of both sc and bulk is also ok
 #TODO normalise scRNAseq with deseq2norm and compare to raw
@@ -22,21 +5,10 @@
 
 # define variables --------------------------------------------------------
 
-# data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
-# output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
-
-# geomx_norm_batch_eff_rm_path <- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
-# geomx_deconvolution_path <- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_deconv.RDS')
-
-# scrna_ref_path <- '/media/iganiemi/T7-iga/st/data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS'
-
-#TODO what is this output_scrna_mtx_path ??
-#output_scrna_mtx_path <- file.path(output_dir, 'oc_scrna_ref_mtx_for_spatialdecon.RDS')
-
-norm_type <- 'deseq2_norm'
+norm_type <- 'q3_norm' # quantile is best for sd, bp works on raw counts
 ct_nr_thr <- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
 tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
-adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
+adjust_synonym_gene_names <- T # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
 # that help rescue typically around 300 genes with synonym names, but sometimes Ensembl not work
 
 meta_names <- c('dcc_filename', 'Patient', 'Segment', 'Sample', 'NACT_status', 'Annotation_cell')
@@ -48,8 +20,6 @@ dir.create(file.path(output_dir, 'deconvolution', 'spatial_decon', scrna_anno), 
 dir.create(file.path(output_dir, 'deconvolution', 'bayes_prism', scrna_anno), showWarnings = T, recursive = T)
 
 scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
-
-# source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
 # prepare scrnaseq reference dataset --------------------------------------
 
@@ -81,8 +51,6 @@ if(!file.exists(scrna_ref_cleaned_path)){
   } else{
     rna_mtx_touse <- 'RNA'
   }
-  #TODO save is somehow different to use flexibly
-  
   
   # clean cell labels
   scrna_ref_obj@meta.data$cell_type <- ifelse(scrna_ref_obj@meta.data$cell_type == tumor_ct_name, 
@@ -122,7 +90,7 @@ if(!file.exists(scrna_ref_cleaned_path)){
   scrna_stat <- plot.scRNA.outlier(
     input=t(scrna_ref_obj@assays[[rna_mtx_touse]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
     cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-    species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+    species="hs", 
     return.raw=TRUE, #return the data used for plotting.
     pdf.prefix= gsub('.RDS', '', scrna_ref_cleaned_path) # specify pdf.prefix if need to output to pdf
   )
@@ -138,7 +106,7 @@ if(!file.exists(scrna_ref_cleaned_path)){
   dim(t(scrna_ref_obj@assays[[rna_mtx_touse]]@data))
   dim(scrna_filt)
   
-  # geomx doen't have to be filtered since later on they took only intersection of genes
+  # geomx doesn't have to be filtered since later on they took only intersection of genes
   
   # subset to protein coding genes
   scrna_filt_pc <-  select.gene.type(scrna_filt, gene.type = "protein_coding")
@@ -254,9 +222,7 @@ rm(bprism_res)
 rm(ct_frac)
 rm(deconv_ct)
 
-###############################################################################
-###############################################################################
-############################################################################
+
 # prepare data for SpatialDecon -------------------------------------------
 # from
 # https://bioconductor.org/packages/release/bioc/vignettes/SpatialDecon/inst/doc/SpatialDecon_vignette_NSCLC.html
@@ -310,7 +276,7 @@ custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$RNA_filt_pc@da
 
 # run extended SpatialDecon with custom oc mtx ----------------------------
 
-# TODO run also with geomx_filtered and check results
+# TODO check diff between running on filtered an unfiltered geomx mtx
 # TODO run with nuclei_counts when it will be counted reliably from cycif 
 
 sd_res_custom <- runspatialdecon(object = geomx_filtered,

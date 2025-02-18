@@ -1,70 +1,27 @@
-# TODO check if all packages are needed
-# library(NanoStringNCTools)
-# library(GeomxTools)
-# library(GeoMxWorkflows)
-# library(GSVA)
-# library(plyr)
-# library(dplyr)
-# library(data.table)
-# library(biomaRt)
-# library(DESeq2)
-# library(msigdbr)
-# library(tibble)
-#library(GeoDiff)
-# library(ggplot2)
-# library(ggforce)
-# 
-# library(cowplot)
-# library(preprocessCore)
-# library(Biobase)
-# library(reshape2)
-# 
-# library(clusterProfiler)
-# library(progeny)
-# library(reshape2)
-# library(ggpubr)
-
 
 # get variables -----------------------------------------------------------
-# data_dir <- '/home/iganiemi/Documents/phd/st/data/geomx/geomx_batch1_nact/'
-# output_dir <- '/home/iganiemi/Documents/phd/st/geomx-processing/results/nact'
-# 
-# input_rds_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
-# 
-# input_bp_deconv_path <- file.path(output_dir, 'deconvolution', 'bp', 'bp_res_mid_lvl_ct_45.RDS')
-# deconv_type <- 'mid_lvl_ct' # either mid_lvl_ct or cell_type
-# 
-# input_sd_deconv_path <- file.path(output_dir, 'deconvolution', 'sd', 'sd_res_mid_lvl_ct_nofilt.rds')
-# 
-# sig_additional_path <- '/home/iganiemi/Documents/phd/st/geomx-processing/data/signatures/stromal_cell_subtype_signatures_symbols_ensembl_ids_revised.csv'
-#sig_additional_path <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_macro_tcells_msigdb_filt.csv'
-# sig_path_macro <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_macro.csv'
-# sig_path_tcell <- '/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/additional_signatures_tcells.csv'
-#sig_name <- 'additional_macro'
 
-# if not doing all hall_cp
-# selected_sig_path <- file.path('/media/iganiemi/T7-iga/st/geomx-processing/data/signatures/immune_signatures_selected_names.csv')
-
-######
 # TODO put it somewhere in the main script and reuse through scripts
-imp_vars <- c("Segment", "Annotation_cell", "NACT status", "PFS", "PFS_months", "Sample") 
+imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "PFS", "PFS_months", "Sample") 
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient') 
 
-#TODO check if this is the best norm type or can be used with batch correction
-norm_type <- 'q3_norm' # deseq2_norm / vst / limma_batch_corr
+# best to use batch effect corrected or at least vst data in log form 
+norm_type <- 'limma_batch_corr' # or harmony_batch_corr or deseq2_vst_scaled
+norm_is_log <- TRUE # limma and harmony batch eff corr are in log scale, vst is similar to log
 
 adj_synonym <- T # whether or not adjust synonyms genes
 # around 300 genes can be rescued this way but ensembl does not always work
 # if there are issues, turn it off
+min_sign_gene_nr <- 5 # signatures with less nr of genes will be removed, 5 is min in msigdb
 
-progeny_type <- 'perm' 
+progeny_type <- NULL 
 # whether 'perm' or 'nonperm' - some quirks in progeny algorithm, results similar but perm is preferred
 # if NULL <- no progeny calculation
 
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursive = T)
-dir.create(file.path(output_dir, 'gsea'), showWarnings = T, recursive = T)
+dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, recursive = T)
 
 # load geomx obj from rds -------------------------------------------------
 
@@ -73,6 +30,13 @@ geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 # read expression mtx
 expr_mtx <- assayDataElement(geomx_obj, elt = norm_type)
 
+# make log expression mtx if needed
+if(!norm_is_log){
+  # convert normalized counts to log scale
+  assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
+    assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
+  norm_type <- paste0("log_", norm_type)
+}
 
 # load deconvoluted signal ------------------------------------------------
 
@@ -96,6 +60,8 @@ if(signature_type == 'msigdb'){
 } else{
   stop("signature_type parameter can only be 'msigb' or 'custom'")
 }
+
+sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
 
 #TODO for deconvolution
 # expr_list <- deconv_ct_list
@@ -132,6 +98,13 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   
   return(gsea_long)
 })
+
+
+# calculate limma rotation gene set test ----------------------------------
+
+#TODO
+#input matrix in log
+# limma::fry(v, index = x, design = design, contrast = contr.matrix[,1], robust = TRUE)
 
 
 # PROGENy scores ----------------------------------------------------------

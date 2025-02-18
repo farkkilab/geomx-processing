@@ -113,7 +113,9 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 
 # conditionally run deconvolution -----------------------------------------
 
-#TODO add batch effect correction
+# TODO add batch effect correction
+# TODO recheck sd usage with edgeR vignette - eg negative probes
+# https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
 
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 # column name of cell type label in scRNAseq metadata
@@ -124,8 +126,7 @@ run_unless_exists('Deconvolution', geomx_deconvolution_path,
 # conditionally run pathway analysis --------------------------------------
 
 # TODO adjust for deconvoluted data
-# TODO check which norm and if batch correction can be used
-# TODO add Modulescore
+# TODO add limma fry calculation
 
 input_type <<- 'all' # within ('all', 'bp', 'sd')
 # all - full geomx data (not-deconvoluted)
@@ -151,7 +152,7 @@ run_unless_exists('Pathway analysis', pathway_analysis_path,
 
 # TODO adjust for deconvoluted data
 # TODO which norm and if batch eff correction can be used
-# TODO use limma as in 
+# TODO use limma voom
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
 
 comparison_type <<- 'within' 

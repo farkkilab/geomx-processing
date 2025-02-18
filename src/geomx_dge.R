@@ -1,23 +1,9 @@
-
 # WARNING: DGE with mixed model will take around 30G RAM
 # best to run in >10 cores
 
 # problems with Matrix package - i has to be lower that 1.7 to work with lmer
 #devtools::install_version("Matrix","1.6.4")
 
-# library(data.table)
-# library(clusterProfiler)
-# library(msigdbr)
-# library(progeny)
-# library(biomaRt)
-# library(GSVA)
-# library(ggpubr)
-# library(topGO)
-# library(fgsea)
-# library(fpc)
-# library(dbscan)
-
-#TODO add visualsation to DGE script
 #TODO clean calling variables
 #TODO adjust for deconvoluted data as well
 
@@ -63,6 +49,7 @@
 # dge_categories <- c('Segment', 'Annotation_cell')
 ###############
 
+#TODO ensure which norm to use
 norm_type <- 'limma_batch_corr' # best on batch-effect corrected data: 'limma_batch_corr' or 'harmony_batch_corr'
 norm_is_log <- TRUE # if normalised expr matrix is in the log scale, both limma and harmony batch corr are
 
@@ -179,12 +166,9 @@ for(data_group in unique(pData(geomx_obj)[, 'dge_group'])){
 
 # write results table -----------------------------------------------------
 
-
 out_path <- gsub('_logs', '', dge_logs_path)
 out_path <- gsub('txt', 'csv', out_path)
 fwrite(dge_results, out_path)
-
-
 
 # make volcano plots for visualisation ------------------------------------
 
