@@ -5,8 +5,7 @@
 
 # define variables --------------------------------------------------------
 
-norm_type <- 'q3_norm' # quantile is best for sd, bp works on raw counts, for sd norm cannot be in the log scale
-ct_nr_thr <- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
+
 tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
 adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
 # that help rescue typically around 300 genes with synonym names, but sometimes Ensembl not work
@@ -244,8 +243,7 @@ deconv_batch_rm_list <- lapply(ct_names, function(ct_name){
 
 names(deconv_batch_rm_list) <- ct_names
 
-saveRDS(deconv_batch_rm_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                         paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')))
+saveRDS(deconv_batch_rm_list, file = deconv_bp_harm_path)
 
 rm(prism_obj)
 rm(bprism_res)
@@ -307,7 +305,7 @@ custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$RNA_filt_pc@da
 
 # run extended SpatialDecon with custom oc mtx ----------------------------
 
-# TODO check diff between running on filtered an unfiltered geomx mtx
+# TODO code repetition - rmv after checking if bg or no-bg is better 
 # TODO run with nuclei_counts when it will be counted reliably from cycif 
 
 sd_res_custom <- runspatialdecon(object = geomx_filtered,
@@ -356,6 +354,4 @@ ct_frac_st_bg <- rownames_to_column(data.frame(t(sd_res_custom_bg$prop_of_all)),
 ct_frac_st_bg <- left_join(ct_frac_st_bg, sData(geomx_obj)[, meta_names],
                         by = 'dcc_filename')
 
-fwrite(ct_frac_st_bg, file.path(output_dir,'deconvolution', 'spatial_decon', 
-                             paste0('sd_res_bg', scrna_anno, 
-                                    '_filt_geomx_', norm_type, '_', ct_nr_thr, '_ct_fraction.RDS')))
+fwrite(ct_frac_st_bg, deconv_sd_path)

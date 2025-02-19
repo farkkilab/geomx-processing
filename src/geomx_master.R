@@ -117,7 +117,16 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-run_unless_exists('Deconvolution', geomx_deconvolution_path, 
+norm_type <<- 'q3_norm' # quantile is best for sd, bp works on raw counts, for sd norm cannot be in the log scale
+ct_nr_thr <<- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
+
+deconv_bp_harm_path <<- file.path(output_dir,'deconvolution', 'bayes_prism', 
+                                paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
+deconv_sd_path <<- file.path(output_dir,'deconvolution', 'spatial_decon', 
+                            paste0('sd_res_bg', scrna_anno, 
+                                   '_filt_geomx_', norm_type, '_', ct_nr_thr, '_ct_fraction.RDS'))
+
+run_unless_exists('Deconvolution', deconv_sd_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
 
 # conditionally run pathway analysis --------------------------------------
@@ -125,11 +134,9 @@ run_unless_exists('Deconvolution', geomx_deconvolution_path,
 # TODO adjust for deconvoluted data
 # TODO add limma fry calculation
 
-input_type <<- 'all' # within ('all', 'bp', 'sd')
+input_type <<- c('all', 'bp') # within ('all', 'bp', 'sd')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
-# sd - spatial decon 
-#TODO is sd needed?? its just correction based on the cells freq
 
 signature_type <<- 'msigdb' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
