@@ -1,27 +1,8 @@
-# library(Biobase)
-# library(NanoStringNCTools)
-# library(GeomxTools)
-# library(GeoDiff)
-# 
-# library(ggforce)
-# library(plyr)
-# library(dplyr)
-
+# README: script for loading GeoMx data and making a basic QC 
 # GeoMX vignette
 # https://www.bioconductor.org/packages/release/workflows/vignettes/GeoMxWorkflows/inst/doc/GeomxTools_RNA-NGS_Analysis.html
 
-
 # define variables --------------------------------------------------------
-
-# data_dir <- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/'
-# 
-# dcc_path <- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
-#                 full.names = TRUE, recursive = TRUE)
-# pkc_path <- file.path(data_dir, 'metadata/Hs_R_NGS_WTA_v1.0.pkc')
-# anno_path <- file.path(data_dir, 'metadata/dcc_metadata_all.xlsx')
-# 
-# output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
-# geomx_qc_path <- file.path(output_dir, 'geomx_qc_neggeo_ntc.RDS')
 
 #PFS
 imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "Segment_tCycIF") # vals used for sankey, detection rate plots, 
@@ -35,12 +16,10 @@ gene_detect_thr <- 0.05 # segment is removed if <5% of genes > LOQ
 segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less than 1% of segments
 
 
-# create dirs and source functions ----------------------------------------
 
-#dir.create(output_dir, showWarnings = T, recursive = T)
+# create dirs -------------------------------------------------------------
+
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
-
-# source('/media/iganiemi/T7-iga/st/geomx-processing/src/geomx_utils.R')
 
 # load geomx dataset ------------------------------------------------------
 
@@ -401,6 +380,4 @@ print(paste("median gene nr is: ", as.character(median(pData(geomx_obj)$GenesDet
 print(paste("mean gene nr is: ", as.character(mean(pData(geomx_obj)$GenesDetected))))
 print(paste("median gene detection rate is: ", as.character(median(pData(geomx_obj)$GeneDetectionRate))))
 
-#TODO this is changing the assayData environment object - check if not causing any issues later
 saveRDS(geomx_obj, file = geomx_qc_path)
-
