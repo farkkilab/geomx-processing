@@ -1,3 +1,20 @@
+####################################################
+# def
+# inp
+# args
+# outp
+run_unless_exists <- function(step_name, expected_output, script){
+  if(!file.exists(expected_output)){
+    source(script, local = TRUE)
+    gc()
+    print('$$$$$$$$$$')
+    print(paste0(step_name, ' succeeded!'))
+  } else{
+    print(paste0(step_name, ' have been already run'))
+  }
+}
+
+##############################################
 plot_sankey <- function(data, variables_to_plot, fill_var, output_name){
   count_mat <-   data %>%
     group_by_at(variables_to_plot) %>% 
