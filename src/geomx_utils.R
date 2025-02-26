@@ -209,6 +209,34 @@ plot_norm_effect <- function(expr_data, norm_name, output_name, log = T){
 }
 
 ###########################################################
+# plot expression data distribution
+
+plot_expr_distribution <- function(expr_data, norm_name, output_name, log = T){
+  
+  expr_df <- as.data.frame(as.vector(expr_data))
+  colnames(expr_df) <- 'expr'
+  
+  ggplot(data = expr_df) +
+    geom_histogram(aes(x = expr), bins = 100) +
+    xlim(0, as.numeric(quantile(expr_df$expr, probs = 0.99))) +
+    ggtitle(norm_name)
+  
+  ggsave(output_name)
+  
+  if(log){
+    expr_df$expr_log2 <- log2(expr_df$expr + 1)
+    
+    ggplot(data = expr_df) +
+      geom_histogram(aes(x = expr_log2), bins = 100) +
+      xlim(0, as.numeric(quantile(expr_df$expr_log2, probs = 0.99)))+
+      ggtitle(norm_name)
+    
+    ggsave(paste0(file_path_sans_ext(output_name), '_log2.', file_ext(output_name)))
+
+  }
+}
+
+###########################################################
 # geomx - geomx_obj
 # assay_name - name of assay (eg normalised expression mtx) to make dim reduction on
 # assay_is_log - T/F if the expr mtx from 'assay_name' is in the log scale or not
