@@ -29,14 +29,6 @@ geomx_obj <- normalize(geomx_obj ,
                        desiredQuantile = .75,
                        toElt = "q3_norm")
 
-# quantile normalisation --------------------------------------------------
-# from
-# https://github.com/LevivanHijfte/NanoString_normalization_methods/blob/main/Data_preprocessing.R
-
-# probably not needed
-# norm.quantile = normalize.quantiles(as.matrix(geomx_obj@assayData$exprs))
-# dimnames(norm.quantile) = dimnames(geomx_obj@assayData$exprs)
-
 # DESeq2 normalisation ----------------------------------------------------
 
 #change to integers
@@ -85,10 +77,6 @@ plot_norm_effect(exprs(geomx_obj)[,1:10], 'Raw Counts', file.path(output_dir, 'q
 plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "q3_norm"),
                  'Q3 normalised', file.path(output_dir, 'qc/norm_q3.png'))
 
-# TODO I don't like sth with this plot, why all outliers are the same in each segment?
-# plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "quant_norm"),
-#                  'Quantile normalised', file.path(output_dir, 'qc/norm_quant.png'))
-
 # super similar to Q3 :0
 plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_norm"),
                  'DESeq2 normalised', file.path(output_dir, 'qc/norm_deseq2.png'))
@@ -98,6 +86,23 @@ plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst"), log = F
 
 plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst_scaled"), log = F,
                  'DESeq2 vst', file.path(output_dir, 'qc/deseq2_vst_scaled.png'))
+
+# plots with xlim = 0.99 percentile to rmv long tail
+plot_expr_distribution(geomx_obj@assayData$exprs, 'raw counts', 
+                       file.path(output_dir, 'qc/expr_hist_raw.png'), log = T)
+
+plot_expr_distribution(geomx_obj@assayData$q3_norm, 'q3_norm', 
+                       file.path(output_dir, 'qc/expr_hist_q3_norm.png'), log = T)
+
+plot_expr_distribution(geomx_obj@assayData$deseq2_norm, 'deseq2_norm', 
+                       file.path(output_dir, 'qc/expr_hist_deseq2_norm.png'), log = T)
+
+plot_expr_distribution(geomx_obj@assayData$deseq2_vst, 'deseq2_vst', 
+                       file.path(output_dir, 'qc/expr_hist_deseq2_vst.png'), log = F)
+
+plot_expr_distribution(geomx_obj@assayData$deseq2_vst_scaled, 'deseq2_vst_scaled', 
+                       file.path(output_dir, 'qc/expr_hist_deseq2_vst_scaled.png'), log = F)
+
 
 # make UMAP and t-SNE -----------------------------------------------------
 
