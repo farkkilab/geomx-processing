@@ -6,9 +6,14 @@
 # main experimental conditions
 exp_design <- formula(~ Segment + NACT_status)
 
+# biological covariates which effect should be ignored by limma 
+# if NULL no cov are added to limma rmv batch eff
+# TODO check if this is beneficial 
+cov_design <- formula(~ Patient + Site) 
+
 # all variables to check for variance
 tech_vars <- c('Slide_Name', 'batch_nr') # 'batch_nr_sample_collection'
-bio_vars <- c('Patient', 'Site', 'Sample', 'Annotation_cell', 'NACT_status')
+bio_vars <- c('Patient', 'Site', 'Sample', 'Annotation_cell', 'NACT_status', 'Segment')
 batch_vars <- c(tech_vars, bio_vars)
 
 aoi_segment_var <- 'Segment' # not included in batch_vars bcs it will take most of the variance
@@ -17,11 +22,11 @@ dir.create(file.path(output_dir, 'batch_correction'), showWarnings = T, recursiv
 
 # main cause of the batch effect, from 1st PVCA plot
 main_batch_var <- 'batch_nr'
-secondary_batch_var <- NULL
+secondary_batch_var <- NULL # it has to be INDEPENDENT from the main_batch_var
 
 # normalisation used for batch effect correction calculation
 norm_type <- 'deseq2_vst' # best to use vst data, eventually deseq2_norm
-norm_is_log <- TRUE # vst is already in the log-like scale, other norm types not
+norm_is_log <- TRUE # vst is already in the log-like scale, deseq2_norm not
 
 # PVCA threshold
 pct_threshold <- 0.6 
@@ -64,21 +69,19 @@ plot_pvca(pvcaObj_ini, 'before_correction_deseq2_norm', file.path(output_dir, 'b
 
 # remove batch effect with limma ------------------------------------------
 
-cov <- NULL
 design <- model.matrix(exp_design, data = sData(geomx_obj))
 batch <-  sData(geomx_obj)[[main_batch_var]]
 
-if(is.null(secondary_batch_var)){
-  # if there are 1 main variable responsible for batcheffect
-  limma_res <- limma::removeBatchEffect(expr_norm_log, batch = batch, covariates = cov,
-                                        design = design)
-} else{
-  #if there are 2 variables responsible for batcheffect
-  batch2 <-  sData(geomx_obj)[[secondary_batch_var]]
-  
-  limma_res <- limma::removeBatchEffect(expr_norm_log, batch = batch, batch2 = batch2, covariates = cov,
-                                                    design = design)
-}
+batch2 <- ifelse((!is.null(secondary_batch_var)), 
+                 sData(geomx_obj)[[secondary_batch_var]], NULL)
+
+cov <- ifelse((!is.null(cov_design)), 
+              model.matrix(cov_design, data = sData(geomx_obj)), NULL)
+
+
+# if there are 1 main variable responsible for batcheffect
+limma_res <- limma::removeBatchEffect(expr_norm_log, batch = batch, batch2 = batch2,
+                                      covariates = cov, design = design)
 
 ##########################
 # https://portals.broadinstitute.org/harmony/articles/quickstart.html
@@ -118,7 +121,7 @@ exprset_after_harmony <- ExpressionSet(assayData=harmony_res,
 pvcaObj_limma <- pvcaBatchAssess(exprset_after_limma, batch_factors_names, pct_threshold) 
 pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
 
-plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', main_batch_var, secondary_batch_var), 
+plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', cov_name,  main_batch_var, secondary_batch_var), 
           file.path(output_dir, 'batch_correction'))
 
 plot_pvca(pvcaObj_harmony, paste0('after_correction_harmony_', main_batch_var, secondary_batch_var), 
@@ -142,7 +145,7 @@ for(corr_type in c('limma_batch_corr', 'harmony_batch_corr')){
       plot_umap_tsne(pData(geomx_obj), method_type = method, 
                      norm_type = corr_type, color_var = color_var,
                      output_name = file.path(output_dir, 'batch_correction', 
-                                             paste0(method, '_', corr_type, '_', color_var, '.pdf')))
+                                             paste0(method, '_', corr_type, '_',  color_var, '.pdf')))
     }
   }
 }

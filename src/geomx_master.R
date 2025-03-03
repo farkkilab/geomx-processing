@@ -1,8 +1,28 @@
+# main packages for all scripts
+library(plyr, quietly =T)
+library(dplyr, quietly =T)
+library(data.table, quietly =T)
+library(tibble, quietly =T)
+library(tools, quietly = T)
+
+library(ggforce, quietly =T)
+library(ggplot2, quietly =T)
+library(cowplot, quietly =T)
+library(ggrepel, quietly =T)
+library(reshape2, quietly =T)
+
+# problems with Matrix package - i has to be lower that 1.7 to work with lmer
+# devtools::install_version("Matrix","1.6.4")
+# dependencies:  c("grDevices", "graphics", "grid", "lattice", "methods",  "stats", "utils")  
+library(Matrix)
+
+# script specific packages
+# TODO move to renv
+
 library(Biobase, quietly =T)
 library(NanoStringNCTools, quietly =T)
 library(GeomxTools, quietly =T)
 library(GeoDiff, quietly =T)
-library(Biobase, quietly =T)
 library(DESeq2, quietly =T)
 library(SpatialDecon, quietly =T)
 #install preprocessCore manually from source
@@ -12,24 +32,9 @@ library(preprocessCore, quietly =T)
 library(umap, quietly =T)
 library(Rtsne, quietly =T)
 
-# problems with Matrix package - i has to be lower that 1.7 to work with lmer
-# devtools::install_version("Matrix","1.6.4")
-# dependencies:  c("grDevices", "graphics", "grid", "lattice", "methods",  "stats", "utils")  
-library(Matrix)
-
 library(limma)
 library(pvca)
 library(harmony)
-
-library(ggforce, quietly =T)
-library(plyr, quietly =T)
-library(dplyr, quietly =T)
-library(ggplot2, quietly =T)
-library(cowplot, quietly =T)
-library(ggrepel, quietly =T)
-library(reshape2, quietly =T)
-library(data.table, quietly =T)
-library(tibble, quietly =T)
 
 library(Seurat, quietly =T)
 library(BayesPrism, quietly =T)
@@ -40,9 +45,8 @@ library(GSVA, quietly =T)
 library(clusterProfiler, quietly =T)
 library(progeny, quietly =T)
 
-
-# possibly for pathway analysis in dge
-
+# TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
+# TODO make 1 parameter for important metadata column names reused in many scripts
 
 # library(ggpubr)
 # library(topGO)
@@ -76,7 +80,7 @@ custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures
 
 # load utils functions ----------------------------------------------------
 
-source(file.path(proj_dir, 'st-processing', 'src', 'visium_utils.R')) #TODO add needed functions to geomx_utils
+#source(file.path(proj_dir, 'st-processing', 'src', 'visium_utils.R')) #TODO add needed functions to geomx_utils
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
 dir.create(output_dir, recursive = T, showWarnings = F)
@@ -86,9 +90,6 @@ dir.create(output_dir, recursive = T, showWarnings = F)
 geomx_qc_path <<- file.path(output_dir, 'geomx_qc.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
-
-# TODO maybe deconv should be saved in RDS in the structure similar to geomx object
-#geomx_deconvolution_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_deconv.RDS')
 
 # start the pipeline ------------------------------------------------------
 
@@ -109,32 +110,37 @@ run_unless_exists('Normalisation', geomx_norm_path,
 
 # conditonally run batch effect removal -----------------------------------
 
+# TODO patient and site as covariate for limma
+# TODO compute voom() weights for dge?
+# The primary purpose of the voom() function is to compute precision 
+# weights for the downstream differential expression analysis.
+#
+
 run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_batch_effect_rmv.R'))
 
 # conditionally run deconvolution -----------------------------------------
 
+# TODO add limma batch eff rmv
+
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-norm_type <<- 'q3_norm' # quantile is best for sd, bp works on raw counts, for sd norm cannot be in the log scale
-ct_nr_thr <<- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
-
 deconv_bp_harm_path <<- file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
+                                paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
+
 deconv_sd_path <<- file.path(output_dir,'deconvolution', 'spatial_decon', 
-                            paste0('sd_res_bg', scrna_anno, 
-                                   '_filt_geomx_', norm_type, '_', ct_nr_thr, '_ct_fraction.RDS'))
+                            paste0('sd_res_bg', scrna_anno, '_geomxfilt_ct_fraction.RDS'))
 
 run_unless_exists('Deconvolution', deconv_sd_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
 
 # conditionally run pathway analysis --------------------------------------
 
-# TODO adjust for deconvoluted data
-# TODO add limma fry calculation
+# TODO add limma fry calculation - not super important
+# TODO rmv low complexity genes before GSEA and DGE
 
-input_type <<- c('all', 'bp') # within ('all', 'bp', 'sd')
+pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
@@ -144,36 +150,45 @@ signature_type <<- 'msigdb' # c('msigdb', 'custom')
 
 gsea_type <<- 'ssgsea' # 'gsva' or 'ssgsea'
 
-# TODO change the path
-pathway_analysis_path <<- file.path(output_dir, 'pathway_analysis', 
-                                    paste0('_logs.txt'))
+gsea_logs_path <<- file.path(output_dir,'pathway_analysis', 'gsea', 
+                             paste0(gsea_type, '_', signature_type,'.txt'))
 
-run_unless_exists('Pathway analysis', pathway_analysis_path, 
+
+run_unless_exists('Pathway analysis', gsea_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_pathway_analysis.R'))
 
 
 # conditionally run differential gene expression --------------------------
 
+# TODO rmv low complexity genes before GSEA and DGE
+# TODO for a given comparison within sample rmv samples with too little ROI for comparison (mor ethan 1 in each group)
 # TODO adjust for deconvoluted data
-# TODO which norm and if batch eff correction can be used
-# TODO use limma voom
+# TODO  ~ (1 + main_var_factor | cofounder_factor) and likelihood ratio test - anova(full model, reduced model)
+#  check if main_var significantly improved the effect
+# TODO add limma voom - not so important
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
 
+dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
+# all - full geomx data (not-deconvoluted)
+# bp - bayes prism deconvoluted data
+
+# DGE parameters
 comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-cofounder_name <<- 'Sample' # better don't change
 main_var_name <<- 'Annotation_cell' # main variable to make comparison between
 main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 main_var_main_val <- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
 
-dge_logs_path <<- file.path(output_dir, 'dge', 
-                            paste0('dge_', comparison_type, '_slide_', main_var_name, 
-                                   '_bin_', main_var_is_bin, '_', gsub('\\*', '', main_var_main_val), '_',
-                                   paste0(dge_categories, collapse = '_'), 
-                                   '_logs.txt'))
+
+# don't change it - identifier of dge run
+dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 
+                   '_bin_', main_var_is_bin, '_', gsub('\\*', '', main_var_main_val), '_',
+                   paste0(dge_categories, collapse = '_'))
+
+dge_logs_path <<- file.path(output_dir, 'dge', dge_name, 'dge_logs.txt')
 
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
