@@ -5,23 +5,35 @@
 
 # define variables --------------------------------------------------------
 
+norm_type <<- 'q3_norm' # quantile is best for sd, bp works on raw counts, for sd norm cannot be in the log scale
+ct_nr_thr <<- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
 
 tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
 adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
 # that help rescue typically around 300 genes with synonym names, but sometimes Ensembl not work
 
-meta_names <- c('dcc_filename', 'Patient', 'Segment', 'Sample', 'NACT_status', 'Annotation_cell')
+meta_names <- c('dcc_filename', 'Patient', 'Segment', 'Sample', 'NACT_status', 'Annotation_cell', 'Site')
 
 # main cause of the batch effect, from 1st PVCA plot
 # should be the same as in batch effect rm script
 main_batch_var <- 'batch_nr'
 secondary_batch_var <- NULL
 
+# main experimental conditions for limma batch eff rmv
+exp_design <- formula(~ Segment + NACT_status)
+
+# biological covariates which effect should be ignored by limma have to be in meta_names
+# if NULL no cov are added to limma rmv batch eff
+# TODO check if this is beneficial 
+cov_design <- formula(~ Patient + Site) 
+covname <- 'patient_site'
+
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'deconvolution'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'deconvolution', 'spatial_decon', scrna_anno), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'deconvolution', 'bayes_prism', scrna_anno), showWarnings = T, recursive = T)
+dir.create(file.path(output_dir, 'deconvolution', 'bayes_prism', scrna_anno, 'hist'), showWarnings = T, recursive = T)
 
 scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
 
@@ -182,9 +194,11 @@ bprism_res <- run.prism(prism = prism_obj, n.cores=18)
 
 # save res
 saveRDS(bprism_res, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                     paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '.RDS')))
+                                     paste0('bp_res_', scrna_anno, '.RDS')))
 
-# extract and save ct fractions 
+
+# extract and save ct fractions  ------------------------------------------
+
 ct_frac <- get.fraction (bp=bprism_res,
                          which.theta="final",
                          state.or.type="type")
@@ -196,9 +210,11 @@ ct_frac <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
                      by = 'dcc_filename')
 
 fwrite(ct_frac, file.path(output_dir,'deconvolution', 'bayes_prism', 
-                          paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_ct_fraction.RDS')))
+                          paste0('bp_res_', scrna_anno, '_ct_fraction.RDS')))
 
-# normalise deconvolution expr mtx 
+
+# normalise deconvolution expr mtx  ---------------------------------------
+
 deconv_ct_list <- lapply(ct_names, function(ct_name){
   cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
   # mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bulk, 0.5 for Visium, GeoMx should be in the middle)
@@ -209,25 +225,34 @@ deconv_ct_list <- lapply(ct_names, function(ct_name){
                                    state.or.type="type",
                                    cell.name=ct_name)
   
-  deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
+  deconv_ct_cleaned <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
   
   # do vst normalisation
-  deconv_ct <- varianceStabilizingTransformation(round(t(deconv_ct))) # normalisation
+  deconv_ct_cleaned <- varianceStabilizingTransformation(round(t(deconv_ct_cleaned))) # normalisation
   
-
-  return(deconv_ct)
+  plot_expr_distribution(deconv_ct, paste0(ct_name, '_raw'), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_raw.png')), log = F)
+  
+  plot_expr_distribution(deconv_ct_cleaned, paste0(ct_name, '_vst'), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_vst.png')), log = F)
+  
+  return(deconv_ct_cleaned)
 })
 
 names(deconv_ct_list) <- ct_names
 
 saveRDS(deconv_ct_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                     paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_vst.RDS')))
+                                     paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst.RDS')))
 
-# do batch effect removal with harmony
+
+# do batch effect correction ----------------------------------------------
 
 # make metadata for batch effect correction
 meta_dt <- pData(geomx_obj)[, c(meta_names, main_batch_var, secondary_batch_var)]
 
+# do batch effect removal with harmony
 deconv_batch_rm_list <- lapply(ct_names, function(ct_name){
   print(ct_name)
   deconv_vst <- deconv_ct_list[[ct_name]]
@@ -238,6 +263,11 @@ deconv_batch_rm_list <- lapply(ct_names, function(ct_name){
   deconv_harmony_res <- t(HarmonyMatrix(deconv_vst, 
                                         meta_data = mata_dt_ct,
                                         vars_use = c(main_batch_var, secondary_batch_var)))
+  
+  plot_expr_distribution(deconv_harmony_res, paste0(ct_name, '_harmony_corr'), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_harmony_corr.png')), log = F)
+  
   return(deconv_harmony_res)
 })
 
@@ -245,12 +275,52 @@ names(deconv_batch_rm_list) <- ct_names
 
 saveRDS(deconv_batch_rm_list, file = deconv_bp_harm_path)
 
-rm(prism_obj)
-rm(bprism_res)
-rm(ct_frac)
-rm(deconv_ct_list)
-rm(deconv_batch_rm_list)
+# remove batch effect with limma
 
+deconv_batch_rm_limma_list <- lapply(ct_names, function(ct_name){
+  print(ct_name)
+  deconv_vst <- deconv_ct_list[[ct_name]]
+  
+  # filter meta if some ROI does not contain given ct
+  mata_dt_ct <- meta_dt[meta_dt$dcc_filename %in% colnames(deconv_vst), ]
+  
+  design <- model.matrix(exp_design, data = mata_dt_ct)
+  batch <-  mata_dt_ct[[main_batch_var]]
+  
+  batch2 <- switch((!is.null(secondary_batch_var)), 
+                   mata_dt_ct[[secondary_batch_var]], NULL)
+  
+  cov <- switch((!is.null(cov_design)), 
+                model.matrix(cov_design, data = mata_dt_ct), NULL)
+  
+  deconv_limma_res <- limma::removeBatchEffect(deconv_vst, batch = batch, batch2 = batch2,
+                                        covariates = NULL, design = design)
+  
+  # TODO rmv after assessing what is better
+  deconv_limma_res_cov <- limma::removeBatchEffect(deconv_vst, batch = batch, batch2 = batch2,
+                                            covariates = cov, design = design)
+  
+  plot_expr_distribution(deconv_limma_res, paste0(ct_name, '_limma_corr'), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_limma_corr.png')), log = F)
+  
+  plot_expr_distribution(deconv_limma_res_cov, paste0(ct_name, '_limma_cov_corr'), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_limma_cov_corr.png')), log = F)
+
+  return(list(limma = deconv_limma_res, limma_cov = deconv_limma_res_cov))
+})
+
+# TODO unlist x2 and save
+# TODO change outname
+deconv_batch_rm_limma <- lapply(deconv_batch_rm_limma_list, `[[`, 1)
+deconv_batch_rm_limma_cov <- lapply(deconv_batch_rm_limma_list, `[[`, 2)
+
+names(deconv_batch_rm_limma) <- ct_names
+names(deconv_batch_rm_limma_cov) <- ct_names
+
+saveRDS(deconv_batch_rm_limma, file = gsub('harmony', 'limma', deconv_bp_harm_path))
+saveRDS(deconv_batch_rm_limma_cov, file = gsub('harmony', 'limma_cov', deconv_bp_harm_path))
 
 # prepare data for SpatialDecon -------------------------------------------
 # from
@@ -270,7 +340,7 @@ geomx_stat <- plot.bulk.outlier(
   species="hs", #currently only human(hs) and mouse(mm) annotations are supported
   return.raw=TRUE,
   pdf.prefix= file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                        paste0('sd_res_', scrna_anno, '_', ct_nr_thr)) #specify pdf.prefix if need to output to pdf
+                        paste0('sd_res_', scrna_anno)) #specify pdf.prefix if need to output to pdf
 )
 
 geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
@@ -335,10 +405,10 @@ sd_res_custom_bg <- spatialdecon(norm = geomx_filtered@assayData[[norm_type]],  
 
 
 saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                                        paste0('sd_res_', scrna_anno, '_geomx_', norm_type, '_', ct_nr_thr, '.RDS')))
+                                        paste0('sd_res_', scrna_anno, '_geomxfilt.RDS')))
 
 saveRDS(sd_res_custom_bg, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                                        paste0('sd_res_bg', scrna_anno, '_geomx_', norm_type, '_', ct_nr_thr, '.RDS')))
+                                        paste0('sd_res_bg', scrna_anno, '_geomxfilt.RDS')))
 
 
 # extract and save ct fractions 
@@ -348,7 +418,7 @@ ct_frac_st <- left_join(ct_frac_st, sData(geomx_obj)[, meta_names],
 
 fwrite(ct_frac_st, file.path(output_dir,'deconvolution', 'spatial_decon', 
                              paste0('sd_res_', scrna_anno, 
-                                    '_filt_geomx_', norm_type, '_', ct_nr_thr, '_ct_fraction.RDS')))
+                                    '_geomxfilt_ct_fraction.RDS')))
 
 ct_frac_st_bg <- rownames_to_column(data.frame(t(sd_res_custom_bg$prop_of_all)), 'dcc_filename')
 ct_frac_st_bg <- left_join(ct_frac_st_bg, sData(geomx_obj)[, meta_names],
