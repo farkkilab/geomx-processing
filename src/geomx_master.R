@@ -110,11 +110,9 @@ run_unless_exists('Normalisation', geomx_norm_path,
 
 # conditonally run batch effect removal -----------------------------------
 
-# TODO patient and site as covariate for limma
 # TODO compute voom() weights for dge?
 # The primary purpose of the voom() function is to compute precision 
 # weights for the downstream differential expression analysis.
-#
 
 run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_batch_effect_rmv.R'))

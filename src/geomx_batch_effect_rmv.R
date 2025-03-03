@@ -10,6 +10,8 @@ exp_design <- formula(~ Segment + NACT_status)
 # if NULL no cov are added to limma rmv batch eff
 # TODO check if this is beneficial 
 cov_design <- formula(~ Patient + Site) 
+covname <- 'patient_site'
+#cov_design <- NULL
 
 # all variables to check for variance
 tech_vars <- c('Slide_Name', 'batch_nr') # 'batch_nr_sample_collection'
@@ -72,17 +74,18 @@ plot_pvca(pvcaObj_ini, 'before_correction_deseq2_norm', file.path(output_dir, 'b
 design <- model.matrix(exp_design, data = sData(geomx_obj))
 batch <-  sData(geomx_obj)[[main_batch_var]]
 
-batch2 <- ifelse((!is.null(secondary_batch_var)), 
+batch2 <- switch((!is.null(secondary_batch_var)), 
                  sData(geomx_obj)[[secondary_batch_var]], NULL)
 
-cov <- ifelse((!is.null(cov_design)), 
+cov <- switch((!is.null(cov_design)), 
               model.matrix(cov_design, data = sData(geomx_obj)), NULL)
 
-
-# if there are 1 main variable responsible for batcheffect
 limma_res <- limma::removeBatchEffect(expr_norm_log, batch = batch, batch2 = batch2,
-                                      covariates = cov, design = design)
+                                      covariates = NULL, design = design)
 
+# TODO rmv after assessing what is better
+limma_res_cov <- limma::removeBatchEffect(expr_norm_log, batch = batch, batch2 = batch2,
+                                      covariates = cov, design = design)
 ##########################
 # https://portals.broadinstitute.org/harmony/articles/quickstart.html
 # remove batch effect with harmony
@@ -113,15 +116,23 @@ exprset_after_limma <- ExpressionSet(assayData=limma_res,
                                          phenoData = phenoData,
                                          featureData = featureData)
 
+exprset_after_limma_cov <- ExpressionSet(assayData=limma_res_cov, 
+                                     phenoData = phenoData,
+                                     featureData = featureData)
+
 exprset_after_harmony <- ExpressionSet(assayData=harmony_res, 
                                      phenoData = phenoData,
                                      featureData = featureData)
 
 
 pvcaObj_limma <- pvcaBatchAssess(exprset_after_limma, batch_factors_names, pct_threshold) 
+pvcaObj_limma_cov <- pvcaBatchAssess(exprset_after_limma_cov, batch_factors_names, pct_threshold) 
 pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
 
-plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', cov_name,  main_batch_var, secondary_batch_var), 
+plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', main_batch_var, secondary_batch_var), 
+          file.path(output_dir, 'batch_correction'))
+
+plot_pvca(pvcaObj_limma_cov, paste0('after_correction_limma_cov_', covname, '_', main_batch_var, secondary_batch_var), 
           file.path(output_dir, 'batch_correction'))
 
 plot_pvca(pvcaObj_harmony, paste0('after_correction_harmony_', main_batch_var, secondary_batch_var), 
@@ -130,15 +141,29 @@ plot_pvca(pvcaObj_harmony, paste0('after_correction_harmony_', main_batch_var, s
 # add limma and harmony res to umap object --------------------------------
 
 geomx_obj@assayData$limma_batch_corr <- limma_res
+geomx_obj@assayData$limma_cov_batch_corr <- limma_res_cov
 geomx_obj@assayData$harmony_batch_corr <- harmony_res
+
+
+# plot counts distribution ------------------------------------------------
+
+plot_expr_distribution(geomx_obj@assayData$limma_batch_corr, 'limma_batch_corr', 
+                       file.path(output_dir, 'batch_correction', 'expr_hist_limma_batch_corr.png'), log = F)
+
+plot_expr_distribution(geomx_obj@assayData$limma_cov_batch_corr, 'limma_cov_batch_corr', 
+                       file.path(output_dir, 'batch_correction', 'expr_hist_limma_cov_batch_corr.png'), log = F)
+
+plot_expr_distribution(geomx_obj@assayData$harmony_batch_corr, 'harmony_batch_corr', 
+                       file.path(output_dir, 'batch_correction', 'expr_hist_harmony_batch_corr.png'), log = F)
 
 # make UMAP and visualise batch-corrected results -------------------------
 
 geomx_obj <- make_umap_tsne(geomx_obj, 'limma_batch_corr', assay_is_log = T)
+geomx_obj <- make_umap_tsne(geomx_obj, 'limma_cov_batch_corr', assay_is_log = T)
 geomx_obj <- make_umap_tsne(geomx_obj, 'harmony_batch_corr', assay_is_log = T)
 
 # generate umap and tsne plots and color by variables
-for(corr_type in c('limma_batch_corr', 'harmony_batch_corr')){
+for(corr_type in c('limma_batch_corr', 'limma_cov_batch_corr', 'harmony_batch_corr')){
   for(method in c('UMAP', 'tSNE')){
     for(color_var in batch_vars){
       print(color_var)
