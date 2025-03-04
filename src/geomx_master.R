@@ -47,6 +47,7 @@ library(progeny, quietly =T)
 
 # TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
 # TODO make 1 parameter for important metadata column names reused in many scripts
+# TODO optimise all output paths and logs to contqain all important infor about the run
 
 # library(ggpubr)
 # library(topGO)
@@ -119,8 +120,6 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 
 # conditionally run deconvolution -----------------------------------------
 
-# TODO add limma batch eff rmv
-
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
@@ -136,7 +135,6 @@ run_unless_exists('Deconvolution', deconv_sd_path,
 # conditionally run pathway analysis --------------------------------------
 
 # TODO add limma fry calculation - not super important
-# TODO rmv low complexity genes before GSEA and DGE
 
 pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
@@ -158,7 +156,7 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 
 # conditionally run differential gene expression --------------------------
 
-# TODO rmv low complexity genes before GSEA and DGE
+# TODO rmv low complexity genes before  DGE
 # TODO for a given comparison within sample rmv samples with too little ROI for comparison (mor ethan 1 in each group)
 # TODO adjust for deconvoluted data
 # TODO  ~ (1 + main_var_factor | cofounder_factor) and likelihood ratio test - anova(full model, reduced model)

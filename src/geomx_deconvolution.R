@@ -311,8 +311,6 @@ deconv_batch_rm_limma_list <- lapply(ct_names, function(ct_name){
   return(list(limma = deconv_limma_res, limma_cov = deconv_limma_res_cov))
 })
 
-# TODO unlist x2 and save
-# TODO change outname
 deconv_batch_rm_limma <- lapply(deconv_batch_rm_limma_list, `[[`, 1)
 deconv_batch_rm_limma_cov <- lapply(deconv_batch_rm_limma_list, `[[`, 2)
 
@@ -344,7 +342,7 @@ geomx_stat <- plot.bulk.outlier(
 )
 
 geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
-geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% geomx_stat_to_rm),  ]
+geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% rownames(geomx_stat_to_rm)),  ]
 
 
 featureType(geomx_obj) <- "Target"

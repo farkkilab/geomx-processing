@@ -28,49 +28,15 @@ dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, 
 
 # load geomx obj from rds -------------------------------------------------
 
-low_complex_rmv <- FALSE
+low_complex_rmv <- ifelse(file.exists(scrna_ref_cleaned_path), TRUE, FALSE)
+norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type))
 
 expr_list <- list()
 
 if('all' %in% pathway_inp_data_type){
-  geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
-
-  # make log expression mtx if needed
-  if(!norm_is_log){
-    # convert normalized counts to log scale
-    assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
-      assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
-    norm_type <- paste0("log_", norm_type)
-  }
+  expr_mtx <- prepare_expr_mtx(geomx_norm_batch_eff_rm_path, norm_type, norm_is_log, 
+                               scrna_ref_cleaned_path)
   
-  # filter out from low complexity genes
-  if(file.exists(scrna_ref_cleaned_path)){
-    scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
-    scrna_mtx_name <- ifelse('RNA_common_genes' %in% colnames(scrna_ref_obj@meta.data), 'RNA_common_genes', 'RNA')
-    
-    geomx_stat <- plot.bulk.outlier(
-      bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
-      sc.input=t(scrna_ref_obj@assays[[scrna_mtx_name]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
-      cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-      species="hs", 
-      return.raw=TRUE,
-      pdf.prefix= NULL
-    )
-    
-    geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
-    geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% geomx_stat_to_rm),  ]
-    
-    expr_mtx <- geomx_filtered@assayData[[norm_type]]
-    
-    rm(scrna_ref_obj)
-    rm(geomx_stat)
-    rm(geomx_filtered)
-    
-    low_complex_rmv <- TRUE
-  } else{
-    expr_mtx <- geomx_obj@assayData[[norm_type]]
-  }
-
   expr_list[[length(expr_list) + 1]] <- expr_mtx
   names(expr_list) <- 'all'
 }
@@ -124,7 +90,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   gsea_long <- left_join(gsea_long, pData(geomx_obj)[gsva_vars])
   
   fwrite(gsea_long, file.path(output_dir,'pathway_analysis', 'gsea', 
-                              paste0(gsea_type, '_norm_', norm_type, '_',
+                              paste0(gsea_type, '_norm_', norm_name, '_',
                                      names(expr_list)[x], '_', out_name,  '.csv')))
   
   return(gsea_long)
@@ -132,7 +98,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
 
 writeLines(c('GSEA logs:',
              'GSEA type: ', gsea_type, 
-             '; normalisation type : ', norm_type,
+             '; normalisation type : ', norm_name,
              '; signature type : ', signature_type,
              '; low complex gene removed : ', low_complex_rmv), gsea_logs_path)
 
@@ -155,7 +121,7 @@ if(!is.null(progeny_type)){
   
   if(progeny_type == 'perm'){
     prog_res <- progeny(
-      geomx_obj@assayData[[norm_type]],
+      expr_list$all,
       organism = "Human",
       top = 100,
       perm = 10,

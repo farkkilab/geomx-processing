@@ -563,3 +563,39 @@ prepare_custom_sign_list <- function(custom_sign_df, adjust_synonym = T, geomx_o
   return(sign_list)
 }
   
+
+###############################################
+#################################################
+# calculates log if needed and remove from low complexity genes
+prepare_expr_mtx <- function(geomx_obj_path, norm_type, norm_is_log, scrna_ref_cleaned_path = NULL){
+  
+  geomx_obj <- readRDS(geomx_obj_path)
+  
+  # make log expression mtx if needed
+  if(!norm_is_log){
+    # make log2 transformed normalised counts if norm_type not in log scale
+    expr_norm_log <- log2(geomx_obj@assayData[[norm_type]] + 1)
+  } else{
+    expr_norm_log <- geomx_obj@assayData[[norm_type]]
+  }
+  
+  # filter out from low complexity genes
+  if(file.exists(scrna_ref_cleaned_path)){
+    scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+    scrna_mtx_name <- ifelse('RNA_common_genes' %in% colnames(scrna_ref_obj@meta.data), 'RNA_common_genes', 'RNA')
+    
+    geomx_stat <- plot.bulk.outlier(
+      bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
+      sc.input=t(scrna_ref_obj@assays[[scrna_mtx_name]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
+      cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+      species="hs", 
+      return.raw=TRUE,
+      pdf.prefix= NULL
+    )
+    
+    geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
+    expr_norm_log <- expr_norm_log[!(rownames(expr_norm_log) %in% rownames(geomx_stat_to_rm)),  ]
+    
+  }
+  return(expr_norm_log)
+}
