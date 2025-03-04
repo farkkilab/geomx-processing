@@ -6,7 +6,7 @@ imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "PFS", "PFS_months", 
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient') 
 
 # best to use batch effect corrected or at least vst data in log form 
-norm_type <- 'limma_batch_corr' # or harmony_batch_corr or deseq2_vst_scaled
+norm_type <- 'harmony_batch_corr' # limma_batch_corr, harmony_batch_corr or deseq2_vst
 norm_is_log <- TRUE # limma and harmony batch eff corr are in log scale, vst is similar to log
 
 adj_synonym <- T # whether or not adjust synonyms genes
@@ -18,6 +18,9 @@ progeny_type <- NULL
 # whether 'perm' or 'nonperm' - some quirks in progeny algorithm, results similar but perm is preferred
 # if NULL <- no progeny calculation
 
+# path to cleaned scrna which should be calculated in deconvolution step
+scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
+
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursive = T)
@@ -25,25 +28,62 @@ dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, 
 
 # load geomx obj from rds -------------------------------------------------
 
-geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
+low_complex_rmv <- FALSE
 
-# read expression mtx
-expr_mtx <- assayDataElement(geomx_obj, elt = norm_type)
+expr_list <- list()
 
-# make log expression mtx if needed
-if(!norm_is_log){
-  # convert normalized counts to log scale
-  assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
-    assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
-  norm_type <- paste0("log_", norm_type)
+if('all' %in% pathway_inp_data_type){
+  geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
+
+  # make log expression mtx if needed
+  if(!norm_is_log){
+    # convert normalized counts to log scale
+    assayDataElement(object = geomx_obj, elt = paste0("log_", norm_type)) <-
+      assayDataApply(geomx_obj, 2, FUN = log, base = 2, elt = norm_type)
+    norm_type <- paste0("log_", norm_type)
+  }
+  
+  # filter out from low complexity genes
+  if(file.exists(scrna_ref_cleaned_path)){
+    scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+    scrna_mtx_name <- ifelse('RNA_common_genes' %in% colnames(scrna_ref_obj@meta.data), 'RNA_common_genes', 'RNA')
+    
+    geomx_stat <- plot.bulk.outlier(
+      bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
+      sc.input=t(scrna_ref_obj@assays[[scrna_mtx_name]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
+      cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+      species="hs", 
+      return.raw=TRUE,
+      pdf.prefix= NULL
+    )
+    
+    geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
+    geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% geomx_stat_to_rm),  ]
+    
+    expr_mtx <- geomx_filtered@assayData[[norm_type]]
+    
+    rm(scrna_ref_obj)
+    rm(geomx_stat)
+    rm(geomx_filtered)
+    
+    low_complex_rmv <- TRUE
+  } else{
+    expr_mtx <- geomx_obj@assayData[[norm_type]]
+  }
+
+  expr_list[[length(expr_list) + 1]] <- expr_mtx
+  names(expr_list) <- 'all'
 }
+
 
 # load deconvoluted signal ------------------------------------------------
 
-# TODO load from 
-# saveRDS(deconv_ct_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
-# paste0('bp_res_', scrna_anno, '_', ct_nr_thr, '_expr_mtx_cleaned_norm.RDS')))
-
+if('bp' %in% pathway_inp_data_type){
+  deconv_ct_list <- readRDS(deconv_bp_harm_path)
+  names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
+  
+  expr_list <- c(expr_list, deconv_ct_list)
+}
 
 # prepare signatures list -------------------------------------------------
 
@@ -62,15 +102,6 @@ if(signature_type == 'msigdb'){
 }
 
 sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
-
-#TODO for deconvolution
-# expr_list <- deconv_ct_list
-# expr_list[[length(expr_list) + 1]] <- expr_mtx
-# names(expr_list) <- c(paste0('deconv_', ct_names, '_', deconv_type), 'all')
-
-expr_list <- list(geomx_obj@assayData[[norm_type]])
-names(expr_list) <- 'all'
-
 
 # calculate gsea ----------------------------------------------------------
 
@@ -98,6 +129,12 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   
   return(gsea_long)
 })
+
+writeLines(c('GSEA logs:',
+             'GSEA type: ', gsea_type, 
+             '; normalisation type : ', norm_type,
+             '; signature type : ', signature_type,
+             '; low complex gene removed : ', low_complex_rmv), gsea_logs_path)
 
 
 # calculate limma rotation gene set test ----------------------------------

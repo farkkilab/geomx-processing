@@ -219,7 +219,7 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, log = T){
   ggplot(data = expr_df) +
     geom_histogram(aes(x = expr), bins = 100) +
     xlim(0, as.numeric(quantile(expr_df$expr, probs = 0.99))) +
-    ggtitle(norm_name)
+    ggtitle(paste0(norm_name, '[.99 percentile]'))
   
   ggsave(output_name)
   
@@ -229,7 +229,7 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, log = T){
     ggplot(data = expr_df) +
       geom_histogram(aes(x = expr_log2), bins = 100) +
       xlim(0, as.numeric(quantile(expr_df$expr_log2, probs = 0.99)))+
-      ggtitle(norm_name)
+      ggtitle(paste0('log2', norm_name, '[.99 percentile]'))
     
     ggsave(paste0(file_path_sans_ext(output_name), '_log2.', file_ext(output_name)))
 
