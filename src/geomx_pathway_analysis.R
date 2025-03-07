@@ -2,12 +2,12 @@
 # get variables -----------------------------------------------------------
 
 # TODO put it somewhere in the main script and reuse through scripts
-imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "PFS", "PFS_months", "Sample") 
+# imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "PFS", "PFS_months", "Sample") # batch2
+imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "PFS", "Sample") #batch1
 gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient') 
 
 # best to use batch effect corrected or at least vst data in log form 
 norm_type <- 'harmony_batch_corr' # limma_batch_corr, harmony_batch_corr or deseq2_vst
-norm_is_log <- TRUE # limma and harmony batch eff corr are in log scale, vst is similar to log
 
 adj_synonym <- T # whether or not adjust synonyms genes
 # around 300 genes can be rescued this way but ensembl does not always work
@@ -26,7 +26,12 @@ scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_
 dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, recursive = T)
 
+norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
+deconv_bp_path <- ifelse(grepl('harmony', norm_type), deconv_bp_harm_path, deconv_bp_limma_path)
+
 # load geomx obj from rds -------------------------------------------------
+
+geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 
 low_complex_rmv <- ifelse(file.exists(scrna_ref_cleaned_path), TRUE, FALSE)
 norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type))
@@ -45,7 +50,7 @@ if('all' %in% pathway_inp_data_type){
 # load deconvoluted signal ------------------------------------------------
 
 if('bp' %in% pathway_inp_data_type){
-  deconv_ct_list <- readRDS(deconv_bp_harm_path)
+  deconv_ct_list <- readRDS(deconv_bp_path)
   names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
   
   expr_list <- c(expr_list, deconv_ct_list)
