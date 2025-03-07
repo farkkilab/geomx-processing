@@ -535,7 +535,7 @@ prepare_msigdb_sign_list <- function(adjust_synonym = T, geomx_obj = NULL, hal =
     msigdb_df$gene_symbol_adj <- adjust_synonym_genes(rownames(geomx_obj), msigdb_df$gene_symbol)
     gene_colname <- 'gene_symbol_adj'
   } else{
-    gene_colname <- 'gene_symbol_adj'
+    gene_colname <- 'gene_symbol'
   }
 
   hal_cp_list <- lapply(unique(msigdb_df$gs_name), function(x){

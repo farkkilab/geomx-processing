@@ -217,7 +217,7 @@ ct_frac <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
                      by = 'dcc_filename')
 
 fwrite(ct_frac, file.path(output_dir,'deconvolution', 'bayes_prism', 
-                          paste0('bp_res_', scrna_anno, '_ct_fraction.RDS')))
+                          paste0('bp_res_', scrna_anno, '_ct_fraction.csv')))
 
 
 # normalise deconvolution expr mtx  ---------------------------------------
