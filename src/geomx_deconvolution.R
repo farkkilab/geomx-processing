@@ -5,8 +5,8 @@
 
 # define variables --------------------------------------------------------
 
-norm_type <<- 'q3_norm' # quantile is best for sd, bp works on raw counts, for sd norm cannot be in the log scale
-ct_nr_thr <<- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
+norm_type <- 'q3_norm' # quantile is best for sd, bp works on raw counts, for sd norm cannot be in the log scale
+ct_nr_thr <- 45 # best 45 for batch1 and 2 - to rmv cell states not abundant enough in scrnaseq
 
 tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
 adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
@@ -199,11 +199,18 @@ saveRDS(bprism_res, file = file.path(output_dir,'deconvolution', 'bayes_prism',
 
 # extract and save ct fractions  ------------------------------------------
 
+cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
+# mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bulk, 0.5 for Visium, GeoMx should be in the middle)
+# histogram from batch 1 suggests 0.2 as thr
+
 ct_frac <- get.fraction (bp=bprism_res,
                          which.theta="final",
                          state.or.type="type")
 
 ct_names <- colnames(ct_frac)
+
+# mask  unreliable results
+ct_frac[cell_frac_cv > 0.2] <- NA
 
 ct_frac <- rownames_to_column(as.data.frame(ct_frac), 'dcc_filename')
 ct_frac <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
@@ -216,6 +223,7 @@ fwrite(ct_frac, file.path(output_dir,'deconvolution', 'bayes_prism',
 # normalise deconvolution expr mtx  ---------------------------------------
 
 deconv_ct_list <- lapply(ct_names, function(ct_name){
+  print(ct_name)
   cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
   # mask ct_frac results if cv > 0.2-0.5 (0.1 thr for bulk, 0.5 for Visium, GeoMx should be in the middle)
   # histogram from batch 1 suggests 0.2 as thr
@@ -227,21 +235,29 @@ deconv_ct_list <- lapply(ct_names, function(ct_name){
   
   deconv_ct_cleaned <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
   
-  # do vst normalisation
-  deconv_ct_cleaned <- varianceStabilizingTransformation(round(t(deconv_ct_cleaned))) # normalisation
-  
   plot_expr_distribution(deconv_ct, paste0(ct_name, '_raw'), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
                                    scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_raw.png')), log = F)
   
-  plot_expr_distribution(deconv_ct_cleaned, paste0(ct_name, '_vst'), 
-                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_vst.png')), log = F)
-  
-  return(deconv_ct_cleaned)
+  deconv_ct_cleaned_vst <- tryCatch({
+    # do vst normalisation
+    deconv_ct_cleaned_vst <- varianceStabilizingTransformation(round(t(deconv_ct_cleaned)))
+    
+    plot_expr_distribution(deconv_ct_cleaned_vst, paste0(ct_name, '_vst'), 
+                           file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                     scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_vst.png')), log = F)
+    
+    return(ct_name = deconv_ct_cleaned_vst)  # Return the result 
+  }, error = function(e) {
+    print('not enough AOIs with trustable predictions to perform vst. cell type is removed')
+    return()
+  })
 })
 
 names(deconv_ct_list) <- ct_names
+
+# clean list from ct for which vst was not computed 
+deconv_ct_list[sapply(deconv_ct_list, is.null)] <- NULL
 
 saveRDS(deconv_ct_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
                                      paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst.RDS')))
@@ -253,7 +269,7 @@ saveRDS(deconv_ct_list, file = file.path(output_dir,'deconvolution', 'bayes_pris
 meta_dt <- pData(geomx_obj)[, c(meta_names, main_batch_var, secondary_batch_var)]
 
 # do batch effect removal with harmony
-deconv_batch_rm_list <- lapply(ct_names, function(ct_name){
+deconv_batch_rm_harm_list <- lapply(names(deconv_ct_list), function(ct_name){
   print(ct_name)
   deconv_vst <- deconv_ct_list[[ct_name]]
   
@@ -271,13 +287,13 @@ deconv_batch_rm_list <- lapply(ct_names, function(ct_name){
   return(deconv_harmony_res)
 })
 
-names(deconv_batch_rm_list) <- ct_names
+names(deconv_batch_rm_harm_list) <- names(deconv_ct_list)
 
-saveRDS(deconv_batch_rm_list, file = deconv_bp_harm_path)
+saveRDS(deconv_batch_rm_harm_list, file = deconv_bp_harm_path)
 
 # remove batch effect with limma
 
-deconv_batch_rm_limma_list <- lapply(ct_names, function(ct_name){
+deconv_batch_rm_limma_list <- lapply(names(deconv_ct_list), function(ct_name){
   print(ct_name)
   deconv_vst <- deconv_ct_list[[ct_name]]
   
@@ -314,8 +330,8 @@ deconv_batch_rm_limma_list <- lapply(ct_names, function(ct_name){
 deconv_batch_rm_limma <- lapply(deconv_batch_rm_limma_list, `[[`, 1)
 deconv_batch_rm_limma_cov <- lapply(deconv_batch_rm_limma_list, `[[`, 2)
 
-names(deconv_batch_rm_limma) <- ct_names
-names(deconv_batch_rm_limma_cov) <- ct_names
+names(deconv_batch_rm_limma) <- names(deconv_ct_list)
+names(deconv_batch_rm_limma_cov) <- names(deconv_ct_list)
 
 saveRDS(deconv_batch_rm_limma, file = gsub('harmony', 'limma', deconv_bp_harm_path))
 saveRDS(deconv_batch_rm_limma_cov, file = gsub('harmony', 'limma_cov', deconv_bp_harm_path))
