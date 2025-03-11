@@ -17,7 +17,7 @@ library(Seurat)
 library(tidyverse)
 ```
 
-# Nichenet for geomx data unnormalized
+# Nichenet for geomx data normalized
 
 ```{r loading data}
 
