@@ -1,0 +1,458 @@
+---
+title: "Geomx_normalized"
+output: pdf_document
+date: "2025-02-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library("ggplot2")
+library(gridExtra)
+library(nichenetr)
+library(Seurat)
+#library(SeuratObject)
+library(tidyverse)
+```
+
+# Nichenet for geomx data unnormalized
+
+```{r loading data}
+
+lr_network <- readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/lr_network_human_21122021.rds")
+
+ligand_target_matrix <- readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/ligand_target_matrix_nsga2r_final.rds")
+
+weighted_networks <- readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/weighted_networks_nsga2r_final.rds")
+
+DEG_geomx = read.csv("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/DEG/dge_within_slide_Annotation_cell_bin_TRUE_CD8_Iba1_Segment_NACT_status.csv")
+
+# normalized geomx data
+norm_geomx = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/deconvoluted_data/bp_res_mid_lvl_ct_45_expr_mtx_cleaned_norm.RDS")
+
+
+lr_network <- lr_network %>% distinct(from, to)
+
+```
+
+
+```{r}
+Macrophages_exp_norm = norm_geomx$Macrophages
+Macrophages_exp_norm = t(Macrophages_exp_norm)
+Tcell_exp_norm = norm_geomx$Tcells
+Tcell_exp_norm = t(Tcell_exp_norm)
+min(Tcell_exp_norm)
+min(Macrophages_exp_norm)
+```
+
+######################################################
+
+# exploring the expression data
+
+```{r Tcells_plot}
+df <- data.frame(expression = as.vector(unlist(Tcell_exp_norm)))
+
+plot2 <- ggplot(df, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  #xlim(1,2)+
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  theme_minimal()
+
+plot2
+```
+
+
+```{r Macrophages_plot}
+df <- data.frame(expression = as.vector(unlist(Macrophages_exp_norm)))
+
+plot2 <- ggplot(df, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  #xlim(1,2)+
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  theme_minimal()
+
+plot2
+```
+
+######################
+
+# Filtering the expression data
+
+```{r}
+x = apply(Macrophages_exp_norm, 2, function(x) mean(x <= 1.491))
+
+hist(x)
+```
+
+
+```{r}
+x = apply(Tcell_exp_norm, 2, function(x) mean(x <= 1.788))
+
+hist(x)
+```
+
+According to the vignettes we can select the genes that have 10% of non zero values across samples as in single cell data. which means in our cases the threshold would be 0.90
+
+setting the threshold to 0 implies that none of the remaining genes after filtering contains zero values in any of the samples . And this would remove the whole first peak.
+
+```{r}
+Macrophages_ID <- apply(Macrophages_exp_norm, 2, function(x) mean(x <= 1.491) <= 0)
+
+#15094 - sum(Macrophages_ID)
+
+sum(Macrophages_ID)
+
+Tcells_ID <- apply(Tcell_exp_norm, 2, function(x) mean(x <= 1.788) <= 0)
+
+#15094 - sum(Tcells_ID)
+
+sum(Tcells_ID)
+
+```
+
+```{r}
+Macrophages_exp_norm_filtered <- Macrophages_exp_norm[,Macrophages_ID]
+Tcell_exp_norm_filtered <- Tcell_exp_norm[,Tcells_ID]
+```
+
+```{r}
+
+df <- data.frame(expression = as.vector(unlist(Macrophages_exp_norm)))
+
+plot3 <- ggplot(df, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Macrophage(normalized counts)") +
+  theme_minimal()
+
+plot3
+```
+```{r}
+df <- data.frame(expression = as.vector(unlist(Macrophages_exp_norm_filtered)))
+
+plot3 <- ggplot(df, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Macrophage(normalized counts filtred: threshold = 0.90)") +
+  annotate("text", x = 9, y = 0.25, label = "No of genes = 11545", size = 3, color = "black") +
+  theme_minimal()
+
+plot3
+```
+
+
+
+
+```{r}
+
+df <- data.frame(expression = as.vector(unlist(Tcell_exp_norm_filtered)))
+
+plot3 <- ggplot(df, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  ggtitle("Tcells(normalized counts filtred: threshold = 0.00)") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  theme_minimal()
+
+plot3
+```
+
+
+```{r}
+df <- data.frame(expression = as.vector(unlist(Macrophages_exp_norm_filtered)))
+
+plot3 <- ggplot(df, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  ggtitle("Macrophage(normalized counts filtred: threshold = 0)") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  theme_minimal()
+
+plot3
+```
+
+
+```{r}
+Macrophages_exp_norm_log2 = log2(Macrophages_exp_norm)
+
+```
+
+
+```{r}
+Macrophages_ID <- apply(Macrophages_exp_norm_log2 , 2, function(x) mean(x) <= 1)
+
+#15094 - sum(Macrophages_ID)
+
+sum(Macrophages_ID)
+
+#Tcells_ID <- apply(Tcell_exp_norm, 2, function(x) mean(x <= 1.788) <= 0)
+
+#15094 - sum(Tcells_ID)
+
+#sum(Tcells_ID)
+
+```
+
+```{r}
+Macrophages_exp_norm_log2_filtered <- Macrophages_exp_norm_log2[,!Macrophages_ID]
+
+df <- data.frame(expression = as.vector(Macrophages_exp_norm_log2_filtered))
+
+plot3 <- ggplot(df, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  ggtitle("Macrophage(normalized counts filtred: threshold = 0)") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  #geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  #geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  theme_minimal()
+
+plot3
+```
+
+
+```{r}
+summary(Tcell_exp_norm[,1:5])
+```
+
+```{r}
+summary(Tcell_exp_norm_filtered[,1:5])
+```
+
+
+
+
+########################
+
+# LR Analysis for both with and Without filtering
+
+1. without filtering use "Macrophages_exp_norm" and "Tcell_exp_norm"
+2. with filtering use "Macrophages_exp_norm_filtered" and "Tcell_exp_norm_filtered"
+
+```{r}
+colnames(Macrophages_exp_norm_filtered) <- convert_alias_to_symbols(colnames(Macrophages_exp_norm_filtered), "human", verbose = FALSE)
+
+
+colnames(Tcell_exp_norm_filtered) <- convert_alias_to_symbols(colnames(Tcell_exp_norm_filtered), "human", verbose = FALSE)
+
+```
+
+sender = Macrophages
+Receiver = Tcells
+
+```{r}
+ligands <- lr_network %>% pull(from) %>% unique()
+expressed_ligands <- intersect(ligands,colnames(Macrophages_exp_norm_filtered))
+
+receptors <- lr_network %>% pull(to) %>% unique()
+expressed_receptors <- intersect(receptors,colnames(Tcell_exp_norm_filtered))
+
+potential_ligands <-  lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% 
+  pull(from) %>% unique()
+
+```
+
+background_expressed_genes comes from the receiver
+
+```{r}
+background_expressed_genes <- colnames(Tcell_exp_norm_filtered) %>% .[. %in% rownames(ligand_target_matrix)]
+```
+
+
+# 1. Gene set of interests: Differentially expressed genes
+
+
+```{r}
+gene = DEG_geomx[DEG_geomx$Pr...t.. < 0.05,]$Gene
+
+
+geneset_oi <- gene %>% .[. %in% rownames(ligand_target_matrix)] 
+
+```
+
+```{r}
+intersect(geneset_oi,background_expressed_genes)
+intersect(geneset_oi,potential_ligands)
+```
+
+# 2. Highly Variable genes
+
+
+```{r}
+
+seuratObj_from_geomx2 = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/seuratObj_from_norm_geomx2.RDS")
+
+#HVGs = VariableFeatures(seuratObj_from_geomx2)
+HVGs_top100 = head(VariableFeatures(seuratObj_from_geomx2), 100)
+
+geneset_oi <- HVGs_top100 %>% .[. %in% rownames(ligand_target_matrix)] 
+```
+
+# 3. highly_expressed_genes
+
+```{r}
+avg_expression <- colMeans(tt)
+
+highly_expressed_genes_tcells <- names(sort(avg_expression, decreasing = TRUE)[1:100])
+
+geneset_oi <- highly_expressed_genes_tcells %>% .[. %in% rownames(ligand_target_matrix)]
+```
+
+
+# predicting ligand activity
+
+```{r}
+ligand_activities <- predict_ligand_activities(geneset = geneset_oi,
+                                               background_expressed_genes = background_expressed_genes,
+                                               ligand_target_matrix = ligand_target_matrix,
+                                               potential_ligands = potential_ligands)
+```
+
+```{r}
+ligand_activities <- ligand_activities %>% arrange(-aupr_corrected) %>%
+  mutate(rank = rank(desc(aupr_corrected)))
+```
+
+```{r}
+saveRDS(ligand_activities, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/LR_activities_norm_filtered_threshold_0.RDS")
+
+```
+
+
+```{r}
+best_upstream_ligands <- ligand_activities %>% top_n(30, aupr_corrected) %>%
+  arrange(-aupr_corrected) %>% pull(test_ligand)
+```
+
+```{r}
+active_ligand_target_links_df <- best_upstream_ligands %>%
+  lapply(get_weighted_ligand_target_links,
+         geneset = geneset_oi,
+         ligand_target_matrix = ligand_target_matrix,
+         n = 200) %>% bind_rows() # top 200 targets
+
+
+active_ligand_target_links <- prepare_ligand_target_visualization(
+  ligand_target_df = active_ligand_target_links_df,
+  ligand_target_matrix = ligand_target_matrix,
+  cutoff = 0.25) # weight quantile cutoff
+
+order_ligands <- intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() # rev reverse the order
+
+order_targets <- active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links))
+
+vis_ligand_target <- t(active_ligand_target_links[order_targets,order_ligands])
+
+
+```
+
+```{r}
+saveRDS(active_ligand_target_links_df, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/Lactive_ligand_target_links_df_norm_threshold_0.RDS")
+
+```
+
+```{r, fig.width=15, fig.height=6}
+p_ligand_target_network <- make_heatmap_ggplot(vis_ligand_target, "Prioritized Macrophage-ligands", "genes in Tcells",
+                    color = "purple", legend_title = "Regulatory potential") +
+  scale_fill_gradient2(low = "whitesmoke",  high = "purple")+
+  ggtitle("Macrophage-T Cell (Gene set of Interest = HVGs):Norm filtered ( <= 0)")
+
+
+p_ligand_target_network <- p_ligand_target_network +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+p_ligand_target_network
+```
+
+# Which receptors of the receiver cell population (T cells) can potentially bind to the prioritized ligands from the sender cell population (Macrophages).
+
+```{r}
+
+ligand_receptor_links_df <- get_weighted_ligand_receptor_links(
+  best_upstream_ligands, expressed_receptors,
+  lr_network, weighted_networks$lr_sig) 
+
+vis_ligand_receptor_network <- prepare_ligand_receptor_visualization(
+  ligand_receptor_links_df,
+  best_upstream_ligands,
+  order_hclust = "both") 
+
+(make_heatmap_ggplot(t(vis_ligand_receptor_network), 
+                     y_name = "Prioritized Macrophage-ligands", x_name = "Receptors expressed by T cells",  
+                     color = "mediumvioletred", legend_title = "Prior interaction potential"))
+```
+
+
+# Top 5 ligands normalized expressions
+
+```{r}
+ligand_IDS = intersect(best_upstream_ligands, colnames(active_ligand_target_links))
+ligand_expr_norm_0 = Macrophages_exp_norm[,ligand_IDS]
+summary(ligand_expr_norm_0[,1:5])
+```
+
+```{r, fig.width=15, fig.height=6}
+df1 <- data.frame(expression = as.vector(unlist(ligand_expr_norm[,1])))
+df2 <- data.frame(expression = as.vector(unlist(ligand_expr_norm[,2])))
+df3 <- data.frame(expression = as.vector(unlist(ligand_expr_norm[,3])))
+df4 <- data.frame(expression = as.vector(unlist(ligand_expr_norm[,4])))
+df5 <- data.frame(expression = as.vector(unlist(ligand_expr_norm[,5])))
+
+plot1 <- ggplot(df1, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  #geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  #geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Potential Ligand: TGM2 (normalized counts)") +
+  theme_minimal()
+
+
+
+plot2 <- ggplot(df2, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  #geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  #geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Potential Ligand:  APP(normalized counts)") +
+  theme_minimal()
+
+
+plot3 <- ggplot(df3, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  #geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  #geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Potential Ligand:  HLA-A(normalized counts)") +
+  theme_minimal()
+
+
+
+plot4 <- ggplot(df4, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  #geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  #geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Potential Ligand:   ADAM10 (normalized counts)") +
+  theme_minimal()
+
+plot5 <- ggplot(df5, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  #geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  #geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Potential Ligand:  HLA-DQB1 (normalized counts)") +
+  theme_minimal()
+
+#grid.arrange(plot1, plot2, plot3, plot4, ncol = 2, nrow =2)
+grid.arrange(plot1, plot3, nrow = 2)
+grid.arrange(plot2, plot4, plot5, nrow = 3)
+```
+
+
+
