@@ -45,6 +45,7 @@ norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type))
 expr_list <- list()
 
 if('all' %in% dge_inp_data_type){
+  # remove low complexity genes and change to log if needed
   expr_mtx <- prepare_expr_mtx(geomx_norm_batch_eff_rm_path, norm_type, norm_is_log, 
                                scrna_ref_cleaned_path)
   
@@ -58,7 +59,6 @@ if('all' %in% dge_inp_data_type){
 if('bp' %in% dge_inp_data_type){
   
   deconv_ct_list <- readRDS(deconv_bp_path)
-  #deconv_ct_list_padded <- deconv_ct_list
   
   # artificially add missing AOIs to prevent issues with geomx object
   deconv_ct_list_padded <- lapply(deconv_ct_list, function(expr){
@@ -82,83 +82,6 @@ if('bp' %in% dge_inp_data_type){
   expr_list <- c(expr_list, deconv_ct_list_padded)
 }
 
-
-# make new geomx object with all new mtx ----------------------------------
-# TODO this logic may be somehow improved..
-
-# hacking GeoMx class object 
-newassay <- new.env(parent=geomx_obj@assayData)
-
-for(expr_mtx_name in names(expr_list)){
-  newassay[[expr_mtx_name]] <- expr_list[[expr_mtx_name]]
-}
-
-geomx_obj@assayData <- newassay
-
-# prepare metadata --------------------------------------------------------
-
-if(main_var_is_bin){
-  # make binary vector - either main variable has the desired value or not
-  pData(geomx_obj)$main_var <- ifelse(grepl(main_var_main_val, pData(geomx_obj)[, main_var_name]),
-                                      main_var_main_val, 'other_roi_type')
-} else{
-  pData(geomx_obj)$main_var <- pData(geomx_obj)[, main_var_name]
-}
-
-print('groups which will be compared:')
-print(table(pData(geomx_obj)[, c(main_var_name, 'main_var')]))
-
-# convert test variables to factors
-for(col in c(dge_categories, 'main_var')){
-  pData(geomx_obj)[[paste0(col, "_factor")]] <- factor(pData(geomx_obj)[[col]])
-}
-
-pData(geomx_obj)$cofounder_factor <- factor(pData(geomx_obj)[[cofounder_name]])
-
-# make variable with all dge categories
-pData(geomx_obj)$dge_group <- apply(pData(geomx_obj), 1, function(row){
-  group <- sapply(dge_categories, function(var){
-    paste(row[var])
-  })
-  group <- paste(group, collapse = '_')
-  return(group)
-})
-
-########################
-#########################
-# function
-
-prepare_dge_metadata <- function(metadt, main_var_name, main_var_is_bin, main_var_main_val){
-  if(main_var_is_bin){
-    # make binary vector - either main variable has the desired value or not
-    metadt$main_var <- ifelse(grepl(main_var_main_val, metadt[, main_var_name]),
-                                        main_var_main_val, 'other_roi_type')
-  } else{
-    metadt$main_var <- metadt[, main_var_name]
-  }
-  
-  print('groups which will be compared:')
-  print(table(metadt[, c(main_var_name, 'main_var')]))
-  
-  # convert test variables to factors
-  for(col in c(dge_categories, 'main_var')){
-    metadt[[paste0(col, "_factor")]] <- factor(metadt[[col]])
-  }
-  
-  metadt$cofounder_factor <- factor(metadt[[cofounder_name]])
-  
-  # make variable with all dge categories
-  metadt$dge_group <- apply(metadt, 1, function(row){
-    group <- sapply(dge_categories, function(var){
-      paste(row[var])
-    })
-    group <- paste(group, collapse = '_')
-    return(group)
-  })
-  
-  return(metadt)
-}
-
 # DGE with main variable comparison ---------------------------------------
 
 # create formula for the LLM model:
@@ -172,6 +95,7 @@ if(comparison_type == 'within'){
 
 # TODO  ~ (1 + main_var_factor | cofounder_factor) and likelihood ratio test - anova(full model, reduced model)
 #  check if main_var significantly improved the effect
+
 # iterate through all + deconv matrices
 lapply(names(expr_list), function(expr_name){
   print(expr_name)
@@ -183,10 +107,8 @@ lapply(names(expr_list), function(expr_name){
   geomx_obj_dge <- geomx_obj
   geomx_obj_dge@assayData <- newassay
   
-  pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj), main_var_name, main_var_is_bin, main_var_main_val) 
-  
-  # filter to dge within expr mtx
-  #pData(geomx_obj_dge) <- metadt[metadt$dcc_filename %in% colnames(expr_list[[expr_name]]), ]
+  pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj), main_var_name, main_var_is_bin, main_var_main_val,
+                                               dge_categories, cofounder_name) 
   
   dge_results <- c()
   
@@ -202,7 +124,6 @@ lapply(names(expr_list), function(expr_name){
       mixedOutmc <- mixedModelDE(
         geomx_obj_dge[, ind],
         elt = expr_name,
-        #elt = 'harmony_batch_corr',
         modelFormula = model_formula, 
         groupVar = 'main_var_factor',
         nCores = (parallel::detectCores() - 2),
