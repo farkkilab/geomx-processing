@@ -112,17 +112,51 @@ lapply(names(expr_list), function(expr_name){
   
   dge_results <- c()
   
+  # iterate through data groups
   for(data_group in unique(pData(geomx_obj_dge)[, 'dge_group'])){
     
     print(data_group)
     
+    # filter to group
     ind <- pData(geomx_obj_dge)$dge_group == data_group
+    geomx_obj_dge_group <- geomx_obj_dge[, ind]
+    
+    ##########################################
+    ##########################################
+    #TODO move to outside function
+    # remove samples with <2 nr of each ROI group (not enough to compare, only adds noise)
+    #TODO for within slide
+    samples_freq <- data.frame(table(pData(geomx_obj_dge_group)$main_var_factor,
+                                     pData(geomx_obj_dge_group)$cofounder_factor))
+    print('frequency of AOI in given group per sample:')
+    print(samples_freq)
+    
+    groups_keep <- samples_freq[samples_freq$Freq >= 2, ]
+    
+    # rmv samples with only 1 group with enough nr of ROI
+    groups_keep_per_sample <- data.frame(table(groups_keep$Var2))
+    sample_to_rm <- as.character(groups_keep_per_sample$Var1[groups_keep_per_sample$Freq < 2])
+    
+    groups_keep2 <- groups_keep[!(groups_keep$Var2 %in% sample_to_rm), ]
+    
+    print('only this groups will be keeped for DGE:')
+    print(groups_keep2)
+    
+    keep_ind <- inner_join(pData(geomx_obj_dge_group), groups_keep2, 
+                         by = c('main_var_factor' = 'Var1', 'cofounder_factor' ='Var2'))
+    
+    keep_ind <-  pData(geomx_obj_dge_group)$dcc_filename %in% keep_ind$dcc_filename
+    
+    geomx_obj_dge_group_cleaned <- geomx_obj_dge_group[, keep_ind]
+    
+    #########################
+    #########################
     
     # run LMM:
     # formula follows conventions defined by the lme4 package
     mixed_result <- tryCatch({
       mixedOutmc <- mixedModelDE(
-        geomx_obj_dge[, ind],
+        geomx_obj_dge_group,
         elt = expr_name,
         modelFormula = model_formula, 
         groupVar = 'main_var_factor',
