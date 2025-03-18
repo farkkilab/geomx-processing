@@ -355,13 +355,10 @@ plot_volcano_deg <- function(results, plot_name, top_n_lab, group_pos, group_neg
   #                order(results[ind, 'invert_P'], decreasing = FALSE)[1:top_n_lab]])
   # }
   # top_g <- unique(unlist(top_g))
-  
   top_g <- unique(c(results$Gene[
                order(results$invert_P, decreasing = TRUE)[1:top_n_lab]],
              results$Gene[
                order(results$invert_P, decreasing = FALSE)[1:top_n_lab]]))
-  
-  results <- results[, -'invert_P'] # remove invert_P from matrix
   
   # Graph results
   volc <- ggplot(results,
@@ -435,7 +432,7 @@ gene_2names <- function(gene_inp_list, conv = c('ens', 'entrez'), type = 'list')
 ############################################################
 # make boxplot for pathway
 pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, facet_var,
-                            plot_title, output_path, statistic_test="t_test", ymin=-1, ymax=1.4,
+                            plot_title, output_path, ymin=-1, ymax=1.4,
                             manual_colours = c("#F8766D", "#00BA38", "#619CFF", "#C77CFF")){
   # per Anno cell type
   gsva_boxpl <- ggplot(data = df, aes(x = get(pathway_colname), y = get(score_colname), fill = get(color_colname))) +
@@ -598,4 +595,39 @@ prepare_expr_mtx <- function(geomx_obj_path, norm_type, norm_is_log, scrna_ref_c
     
   }
   return(expr_norm_log)
+}
+
+
+###########################################
+# changes variables for DGE comparison (bin vs multiclass)
+prepare_dge_metadata <- function(metadt, main_var_name, main_var_is_bin, main_var_main_val,
+                                 dge_categories, cofounder_name){
+  if(main_var_is_bin){
+    # make binary vector - either main variable has the desired value or not
+    metadt$main_var <- ifelse(grepl(main_var_main_val, metadt[, main_var_name]),
+                              main_var_main_val, 'other_roi_type')
+  } else{
+    metadt$main_var <- metadt[, main_var_name]
+  }
+  
+  print('groups which will be compared:')
+  print(table(metadt[, c(main_var_name, 'main_var')]))
+  
+  # convert test variables to factors
+  for(col in c(dge_categories, 'main_var')){
+    metadt[[paste0(col, "_factor")]] <- factor(metadt[[col]])
+  }
+  
+  metadt$cofounder_factor <- factor(metadt[[cofounder_name]])
+  
+  # make variable with all dge categories
+  metadt$dge_group <- apply(metadt, 1, function(row){
+    group <- sapply(dge_categories, function(var){
+      paste(row[var])
+    })
+    group <- paste(group, collapse = '_')
+    return(group)
+  })
+  
+  return(metadt)
 }

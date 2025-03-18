@@ -167,16 +167,18 @@ lapply(names(expr_list), function(expr_name){
   out_path <- file.path(output_dir, 'dge', dge_name, paste0(expr_name, '_', dge_name, '.csv'))
   if(nrow(dge_results) > 1){fwrite(dge_results, out_path)}
   
+  print(paste0('results saved for ', expr_name))
+  
   # make volcano plots for visualisation ------------------------------------
   
-  dir_create(file.path(output_dir, 'dge', dge_name, expr_name))
+  dir.create(file.path(output_dir, 'dge', dge_name, expr_name))
   
   for(dt_group in unique(dge_results$data_group)){
     print(dt_group)
-    dge_results_group <- dge_results[dge_results$data_group == dt_group]
+    dge_results_group <- dge_results[dge_results$data_group == dt_group, ]
     
     for(cont in unique(dge_results_group$Contrast)){
-      dge_results_group_cont <- dge_results_group[dge_results_group$Contrast == cont]
+      dge_results_group_cont <- dge_results_group[dge_results_group$Contrast == cont, ]
       groups <- strsplit(cont, split = ' - ', fixed = T)
       
       plot_volcano_deg(dge_results_group_cont, dt_group, 20, groups[[1]][1], groups[[1]][2],
