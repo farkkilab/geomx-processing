@@ -89,12 +89,12 @@ if('bp' %in% dge_inp_data_type){
 if(comparison_type == 'within'){
   # within slide analysis - with random slope in LLM
   model_formula <- ~ main_var_factor + (1 + main_var_factor | cofounder_factor) # random slope + random intercept
+  reduced_model_formula <- ~ (1 + main_var_factor | cofounder_factor) # for testing if model add any information
 } else if(comparison_type == 'between'){
   model_formula <- ~ main_var_factor + (1 | cofounder_factor) # random intercept
+  reduced_model_formula <- ~ (1 | cofounder_factor)
 } else{stop('comparison type can be either "within" or "between"')}
 
-# TODO  ~ (1 + main_var_factor | cofounder_factor) and likelihood ratio test - anova(full model, reduced model)
-#  check if main_var significantly improved the effect
 
 # iterate through all + deconv matrices
 lapply(names(expr_list), function(expr_name){
@@ -125,6 +125,21 @@ lapply(names(expr_list), function(expr_name){
     #TODO thr 2 or 1?
     min_aoi_nr <- 2
     geomx_obj_dge_group_cleaned <- rm_too_small_groups(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin, comparison_type)
+    
+    ###########################
+    # TODO likelihood ratio test - anova(full model, reduced model)
+    # check if main_var significantly improved the effect
+    # but it have to be done per gene - maybe worth to check afterwards for interesting genes
+    
+    # genename <- 'ACAT1'
+    # dat <- data.frame(expr = geomx_obj_dge_group_cleaned@assayData[[expr_name]][genename, ], 
+    #                   pData(geomx_obj_dge_group_cleaned)[, c('main_var_factor', 'cofounder_factor')])
+    # 
+    # full_model <- lmerTest::lmer(formula(expr ~ main_var_factor + (1 + main_var_factor | cofounder_factor)), dat)
+    # reduced_model <- lmerTest::lmer(formula(expr ~ (1 + main_var_factor | cofounder_factor)), dat)
+    # anova_results <- anova(reduced_model, full_model)
+    #########################
+    
 
     # run LMM:
     # formula follows conventions defined by the lme4 package
