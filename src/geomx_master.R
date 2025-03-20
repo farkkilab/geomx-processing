@@ -45,7 +45,6 @@ library(GSVA, quietly =T)
 library(clusterProfiler, quietly =T)
 library(progeny, quietly =T)
 
-# TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
 # TODO make 1 parameter for important metadata column names reused in many scripts
 # TODO optimise all output paths and logs to contqain all important infor about the run
 
@@ -56,10 +55,17 @@ library(progeny, quietly =T)
 # library(dbscan)
 
 # define variables and paths ----------------------------------------------
-proj_dir <<- '~/Documents/phd/st'
-data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/'
 
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1802')
+# TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
+batch <<- 'batch1' # just for running slightly different batches separately
+
+proj_dir <<- '~/Documents/phd/st'
+
+#data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
+data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
+
+#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1802') # batch2
+output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
 
 # input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
@@ -67,9 +73,10 @@ dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
 pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # anno file have to contain sheet named 'Sheet1' and following column names:
-# 'Sample_ID', 'Aoi', 'Roi', 'Sample', 'Slide_Name'
-# '_' instead of whitespace in all column names!!!
-anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx')
+# 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel' 'dcc_filename' (main id of AOI)
+# and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
+# anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
+ anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name
@@ -79,9 +86,33 @@ scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_d
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
                               'stromal_cell_subtype_signatures_symbols_ensembl_ids_revised.csv')
 
-# load utils functions ----------------------------------------------------
 
-#source(file.path(proj_dir, 'st-processing', 'src', 'visium_utils.R')) #TODO add needed functions to geomx_utils
+# set up metadata variables names -----------------------------------------
+
+aoi_id <<- 'Sample_ID'
+roi_id <<- 'Roi'
+slide_id <- 'Slide_Name'
+
+aoi_segment_var <<- "Segment"
+main_roi_label <<- "Annotation_cell" 
+main_experimental_condition <<- 'NACT_status'
+sample_name <<- 'Sample'
+
+batch_var <<- 'batch_nr'
+
+# if analysing 1 batch separately
+main_batch_var <<- batch_var
+secondary_batch_var <<- NULL
+
+# if analysisng many big batches together
+# main_batch_var <- 'main_batch_nr'
+# secondary_batch_var <- batch_var
+
+other_vars_bio <<- c("Segment_geomx", "Patient", "Site", 'PFS', 'PFS_months')
+other_vars_tech <<- c(slide_id, "batch_nr_sample_collection")
+
+# load util functions and create dirs -------------------------------------
+
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
 dir.create(output_dir, recursive = T, showWarnings = F)
@@ -120,11 +151,15 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 
 # conditionally run deconvolution -----------------------------------------
 
+# TODO remove artifact - peak of low counts genes after vst
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
 deconv_bp_harm_path <<- file.path(output_dir,'deconvolution', 'bayes_prism', 
                                 paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
+
+deconv_bp_limma_path <<- file.path(output_dir,'deconvolution', 'bayes_prism', 
+                                  paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr.RDS'))
 
 deconv_sd_path <<- file.path(output_dir,'deconvolution', 'spatial_decon', 
                             paste0('sd_res_bg', scrna_anno, '_geomxfilt_ct_fraction.RDS'))
@@ -134,7 +169,7 @@ run_unless_exists('Deconvolution', deconv_sd_path,
 
 # conditionally run pathway analysis --------------------------------------
 
-# TODO add limma fry calculation - not super important
+# TODO add limma fry calculation - another algorithm for pathway analysis not super important
 
 pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
@@ -156,11 +191,7 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 
 # conditionally run differential gene expression --------------------------
 
-# TODO rmv low complexity genes before  DGE
-# TODO for a given comparison within sample rmv samples with too little ROI for comparison (mor ethan 1 in each group)
-# TODO adjust for deconvoluted data
-# TODO  ~ (1 + main_var_factor | cofounder_factor) and likelihood ratio test - anova(full model, reduced model)
-#  check if main_var significantly improved the effect
+# TODO anova(full model, reduced model) - check if significantly improves the effect for interesting genes
 # TODO add limma voom - not so important
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
 
@@ -175,9 +206,8 @@ comparison_type <<- 'within'
 main_var_name <<- 'Annotation_cell' # main variable to make comparison between
 main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
-main_var_main_val <- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
+main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

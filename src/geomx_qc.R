@@ -4,10 +4,8 @@
 
 # define variables --------------------------------------------------------
 
-#PFS
-imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "Segment_tCycIF") # vals used for sankey, detection rate plots, 
-main_var <- "Annotation_cell" # legend in sankey, 
-aoi_segment_var <- "Segment"
+# vals used for sankey, detection rate plots, 
+imp_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition)
 
 # parameters for removing genes based on LOQ
 # TODO adjustment may be needed: 10% for batch 1, 5% for batch2
@@ -15,7 +13,16 @@ gene_detect_thr <- 0.05 # segment is removed if <5% of genes > LOQ
 # TODO adjustments may be needed - thr is very low bcs we expect high biological variability
 segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less than 1% of segments
 
+# !! 6 samples in batch1 have HighNTC - proibably contaminated wells
+# keep_high_NTC = TRUE means that all AOIs belonging to high NTC wells are keeped
+# while processing batch1 separately they're keeped 
+keep_high_NTC <- ifelse(batch == 'batch1', TRUE, FALSE)
 
+########
+# other vars:
+# Slide_Name
+# dcc_filename --> Sample_ID
+# batch_nr --> batch_var
 
 # create dirs -------------------------------------------------------------
 
@@ -33,6 +40,7 @@ geomx_obj <- readNanoStringGeoMxSet(dccFiles = dcc_path,
 
 pkcs <- annotation(geomx_obj)
 modules <- gsub(".pkc", "", pkcs)
+
 # explore
 # View(assayData(geomx_obj)$exprs)
 # dim(assayData(geomx_obj)$exprs)
@@ -52,37 +60,16 @@ print(dim(geomx_obj))
 # manualfix of NTC --------------------------------------------------------
 
 sdt <- sData(geomx_obj)
-# manually add messed up info for NTC to sData()
-# TODO do it once to batch1 (2023) metadata and move out from here
 
-# sdt$NTC_ID <- apply(sdt, 1, function(x){
-#   # one NTC/batch
-#   if(x[['batch_nr']] %in% c(1,2,3,4,7,8)){
-#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
-#   } else{
-#     ntc <- NA
-#   }
-#   
-#   # the same NTC for batch 4 and 6
-#   if(x[['batch_nr']] == 6){
-#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 4]
-#   }
-#   
-#   # 2 different NTC for batch 5
-#   if(x[['batch_nr']] == 5 & grepl('-E-', x[['dcc_filename']])){
-#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-E-', sdt$dcc_filename)]
-#   } else if(x[['batch_nr']] == 5 & grepl('-B-', x[['dcc_filename']])){
-#     ntc <- sdt$dcc_filename[sdt$`Slide Name` == 'No Template Control' & sdt$batch_nr == 5 & grepl('-B-', sdt$dcc_filename)]
-#   }
-#   
-#   return(ntc)
-# })
-
-sdt$NTC_ID <- apply(sdt, 1, function(x){
-  # one NTC/batch
-  ntc <- sdt$dcc_filename[sdt$`Slide_Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
-  return(ntc)
-})
+# !!! if theres no 'NTC_ID' column added manually, it assumes that each batch 
+# have their own NTC
+if(!('NTC_ID' %in% colnames(pData(geomx_obj)))){
+  sdt$NTC_ID <- apply(sdt, 1, function(x){
+    # one NTC/batch
+    ntc <- sdt$dcc_filename[sdt$`Slide_Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
+    return(ntc)
+  })
+}
 
 #TODO check in manual if it really is Deduplicatedreads for NTC count
 sdt$NTC <- apply(sdt, 1, function(x){
@@ -93,13 +80,18 @@ sdt$NTC <- apply(sdt, 1, function(x){
 identical(rownames(protocolData(geomx_obj)@data), sdt$dcc_filename)
 protocolData(geomx_obj)@data[, c("NTC_ID", "NTC")] <- sdt[, c("NTC_ID", "NTC")]
 
+# remove NTC_ID from pData to prevent duplicated columns
+if('NTC_ID' %in% colnames(pData(geomx_obj))){
+  pData(geomx_obj) <- pData(geomx_obj)[ , -which(names(pData(geomx_obj)) == 'NTC_ID')]
+}
+
 #change 'Area' and 'Nuclei' colnames for correct qc flags
 pData(geomx_obj) <- dplyr::rename(pData(geomx_obj), 'area' = 'Area', 'nuclei' = 'Nuclei')
 
 # make overall sankey plot ------------------------------------------------
-count_segments <- geomx_obj@phenoData@data[main_var != 'NA' & !is.na(main_var), ]
+count_segments <- geomx_obj@phenoData@data[main_roi_label != 'NA' & !is.na(main_roi_label), ]
 
-plot_sankey(count_segments, imp_vars, main_var, 
+plot_sankey(count_segments, imp_vars, main_roi_label, 
             file.path(output_dir, 'qc/sankey_slides.png'))
 
 
@@ -125,9 +117,10 @@ qc_params <-
 # set up qc flags for segments
 geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
 
+
 # rmv NTC segments
 #TODO check if this is not messing up with latter functions
-geomx_obj <- geomx_obj[, !(geomx_obj$`Slide_Name` == 'No Template Control')]
+geomx_obj <- geomx_obj[, !(geomx_obj$Slide_Name == 'No Template Control')]
 
 qc_results_segment <- protocolData(geomx_obj)[["QCFlags"]]
 qc_summary <- qc_summarize(qc_results_segment)
@@ -219,8 +212,10 @@ notes(geomx_diag)$disper_sp
 
 table(sData(geomx_obj)$NTC)
 
-#TODO !!!!! HighNTC - one sample which was included before in batch1 
-#qc_results_segment <- qc_results_segment[, -which(names(qc_results_segment) == 'HighNTC')]
+# 6 samples in batch1 have very high NTC, probably contaminated. remove them or not?
+if(keep_high_NTC){
+  qc_results_segment <- qc_results_segment[, -which(names(qc_results_segment) == 'HighNTC')]
+}
 
 qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
