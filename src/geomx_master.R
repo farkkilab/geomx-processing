@@ -57,6 +57,7 @@ library(progeny, quietly =T)
 # define variables and paths ----------------------------------------------
 
 # TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
+# TODO check if dcc filenames are unique in merged batched
 batch <<- 'batch1' # just for running slightly different batches separately
 
 proj_dir <<- '~/Documents/phd/st'
@@ -73,7 +74,7 @@ dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
 pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # anno file have to contain sheet named 'Sheet1' and following column names:
-# 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel' 'dcc_filename' (main id of AOI)
+# 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
 # and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
 # anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
@@ -89,15 +90,9 @@ custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures
 
 # set up metadata variables names -----------------------------------------
 
-aoi_id <<- 'Sample_ID'
+aoi_id <<- 'dcc_filename'
 roi_id <<- 'Roi'
-slide_id <- 'Slide_Name'
-
-aoi_segment_var <<- "Segment"
-main_roi_label <<- "Annotation_cell" 
-main_experimental_condition <<- 'NACT_status'
-sample_name <<- 'Sample'
-
+main_batch_var <- 'main_batch_nr'
 batch_var <<- 'batch_nr'
 
 # if analysing 1 batch separately
@@ -105,11 +100,17 @@ main_batch_var <<- batch_var
 secondary_batch_var <<- NULL
 
 # if analysisng many big batches together
-# main_batch_var <- 'main_batch_nr'
+# TODO move it to batch eff prediction script, when detected >1 main batches
+# main_batch_var <- main_batch_var
 # secondary_batch_var <- batch_var
 
+aoi_segment_var <<- "Segment"
+main_roi_label <<- "Annotation_cell" 
+main_experimental_condition <<- 'NACT_status'
+sample_name <<- 'Sample'
+
 other_vars_bio <<- c("Segment_geomx", "Patient", "Site", 'PFS', 'PFS_months')
-other_vars_tech <<- c(slide_id, "batch_nr_sample_collection")
+other_vars_tech <<- c('Slide_Name', "batch_nr_sample_collection")
 
 # load util functions and create dirs -------------------------------------
 

@@ -18,12 +18,6 @@ segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less th
 # while processing batch1 separately they're keeped 
 keep_high_NTC <- ifelse(batch == 'batch1', TRUE, FALSE)
 
-########
-# other vars:
-# Slide_Name
-# dcc_filename --> Sample_ID
-# batch_nr --> batch_var
-
 # create dirs -------------------------------------------------------------
 
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
@@ -66,18 +60,20 @@ sdt <- sData(geomx_obj)
 if(!('NTC_ID' %in% colnames(pData(geomx_obj)))){
   sdt$NTC_ID <- apply(sdt, 1, function(x){
     # one NTC/batch
-    ntc <- sdt$dcc_filename[sdt$`Slide_Name` == 'No Template Control' & sdt$batch_nr == x[['batch_nr']]]
+    ntc <- sdt[[aoi_id]][sdt$Slide_Name == 'No Template Control' & 
+                           sdt[[batch_var]] == x[[batch_var]] &
+                           sdt[[main_batch_var]] == x[[main_batch_var]]]
     return(ntc)
   })
 }
 
 #TODO check in manual if it really is Deduplicatedreads for NTC count
 sdt$NTC <- apply(sdt, 1, function(x){
-  ntc_cnt <- sdt$DeduplicatedReads[sdt$dcc_filename == x[['NTC_ID']]]
+  ntc_cnt <- sdt$DeduplicatedReads[sdt[[aoi_id]] == x[['NTC_ID']]]
 })
 
 #add to protocolData
-identical(rownames(protocolData(geomx_obj)@data), sdt$dcc_filename)
+identical(rownames(protocolData(geomx_obj)@data), sdt[[aoi_id]])
 protocolData(geomx_obj)@data[, c("NTC_ID", "NTC")] <- sdt[, c("NTC_ID", "NTC")]
 
 # remove NTC_ID from pData to prevent duplicated columns
@@ -201,7 +197,7 @@ length(which(assayDataElement(geomx_diag, "up_outlier") == 1, arr.ind = TRUE))
 # Or if a batch effect is assumed, the poisson model can be adjusted to take 
 # different groups into account. Here we are grouping the ROIs by slide.
 
-geomx_obj <- fitPoisBG(geomx_obj, groupvar = "Slide_Name")
+geomx_obj <- fitPoisBG(geomx_obj, groupvar = 'Slide_Name')
 
 set.seed(123)
 geomx_diag <- diagPoisBG(geomx_obj, split = TRUE)
