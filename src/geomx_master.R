@@ -153,6 +153,12 @@ run_unless_exists('Normalisation', geomx_norm_path,
 primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
 if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
 
+# biological covariates which effect should be ignored by limma 
+# if NULL no cov are added to limma rmv batch eff
+# TODO check if this is beneficial 
+# cov_design <- formula(~ Patient + Site) 
+cov_design <- NULL
+
 run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_batch_effect_rmv.R'))
 

@@ -22,12 +22,6 @@ meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_
 # main experimental conditions for limma batch eff rmv
 exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
 
-# biological covariates which effect should be ignored by limma 
-# if NULL no cov are added to limma rmv batch eff
-# TODO check if this is beneficial 
-# cov_design <- formula(~ Patient + Site) 
-cov_design <- NULL
-
 # make dirs and set additional vars ---------------------------------------
 
 dir.create(file.path(output_dir, 'deconvolution'), showWarnings = T, recursive = T)
@@ -467,4 +461,4 @@ writeLines(c('deconvolution logs:',
              '; limma primary batch effect variable : ', primary_batch_var,
              '; limma secondary batch effect variable : ', secondary_batch_var,
              '; limma experimental design : ', as.character(exp_design)[2],
-             '; limma covariate : ', as.character(cov_design)[2],), deconv_logs_path)
+             '; limma covariate : ', as.character(cov_design)[2]), deconv_logs_path)

@@ -1,5 +1,5 @@
+# README: script to perform ssgsea/gsva 
 
-#TODO deconv_bp_path 
 # get variables -----------------------------------------------------------
 
 # variables to merge the final csv with
@@ -14,16 +14,24 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # if there are issues, turn it off
 min_sign_gene_nr <- 5 # signatures with less nr of genes will be removed, 5 is min in msigdb
 
-# path to cleaned scrna which should be calculated in deconvolution step
-scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
-
 # make dirs and set additional vars ---------------------------------------
 
 dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, recursive = T)
 
 norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
-deconv_bp_path <- ifelse(grepl('harmony', norm_type), deconv_bp_harm_path, deconv_bp_limma_path) 
+
+# path to cleaned scrna which should be calculated in deconvolution step
+scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
+
+# path to deconvolution mtx
+deconv_bp_path <- ifelse(grepl('harmony', norm_type), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_', 
+                                          primary_batch_var, secondary_batch_var,
+                                          '_cov_', covname, '.RDS'))) 
 
 # load geomx obj from rds -------------------------------------------------
 
@@ -101,7 +109,9 @@ writeLines(c('GSEA logs:',
              'GSEA type: ', gsea_type, 
              '; normalisation type : ', norm_name,
              '; signature type : ', signature_type,
-             '; low complex gene removed : ', low_complex_rmv), gsea_logs_path)
+             '; low complex gene removed : ', low_complex_rmv,
+             '; synonym genes adjusted : ', adj_synonym,
+             '; deconv mtx used : ', deconv_bp_path), gsea_logs_path)
 
 
 # calculate limma rotation gene set test ----------------------------------

@@ -9,12 +9,6 @@
 # main experimental conditions
 exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
 
-# biological covariates which effect should be ignored by limma 
-# if NULL no cov are added to limma rmv batch eff
-# TODO check if this is beneficial 
-# cov_design <- formula(~ Patient + Site) 
-cov_design <- NULL
-
 # all variables to check for variance
 batch_vars <- c(primary_batch_var, secondary_batch_var, other_vars_tech, 
                 aoi_segment_var, main_roi_label, sample_name, main_experimental_condition, 
