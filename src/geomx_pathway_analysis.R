@@ -1,12 +1,12 @@
 
+#TODO deconv_bp_path 
 # get variables -----------------------------------------------------------
 
-# TODO put it somewhere in the main script and reuse through scripts
-# imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "PFS", "PFS_months", "Sample") # batch2
-imp_vars <- c("Segment", "Annotation_cell", "NACT_status", "PFS", "Sample") #batch1
-gsva_vars <- c(imp_vars, 'dcc_filename', 'Patient') 
+# variables to merge the final csv with
+meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
+               main_roi_label, roi_id, other_vars_bio)
 
-# best to use batch effect corrected or at least vst data in log form 
+# best to use batch effect corrected or at least vst data (all in log form) 
 norm_type <- 'harmony_batch_corr' # limma_batch_corr, harmony_batch_corr or deseq2_vst
 
 adj_synonym <- T # whether or not adjust synonyms genes
@@ -14,20 +14,16 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # if there are issues, turn it off
 min_sign_gene_nr <- 5 # signatures with less nr of genes will be removed, 5 is min in msigdb
 
-progeny_type <- NULL 
-# whether 'perm' or 'nonperm' - some quirks in progeny algorithm, results similar but perm is preferred
-# if NULL <- no progeny calculation
-
 # path to cleaned scrna which should be calculated in deconvolution step
 scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
 
-# make dirs and source functions ------------------------------------------
+# make dirs and set additional vars ---------------------------------------
 
 dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, recursive = T)
 
 norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
-deconv_bp_path <- ifelse(grepl('harmony', norm_type), deconv_bp_harm_path, deconv_bp_limma_path)
+deconv_bp_path <- ifelse(grepl('harmony', norm_type), deconv_bp_harm_path, deconv_bp_limma_path) 
 
 # load geomx obj from rds -------------------------------------------------
 
@@ -92,7 +88,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   gsea_long <- melt(gsea)
   colnames(gsea_long) <- c('pathway','dcc_filename', paste0(gsea_type, '_score'))
   gsea_long$expr_signal <- names(expr_list)[x]
-  gsea_long <- left_join(gsea_long, pData(geomx_obj)[gsva_vars])
+  gsea_long <- left_join(gsea_long, pData(geomx_obj)[meta_names])
   
   fwrite(gsea_long, file.path(output_dir,'pathway_analysis', 'gsea', 
                               paste0(gsea_type, '_norm_', norm_name, '_',
@@ -119,6 +115,10 @@ writeLines(c('GSEA logs:',
 
 #TODO progeny needs an updated Matrix package, while >1.7 does not work for DGE
 #TODO use pathway significance info from prog_perm[[2]] (nulldist)
+
+progeny_type <- NULL 
+# whether 'perm' or 'nonperm' - some quirks in progeny algorithm, results similar but perm is preferred
+# if NULL <- no progeny calculation
 
 if(!is.null(progeny_type)){
   
@@ -152,7 +152,7 @@ if(!is.null(progeny_type)){
   
   prog_res <- melt(prog_res)
   colnames(prog_res) <- c('dcc_filename', 'progeny_path', 'progeny_score')
-  prog_res <- left_join(prog_res, pData(geomx_obj)[gsva_vars])
+  prog_res <- left_join(prog_res, pData(geomx_obj)[meta_names])
   
   fwrite(prog_res, file.path(output_dir, 'progeny', paste0('progeny_', progeny_type, '.csv')))
 }

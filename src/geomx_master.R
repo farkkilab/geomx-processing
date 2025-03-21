@@ -4,6 +4,7 @@ library(dplyr, quietly =T)
 library(data.table, quietly =T)
 library(tibble, quietly =T)
 library(tools, quietly = T)
+library(parallel, quietly = T)
 
 library(ggforce, quietly =T)
 library(ggplot2, quietly =T)
@@ -94,18 +95,10 @@ custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures
 
 aoi_id <<- 'dcc_filename'
 roi_id <<- 'Roi'
+
 main_batch_var <- 'main_batch_nr'
 batch_var <<- 'batch_nr'
 
-# for batch eff correction if analysing 1 batch separately
-# TODO chqange the name in batch corr
-primary_batch_var <<- batch_var
-secondary_batch_var <<- NULL
-
-# if analysisng many big batches together
-# TODO move it to batch eff prediction script, when detected >1 main batches
-# main_batch_var <- main_batch_var
-# secondary_batch_var <- batch_var
 
 aoi_segment_var <<- "Segment"
 main_roi_label <<- "Annotation_cell" 
@@ -146,29 +139,32 @@ run_unless_exists('Normalisation', geomx_norm_path,
 
 # conditonally run batch effect removal -----------------------------------
 
-# TODO compute voom() weights for dge?
+# TODO compute voom() weights for dge - not so important
 # The primary purpose of the voom() function is to compute precision 
 # weights for the downstream differential expression analysis.
+
+# !!! check throughfully the 1st PVCA plots - if another variables are responsible for variance 
+# primary_batch_var and secondary_batch_var values should be changed
+# secondary batch variable has to be INDEPENDENT from the primary_batch_var
+
+# should be the same as in batch effect rm script
+# if analysing each batch separately, only batch_var is considered
+# if analysisng many big batches together, both main_batch_var and batch_var are considered
+primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
+if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
 
 run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_batch_effect_rmv.R'))
 
 # conditionally run deconvolution -----------------------------------------
 
-# TODO remove artifact - peak of low counts genes after vst
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-deconv_bp_harm_path <<- file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
+deconv_logs_path <<- file.path(output_dir,'deconvolution', 
+                             paste0('deconv_', scrna_anno, '_logs.txt'))
 
-deconv_bp_limma_path <<- file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                  paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr.RDS'))
-
-deconv_sd_path <<- file.path(output_dir,'deconvolution', 'spatial_decon', 
-                            paste0('sd_res_bg', scrna_anno, '_geomxfilt_ct_fraction.RDS'))
-
-run_unless_exists('Deconvolution', deconv_sd_path, 
+run_unless_exists('Deconvolution', deconv_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
 
 # conditionally run pathway analysis --------------------------------------
@@ -181,12 +177,12 @@ pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 
 signature_type <<- 'msigdb' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
-# custom - on custom signatures list
+# custom - on custom signatures list specified in custom_sign_path
 
 gsea_type <<- 'ssgsea' # 'gsva' or 'ssgsea'
 
 gsea_logs_path <<- file.path(output_dir,'pathway_analysis', 'gsea', 
-                             paste0(gsea_type, '_', signature_type,'.txt'))
+                             paste0(gsea_type, '_', signature_type,'_logs.txt'))
 
 
 run_unless_exists('Pathway analysis', gsea_logs_path, 
