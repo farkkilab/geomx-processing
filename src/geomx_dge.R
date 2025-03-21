@@ -1,3 +1,4 @@
+#README: script for performing DGE analysis between selected groups (both binary and multi-group options)
 # WARNING: DGE with mixed model will take around 30G RAM
 # best to run in >10 cores
 
@@ -22,10 +23,7 @@
 # q3 also ok but its not batch corrected
 norm_type <- 'harmony_batch_corr' 
 
-cofounder_name <- 'Sample' # better don't change - is added as a cofounder (random intercept in LLM model)
-
-# path to cleaned scrna which should be calculated in deconvolution step
-scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
+cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
 
 # make dirs and source functions ------------------------------------------
 
@@ -33,7 +31,18 @@ dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'dge', dge_name), showWarnings = T, recursive = T)
 
 norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
-deconv_bp_path <- ifelse(grepl('harmony', norm_type), deconv_bp_harm_path, deconv_bp_limma_path)
+
+# path to cleaned scrna which should be calculated in deconvolution step
+scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
+
+# path to deconvolution mtx
+deconv_bp_path <- ifelse(grepl('harmony', norm_type), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')), 
+                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_', 
+                                          primary_batch_var, secondary_batch_var,
+                                          '_cov_', covname, '.RDS'))) 
 
 # load geomx obj from rds -------------------------------------------------
 
@@ -89,10 +98,10 @@ if('bp' %in% dge_inp_data_type){
 if(comparison_type == 'within'){
   # within slide analysis - with random slope in LLM
   model_formula <- ~ main_var_factor + (1 + main_var_factor | cofounder_factor) # random slope + random intercept
-  reduced_model_formula <- ~ (1 + main_var_factor | cofounder_factor) # for testing if model add any information
+  #reduced_model_formula <- ~ (1 + main_var_factor | cofounder_factor) # for testing if model add any information
 } else if(comparison_type == 'between'){
   model_formula <- ~ main_var_factor + (1 | cofounder_factor) # random intercept
-  reduced_model_formula <- ~ (1 | cofounder_factor)
+  #reduced_model_formula <- ~ (1 | cofounder_factor)
 } else{stop('comparison type can be either "within" or "between"')}
 
 
@@ -219,5 +228,5 @@ writeLines(c('DGE logs:',
              '; main var value: ', main_var_main_val,
              '; categories to compare: ', dge_categories,
              '; normalisation type: ', norm_name,
-             '; low complex gene removed : ', low_complex_rmv), dge_logs_path)
-#close(dge_logs_path)
+             '; low complex gene removed : ', low_complex_rmv,
+             '; deconv mtx used : ', deconv_bp_path), dge_logs_path)
