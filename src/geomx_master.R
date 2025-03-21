@@ -45,20 +45,22 @@ library(GSVA, quietly =T)
 library(clusterProfiler, quietly =T)
 library(progeny, quietly =T)
 
-# TODO make 1 parameter for important metadata column names reused in many scripts
-# TODO optimise all output paths and logs to contqain all important infor about the run
-
 # library(ggpubr)
 # library(topGO)
 # library(fgsea)
 # library(fpc)
 # library(dbscan)
 
-# define variables and paths ----------------------------------------------
 
+# TODO --------------------------------------------------------------------
+
+# TODO optimise all output paths and logs to contain all important info about the run (eg in dge which roi groups were rmvd)
 # TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
 # TODO check if dcc filenames are unique in merged batched
-batch <<- 'batch1' # just for running slightly different batches separately
+batch <<- 'batch1' # just for running qc for batch1 with kept high NTC samples
+
+
+# define variables and paths ----------------------------------------------
 
 proj_dir <<- '~/Documents/phd/st'
 
@@ -80,7 +82,7 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
 
 # path to reference scRNAseq dataset for deconvolution
-# have to contain 'cell_type' column name
+# have to contain 'cell_type' column name in metadata
 scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS')
 
 # path to csv file with custom gene signatures
@@ -95,8 +97,9 @@ roi_id <<- 'Roi'
 main_batch_var <- 'main_batch_nr'
 batch_var <<- 'batch_nr'
 
-# if analysing 1 batch separately
-main_batch_var <<- batch_var
+# for batch eff correction if analysing 1 batch separately
+# TODO chqange the name in batch corr
+primary_batch_var <<- batch_var
 secondary_batch_var <<- NULL
 
 # if analysisng many big batches together

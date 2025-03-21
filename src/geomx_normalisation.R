@@ -1,11 +1,12 @@
-
+# README: script for normalising qc-ed raw data and making umap projections
 
 # define variables --------------------------------------------------------
 
-main_var <- "Annotation_cell" 
-umap_vars <- c("Segment", "Annotation_cell", "NACT_status", "Patient", "Sample",
-               "Segment_tCycIF", "Slide_Name", "batch_nr_sample_collection", "batch_nr")
-aoi_segment_var <- "Segment"
+umap_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition, sample_name, 
+               main_batch_var, batch_var, other_vars_bio, other_vars_tech)
+#  TODO change to factor before to avoid PFS_months fucking up
+
+exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
 
 # make dirs and source functions ------------------------------------------
 
@@ -17,12 +18,8 @@ geomx_obj <- readRDS(geomx_qc_path)
 
 # Q3 normalisation --------------------------------------------------------
 
-negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative") # 1 bcs already collapsed to targets
-neg_probes <- unique(negativeProbefData$TargetName)
-
 # this plot only makes sense for Q3 norm since it explores q3 value against NegGeoMean 
-plot_q3_stats(geomx_obj, main_var, file.path(output_dir, 'qc/q3_stats.png'))
-
+plot_q3_stats(geomx_obj, main_roi_label, file.path(output_dir,'qc', 'q3_stats.png'))
 
 geomx_obj <- normalize(geomx_obj ,
                        norm_method = "quant", 
@@ -37,7 +34,7 @@ expr_int <- apply(geomx_obj@assayData$exprs, c(1, 2), function(x) {(as.integer(x
 ## Create DESeq2Dataset object
 dds <- DESeqDataSetFromMatrix(countData = expr_int,
                               colData = sData(geomx_obj),
-                              design = formula(~ Segment + NACT_status)) # TODO examine eg if add Annotation_cell or NACT status?
+                              design = exp_design)
 
 # normalise
 dds <- estimateSizeFactors(dds)
@@ -62,7 +59,6 @@ deseq2_vst_scaled <- scale(deseq2_vst_counts)
 newassay <- new.env(parent=geomx_obj@assayData)
 newassay$exprs <- geomx_obj@assayData$exprs
 newassay$q3_norm <- geomx_obj@assayData$q3_norm
-#newassay$quant_norm <- norm.quantile
 newassay$deseq2_norm <- deseq2_norm_counts
 newassay$deseq2_vst <- deseq2_vst_counts
 newassay$deseq2_vst_scaled <- deseq2_vst_scaled
@@ -71,38 +67,20 @@ geomx_obj@assayData <- newassay
 
 # plot effects of normalisation -------------------------------------------
 
-plot_norm_effect(exprs(geomx_obj)[,1:10], 'Raw Counts', file.path(output_dir, 'qc/norm_raw.png'))
+for(norm_type in c('exprs', 'q3_norm', 'deseq2_norm', 'deseq2_vst', 'deseq2_vst_scaled')){
+  plt_title <- ifelse(norm_type == 'exprs', 'raw_counts', norm_type)
+  islog <- ifelse(norm_type %in% c('deseq2_vst', 'deseq2_vst_scaled'), T, F)
 
-
-plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "q3_norm"),
-                 'Q3 normalised', file.path(output_dir, 'qc/norm_q3.png'))
-
-# super similar to Q3 :0
-plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_norm"),
-                 'DESeq2 normalised', file.path(output_dir, 'qc/norm_deseq2.png'))
-
-plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst"), log = F,
-                 'DESeq2 vst', file.path(output_dir, 'qc/deseq2_vst.png'))
-
-plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = "deseq2_vst_scaled"), log = F,
-                 'DESeq2 vst', file.path(output_dir, 'qc/deseq2_vst_scaled.png'))
-
-# plots with xlim = 0.99 percentile to rmv long tail
-plot_expr_distribution(geomx_obj@assayData$exprs, 'raw counts', 
-                       file.path(output_dir, 'qc/expr_hist_raw.png'), log = T)
-
-plot_expr_distribution(geomx_obj@assayData$q3_norm, 'q3_norm', 
-                       file.path(output_dir, 'qc/expr_hist_q3_norm.png'), log = T)
-
-plot_expr_distribution(geomx_obj@assayData$deseq2_norm, 'deseq2_norm', 
-                       file.path(output_dir, 'qc/expr_hist_deseq2_norm.png'), log = T)
-
-plot_expr_distribution(geomx_obj@assayData$deseq2_vst, 'deseq2_vst', 
-                       file.path(output_dir, 'qc/expr_hist_deseq2_vst.png'), log = F)
-
-plot_expr_distribution(geomx_obj@assayData$deseq2_vst_scaled, 'deseq2_vst_scaled', 
-                       file.path(output_dir, 'qc/expr_hist_deseq2_vst_scaled.png'), log = F)
-
+  plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = norm_type),
+                   plt_title, file.path(output_dir, 'qc', paste0('norm_', plt_title, '.png')),
+                   is_log = islog)
+  
+  
+  # plots with xlim = 0.99 percentile to rmv long tail
+  plot_expr_distribution(geomx_obj@assayData[[norm_type]], plt_title, 
+                         file.path(output_dir, 'qc', paste0('expr_hist_', plt_title, '.png')),
+                                   is_log = islog)
+}
 
 # make UMAP and t-SNE -----------------------------------------------------
 
@@ -111,7 +89,7 @@ seg_types <- unique(sData(geomx_obj)[, aoi_segment_var])
 
 geomx_obj_seg_list <- lapply(seg_types, function(seg){
   dir.create(file.path(output_dir, 'umap_tsne', seg), showWarnings = T, recursive = T)
-  geomx_obj_seg <- geomx_obj[, geomx_obj@phenoData@data$Segment == seg]
+  geomx_obj_seg <- geomx_obj[, geomx_obj@phenoData@data[[aoi_segment_var]] == seg]
   
   return(geomx_obj_seg)
 })
