@@ -17,7 +17,7 @@ This pipeline starts with (almost) raw geomx dsp data - DCC files (obtained from
     * vst (variance stabilising transformation) on deseq2 normalised data
     * UMAP and t-SNE projections on all types of normalisation
 4. Batch effect correction
-    * PVCA variation assessment on deseq2 normalised data to find variables responsible for batch effect
+    * PVCA variance assessment on deseq2 normalised data to find variables responsible for batch effect
     * batch effect correction with limma
     * batch effect correction with harmony
     * PVCA on batch-effect corrected data to assess the correction results
@@ -71,12 +71,12 @@ Input files:
 Main output files:
 * **geomx_qc_norm_batch_eff_rm.RDS** file - GeoMx object containing all the computed expression mtx (raw, normalised, batch corrected)
   under different geomx_obj@assay and metadata in pData(geomx_obj)
-* **mid_lvl_ct_expr_mtx_cleaned_vst_harmony_batch_corr.RDS** (name will change based on the parameters used) -
+* **CONDITIONS_expr_mtx_cleaned_vst_harmony/limma_batch_corr.RDS** (name will change based on the parameters used) -
   BayesPrism deconvoluted, normalised and batch corrected cell type specific expression matrices. Contains list of mtx of every cell type
-* **bp_res_mid_lvl_ct_ct_fraction.csv and sd_res_mid_lvl_ct_geomxfilt_ct_fraction.csv** (names will change based on the parameters used) -
+* **bp_res_CONDITIONS_ct_fraction.csv and sd_res_mid_lvl_ct_geomxfilt_ct_fraction.csv** (names will change based on the parameters used) -
   file with cell type fractions per each AOI computed by BayesPrism and SpatialDecon respectively
-* **ssgsea_norm_harmony_batch_corr_all_msigdb.csv** (name will change based on the parameters used) - ssGSEA/GSVA scores of provided signatures per each AOI (for full and/or deconvoluted data)
-* **dge_conditions.csv** (name will change based on the parameters used) - DGE between selected groups of AOI (for full and/or deconvoluted data)
+* **ssgsea/gsva_CONDITIONS.csv** (name will change based on the parameters used) - ssGSEA/GSVA scores of provided signatures per each AOI (for full and/or deconvoluted data)
+* **dge_CONDITIONS.csv** (name will change based on the parameters used) - DGE between selected groups of AOI (for full and/or deconvoluted data)
 
 ## How to use the pipeline
 
