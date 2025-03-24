@@ -17,7 +17,7 @@ adjust_synonym_gene_names <- F # whether or not to adjust synonymical gene names
 
 # variables to merge the final csv with
 meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
-                main_roi_label, roi_id, other_vars_bio)
+                main_roi_label, other_vars_bio)
 
 # main experimental conditions for limma batch eff rmv
 exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
@@ -273,7 +273,7 @@ saveRDS(deconv_ct_list, file = file.path(output_dir,'deconvolution', 'bayes_pris
 # do batch effect correction ----------------------------------------------
 
 # make metadata for batch effect correction
-meta_dt <- pData(geomx_obj)[, c(meta_names, primary_batch_var, secondary_batch_var)]
+meta_dt <- sData(geomx_obj)[, c(meta_names, primary_batch_var, secondary_batch_var)]
 
 # do batch effect removal with harmony
 deconv_batch_rm_harm_list <- lapply(names(deconv_ct_list), function(ct_name){
@@ -432,7 +432,7 @@ saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_de
                                         paste0('sd_res_', scrna_anno, '_geomxfilt.RDS')))
 
 saveRDS(sd_res_custom_bg, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                                        paste0('sd_res_bg', scrna_anno, '_geomxfilt.RDS')))
+                                        paste0('sd_res_bg_', scrna_anno, '_geomxfilt.RDS')))
 
 
 # extract and save ct fractions 
@@ -442,14 +442,14 @@ ct_frac_st <- left_join(ct_frac_st, sData(geomx_obj)[, meta_names],
 
 fwrite(ct_frac_st, file.path(output_dir,'deconvolution', 'spatial_decon', 
                              paste0('sd_res_', scrna_anno, 
-                                    '_geomxfilt_ct_fraction.RDS')))
+                                    '_geomxfilt_ct_fraction.csv')))
 
 ct_frac_st_bg <- rownames_to_column(data.frame(t(sd_res_custom_bg$prop_of_all)), 'dcc_filename')
 ct_frac_st_bg <- left_join(ct_frac_st_bg, sData(geomx_obj)[, meta_names],
                         by = 'dcc_filename')
 
 fwrite(ct_frac_st_bg, file.path(output_dir,'deconvolution', 'spatial_decon', 
-                                paste0('sd_res_bg', scrna_anno, '_geomxfilt_ct_fraction.RDS')))
+                                paste0('sd_res_bg_', scrna_anno, '_geomxfilt_ct_fraction.csv')))
 
 # write logs --------------------------------------------------------------
 

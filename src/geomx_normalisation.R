@@ -84,6 +84,7 @@ for(norm_type in c('exprs', 'q3_norm', 'deseq2_norm', 'deseq2_vst', 'deseq2_vst_
 
 # make UMAP and t-SNE -----------------------------------------------------
 
+# TODO for segment, UMAP/tSNE should be done on mtx filtered for segment
 # divide for segment and do dimentionality reduction for all
 seg_types <- unique(sData(geomx_obj)[, aoi_segment_var])
 
@@ -100,7 +101,7 @@ geomx_list <- c(all = geomx_obj, geomx_obj_seg_list)
 
 norm <- 'deseq2_vst_scaled'
 
-geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
+geomx_list_dim_red <- lapply(1:length(geomx_list)[1], function(n){
   geomx <- geomx_list[[n]]
   
   # run UMAP and tSNE on deseq2 vst counts

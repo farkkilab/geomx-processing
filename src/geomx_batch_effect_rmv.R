@@ -2,8 +2,6 @@
 # nice explanation
 # https://www.biostars.org/p/366403/
 
-# TODO return information about cov into logs 
-
 # define variables --------------------------------------------------------
 
 # main experimental conditions
@@ -146,6 +144,7 @@ plot_expr_distribution(geomx_obj@assayData$harmony_batch_corr, 'harmony_batch_co
                                         '_cov_', covname, '.png')), is_log = T)
 
 # make UMAP and visualise batch-corrected results -------------------------
+# TODO run separately for tumor/stroma (incl umap calculation)
 
 geomx_obj <- make_umap_tsne(geomx_obj, 'limma_batch_corr', assay_is_log = T)
 geomx_obj <- make_umap_tsne(geomx_obj, 'harmony_batch_corr', assay_is_log = T)
@@ -173,5 +172,5 @@ writeLines(c('batch effect rmv logs:',
              '; primary batch effect variable : ', primary_batch_var,
              '; secondary batch effect variable : ', secondary_batch_var,
              '; limma experimental design : ', as.character(exp_design)[2],
-             '; limma covariate : ', as.character(cov_design)[2],), 
+             '; limma covariate : ', as.character(cov_design)[2]), 
            file.path(output_dir, 'batch_correction', 'batch_correction_logs.txt'))

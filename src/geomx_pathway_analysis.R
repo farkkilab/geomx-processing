@@ -4,7 +4,7 @@
 
 # variables to merge the final csv with
 meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
-               main_roi_label, roi_id, other_vars_bio)
+               main_roi_label, other_vars_bio)
 
 # best to use batch effect corrected or at least vst data (all in log form) 
 norm_type <- 'harmony_batch_corr' # limma_batch_corr, harmony_batch_corr or deseq2_vst
@@ -13,6 +13,12 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # around 300 genes can be rescued this way but ensembl does not always work
 # if there are issues, turn it off
 min_sign_gene_nr <- 5 # signatures with less nr of genes will be removed, 5 is min in msigdb
+
+compute_hallmark <- T
+# should GSEA for msigdb hallmark be computed
+
+msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG','GO:BP')
+# subcategories ('gs_subcat') of msigdb database for GSEA calculation
 
 # make dirs and set additional vars ---------------------------------------
 
@@ -55,6 +61,12 @@ if('all' %in% pathway_inp_data_type){
 
 if('bp' %in% pathway_inp_data_type){
   deconv_ct_list <- readRDS(deconv_bp_path)
+  
+  # filter to cell types of interest
+  if(!is.null(ct_of_interest)){
+    deconv_ct_list <- deconv_ct_list[ct_of_interest]
+  }
+  
   names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
   
   expr_list <- c(expr_list, deconv_ct_list)
@@ -64,8 +76,8 @@ if('bp' %in% pathway_inp_data_type){
 
 if(signature_type == 'msigdb'){
   # signatures from all Hallmark + selected CP from msigDB 
-  sign_list <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, hal = T, 
-                                               db_subcat_list = c('CP:BIOCARTA', 'CP:KEGG','GO:BP'))
+  sign_list <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, hal = compute_hallmark, 
+                                               db_subcat_list = msigdb_subcat)
   out_name <- 'msigdb'
 } else if(signature_type == 'custom'){
   # signatures from custom file
@@ -96,7 +108,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   gsea_long <- melt(gsea)
   colnames(gsea_long) <- c('pathway','dcc_filename', paste0(gsea_type, '_score'))
   gsea_long$expr_signal <- names(expr_list)[x]
-  gsea_long <- left_join(gsea_long, pData(geomx_obj)[meta_names])
+  gsea_long <- left_join(gsea_long, sData(geomx_obj)[meta_names])
   
   fwrite(gsea_long, file.path(output_dir,'pathway_analysis', 'gsea', 
                               paste0(gsea_type, '_norm_', norm_name, '_',
@@ -162,7 +174,7 @@ if(!is.null(progeny_type)){
   
   prog_res <- melt(prog_res)
   colnames(prog_res) <- c('dcc_filename', 'progeny_path', 'progeny_score')
-  prog_res <- left_join(prog_res, pData(geomx_obj)[meta_names])
+  prog_res <- left_join(prog_res, sData(geomx_obj)[meta_names])
   
   fwrite(prog_res, file.path(output_dir, 'progeny', paste0('progeny_', progeny_type, '.csv')))
 }

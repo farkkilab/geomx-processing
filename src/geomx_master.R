@@ -127,6 +127,7 @@ print('GeoMx pipeline starting :O')
 print('#############')
 
 # conditionally run preprocessing -----------------------------------------
+# TODO put the printed qc info to logs
 
 run_unless_exists('Preprocessing', geomx_qc_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_qc.R'))
@@ -138,10 +139,8 @@ run_unless_exists('Normalisation', geomx_norm_path,
 
 
 # conditonally run batch effect removal -----------------------------------
-
 # TODO compute voom() weights for dge - not so important
-# The primary purpose of the voom() function is to compute precision 
-# weights for the downstream differential expression analysis.
+# (voom computes precision weights for the downstream dge)
 
 # !!! check throughfully the 1st PVCA plots - if another variables are responsible for variance 
 # primary_batch_var and secondary_batch_var values should be changed
@@ -174,12 +173,17 @@ run_unless_exists('Deconvolution', deconv_logs_path,
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
 
 # conditionally run pathway analysis --------------------------------------
-
 # TODO add limma fry calculation - another algorithm for pathway analysis not super important
 
 pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
+
+ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells", 
+                     "Macrophages", "DCs", "Endothelial cells")
+# if running for 'bp' (bayes prism deconvolution results) 
+# specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
+# if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
 signature_type <<- 'msigdb' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
@@ -196,6 +200,7 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 
 
 # conditionally run differential gene expression --------------------------
+# TODO put the printed deconv info to logs (eg nr of groups, removed samples etc)
 
 # TODO anova(full model, reduced model) - check if significantly improves the effect for interesting genes
 # TODO add limma voom - not so important
@@ -205,15 +210,24 @@ dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
+ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells", 
+                     "Macrophages", "DCs", "Endothelial cells")
+# if running for 'bp' (bayes prism deconvolution results) 
+# specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
+# if ct_of_interest <<- NULL - GSEA will be computed for all cell types
+
 # DGE parameters
 comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
 main_var_name <<- 'Annotation_cell' # main variable to make comparison between
-main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
+main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
-main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
+
+main_var_main_val <<- 'posCD8_posIBA1'
+#main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
+
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

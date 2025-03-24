@@ -25,6 +25,10 @@ norm_type <- 'harmony_batch_corr'
 
 cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
 
+# remove samples with <2 nr of each AOI comparison group (not enough to compare, only adds noise)
+#TODO thr 2 or 1?
+min_aoi_nr <- 1
+
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
@@ -69,6 +73,11 @@ if('bp' %in% dge_inp_data_type){
   
   deconv_ct_list <- readRDS(deconv_bp_path)
   
+  # filter to cell types of interest
+  if(!is.null(ct_of_interest)){
+    deconv_ct_list <- deconv_ct_list[ct_of_interest]
+  }
+  
   # artificially add missing AOIs to prevent issues with geomx object
   deconv_ct_list_padded <- lapply(deconv_ct_list, function(expr){
 
@@ -107,7 +116,7 @@ if(comparison_type == 'within'){
 
 # iterate through all + deconv matrices
 lapply(names(expr_list), function(expr_name){
-  print(expr_name)
+  print(paste0('########## ', expr_name, ' ###########'))
   
   # hacking GeoMx class object 
   newassay <- new.env(parent=geomx_obj@assayData)
@@ -119,7 +128,7 @@ lapply(names(expr_list), function(expr_name){
   pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj), main_var_name, main_var_is_bin, main_var_main_val,
                                                dge_categories, cofounder_name) 
   
-  dge_results <- c()
+  dge_results <- data.frame()
   
   # iterate through data groups
   for(data_group in unique(pData(geomx_obj_dge)[, 'dge_group'])){
@@ -130,9 +139,6 @@ lapply(names(expr_list), function(expr_name){
     ind <- pData(geomx_obj_dge)$dge_group == data_group
     geomx_obj_dge_group <- geomx_obj_dge[, ind]
     
-    # remove samples with <2 nr of each AOI comparison group (not enough to compare, only adds noise)
-    #TODO thr 2 or 1?
-    min_aoi_nr <- 2
     geomx_obj_dge_group_cleaned <- rm_too_small_groups(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin, comparison_type)
     
     ###########################
@@ -163,8 +169,8 @@ lapply(names(expr_list), function(expr_name){
       )
       mixedOutmc  # Return the result of mixedModelDE
     }, error = function(e) {
-      # Return an empty dataframe if an error occurs eg to little ROIs
-      print('wtf')
+      # Return an empty dataframe if an error occurs eg to little AOIs
+      print('not enough AOI for comparison!')
       data.frame()
       
     })
@@ -189,7 +195,7 @@ lapply(names(expr_list), function(expr_name){
                            "Pr(>|t|)", "FDR")]
       dge_results <- rbind(dge_results, r_test)
     } else{
-      print('error while computing dge. probably too little ROI for comparison')
+      print(paste('error while computing dge for', expr_name, data_group, 'probably too little AOI for comparison. Check the comparison groups!!'))
       dge_results <- dge_results
     }
     
@@ -197,28 +203,32 @@ lapply(names(expr_list), function(expr_name){
   
   # write results table 
   out_path <- file.path(output_dir, 'dge', dge_name, paste0(expr_name, '_', dge_name, '.csv'))
-  if(nrow(dge_results) > 1){fwrite(dge_results, out_path)}
+  if(nrow(dge_results) > 1){
+    fwrite(dge_results, out_path)
+    print(paste0('results saved for ', expr_name))}
   
-  print(paste0('results saved for ', expr_name))
+  
   
   # make volcano plots for visualisation ------------------------------------
-  
-  dir.create(file.path(output_dir, 'dge', dge_name, expr_name))
-  
-  for(dt_group in unique(dge_results$data_group)){
-    print(dt_group)
-    dge_results_group <- dge_results[dge_results$data_group == dt_group, ]
+
+  if(nrow(dge_results) > 1){  
+    dir.create(file.path(output_dir, 'dge', dge_name, expr_name))
     
-    for(cont in unique(dge_results_group$Contrast)){
-      dge_results_group_cont <- dge_results_group[dge_results_group$Contrast == cont, ]
-      groups <- strsplit(cont, split = ' - ', fixed = T)
+    for(dt_group in unique(dge_results$data_group)){
+      print(dt_group)
+      dge_results_group <- dge_results[dge_results$data_group == dt_group, ]
       
-      plot_volcano_deg(dge_results_group_cont, dt_group, 20, groups[[1]][1], groups[[1]][2],
-                       file.path(output_dir, 'dge', dge_name, expr_name))
+      for(cont in unique(dge_results_group$Contrast)){
+        dge_results_group_cont <- dge_results_group[dge_results_group$Contrast == cont, ]
+        groups <- strsplit(cont, split = ' - ', fixed = T)
+        
+        plot_volcano_deg(dge_results_group_cont, dt_group, 20, groups[[1]][1], groups[[1]][2],
+                         file.path(output_dir, 'dge', dge_name, expr_name))
+      }
     }
   }
-
-})
+  
+  })
 
 # write logs with parameters ----------------------------------------------
 
