@@ -1,8 +1,8 @@
 # **geomx-processing**
 
-pipeline for pre-processing and analysis of geomx data
+pipeline for pre-processing and basic analysis of geomx data
 
-## Pipeline steps TODO
+## Pipeline steps
 This pipeline starts with (almost) raw geomx dsp data - DCC files (obtained from fastq and typically delivered by sequencing centre) and performs the following pre-processing and analysis steps:
 
 1. QC
@@ -34,10 +34,11 @@ This pipeline starts with (almost) raw geomx dsp data - DCC files (obtained from
    * computing cell fractions with SpatialDecon
    
 6. Pathway analysis (on full and/or deconvoluted signal)
-   *  calculate ssGSEA/GSVA for signatures from selected categories of msigdb database
-   *  calculate PROGENY scores (!! currently disabled due to incompatibility issues)
+   *  removing low complexity genes
+   *  calculating ssGSEA/GSVA for signatures from selected categories of msigdb database
+   *  calculating PROGENY scores (!! currently disabled due to incompatibility issues)
 9. differential gene expression (on full and/or deconvoluted signal)
-    * calculate differentially expressed genes between specified group of AOIs
+    * calculating differentially expressed genes between specified group of AOIs
 
 
 ## Requirements
@@ -54,7 +55,19 @@ The most heavy computational steps are (3) Batch effect correction (PVCA plots),
 
 ## Input and output data TODO
 
-anno - It's best to avoid any whitespace (" ") in the column names.
+Input files:
+* **DCC files** - raw expression data for each AOI
+* **.pkc file** - provided by GeoMx - information about sequencing probes and library used
+* **annotation .xls file** - spreadheed containing all metadata information
+    * have to contain metadata in the spreadsheet named 'Sheet1'
+    * HAVE TO CONTAIN the following columns (with the exact same names): 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
+    * have to contain all other columns specified in the "set up metadata variables names" section
+    * It's best to avoid any whitespace (" ") in the column names
+    * if during the experiment NTC AOIs were messed up and doesn't follow 1 NTC/batch_nr - 'NTC_ID' column have to be added manually
+      with correct dcc_filename of the NTC AOI corresponding to each other AOI
+* **scRNAseq reference file** in .RDS format - Seurat object with reference scRNAseq dataset, used for deconvolution
+    * have to contain 'cell_type' column in metadata with cell type label (optionally other grouping variable specified while running deconvolution script)
+
 
 ## How to use the pipeline
 
