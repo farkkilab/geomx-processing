@@ -33,9 +33,11 @@ This pipeline starts with (almost) raw geomx dsp data - DCC files (obtained from
        * harmony and limma batch effect correction
    * computing cell fractions with SpatialDecon
    
-6. Pathway analysis with ssGSEA/GSVA (on full and/or deconvoluted signal)
-   *  
+6. Pathway analysis (on full and/or deconvoluted signal)
+   *  calculate ssGSEA/GSVA for signatures from selected categories of msigdb database
+   *  calculate PROGENY scores (!! currently disabled due to incompatibility issues)
 9. differential gene expression (on full and/or deconvoluted signal)
+    * calculate differentially expressed genes between specified group of AOIs
 
 
 ## Requirements
