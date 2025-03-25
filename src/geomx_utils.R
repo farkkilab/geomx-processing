@@ -1,8 +1,12 @@
 ####################################################
-# def
-# inp
-# args
-# outp
+# Description: 
+#   Executes script if a specified file (expected_output) does not already exist.
+# Parameters:
+#   step_name: (string) The name of the current step, used for printing a success message.
+#   expected_output: (string) The path to the expected output file that determines whether the script should be run.
+#   script: (string) Path to the script file to be sourced and executed if the expected output does not exist.
+# Return value:
+#   None. The function will print status messages to the console.
 run_unless_exists <- function(step_name, expected_output, script){
   if(!file.exists(expected_output)){
     source(script, local = TRUE)
@@ -15,6 +19,15 @@ run_unless_exists <- function(step_name, expected_output, script){
 }
 
 ##############################################
+# Description:
+#   Generates a Sankey plot from provided data, grouping by specified variables, and saves the plot to a file.
+# Parameters:
+#   data: (data.frame) The dataset to be used for plotting.
+#   variables_to_plot: (vector of strings) The names of the columns in data to group by in the Sankey plot.
+#   fill_var: (string) The name of the column in data used to fill the colors in the plot.
+#   output_name: (string) The path to the output file where the plot will be saved.
+# Return value:
+#   None. The function saves the generated plot to output_name.
 plot_sankey <- function(data, variables_to_plot, fill_var, output_name){
   count_mat <-   data %>%
     group_by_at(variables_to_plot) %>% 
@@ -51,6 +64,12 @@ plot_sankey <- function(data, variables_to_plot, fill_var, output_name){
 }
 
 ###############################################
+# Description:
+#   Summarizes the quality control (QC) results, creating a summary table with pass/fail statistics.
+# Parameters:
+#   QCResults: (data.frame) A dataframe containing results from a QC process, with logical values indicating pass or fail statuses.
+# Return value:
+#   (data.frame) A summary dataframe with columns indicating the number of passes and warnings for the QC checks.
 qc_summarize <- function(QCResults){
   QC_Summary <- data.frame(Pass = colSums(!QCResults[, colnames(QCResults)]),
                            Warning = colSums(QCResults[, colnames(QCResults)]))
@@ -67,8 +86,18 @@ qc_summarize <- function(QCResults){
 }
 
 ################################################
-# Graphical summaries of QC statistics plot function
-QC_histogram <- function(assay_data = NULL,
+# Description:
+#   Generates and saves a histogram of QC statistics with optional threshold line and scale transformation.
+# Parameters:
+#   assay_data: (data.frame) Dataset containing assay results to be plotted.
+#   annotation: (string) Name of the plot and x-axis.
+#   fill_by: (string) Column name used for filling colors in the histogram.
+#   thr: (numeric) The threshold value to be marked as a vertical line in the plot.
+#   scale_trans: (string) The type of scale transformation to apply to the x-axis (eg log)
+#   output_name: (string) Path to the file where the plot will be saved.
+# Return value:
+#   None. The function saves the plot to output_name.
+QC_histogram <- function(assay_data,
                          annotation = NULL,
                          fill_by = NULL,
                          thr = NULL,
@@ -93,6 +122,15 @@ QC_histogram <- function(assay_data = NULL,
 }
 
 #######################################
+# Description:
+#   Creates and saves a stacked bar plot of nr of AOI above defined gene detection rate thresholds.
+# Parameters:
+#   segment_data: (data.frame) Dataframe containing data for each AOI 
+#                 (typically pData(geomx_obj)) with a column GeneDetectionRate.
+#   fill_var: (string) Column in the segment_data used for filling the plot colors.
+#   output_name: (string) Path where the output plot will be saved.
+# Return value:
+#   None. The function saves the plot as specified in output_name.
 plot_detection_rate <- function(segment_data, fill_var, output_name){
   segment_data$DetectionThreshold <- 
     cut(segment_data$GeneDetectionRate,
@@ -114,6 +152,13 @@ plot_detection_rate <- function(segment_data, fill_var, output_name){
 }
 
 ############################################
+# Description:
+#   Generates a bar plot showing how many genes were detected in given % of AOIs
+# Parameters:
+#   gene_data: (data.frame) Dataframe containing gene detection rate data (typically fData(geomx_obj))
+#   output_name: (string) The name of the file where the plot will be saved.
+# Return value:
+#   None. Saves the bar plot to the file specified by output_name.
 plot_gene_detection_rate <- function(gene_data, output_name){
   plot_detect <- data.frame(Freq = c(1, 5, 10, 20, 30, 50))
   plot_detect$Number <-
@@ -140,7 +185,15 @@ plot_gene_detection_rate <- function(gene_data, output_name){
 }
 
 #######################################################
-
+# plot_q3_stats
+# Description:
+#   Creates multiple plots of Q3 statistics from the given geomx_obj object and saves them to a single file.
+# Parameters:
+#   geomx_obj: (S4 object) A GeoMx object containing expression data.
+#   ann_of_interest: (string) The annotation column to focus on in the plot.
+#   output_name: (string) The path to the file where the combined plot will be saved.
+# Return value:
+#   None. The function saves plots to the file specified by output_name.
 plot_q3_stats <- function(geomx_obj, ann_of_interest, output_name){
   Stat_data <- 
     data.frame(row.names = colnames(exprs(geomx_obj)),
@@ -187,12 +240,20 @@ plot_q3_stats <- function(geomx_obj, ann_of_interest, output_name){
 }
 
 ###########################################################
-# plot normalisation effects
-
-plot_norm_effect <- function(expr_data, norm_name, output_name, log = T){
+# Description:
+#   Plots and saves a boxplot visualizing counts values for first 10 AOI to visualise 
+#   the effects of normalisation
+# Parameters:
+#   expr_data: (matrix) Expression matrix of raw/normalised data.
+#   norm_name: (string) Name of the normalization method or dataset.
+#   output_name: (string) Path where the output plot will be saved.
+#   is_log: (logical) A flag indicating if the data are in log scale.
+# Return value:
+#   None. The function outputs the plot to the specified file.
+plot_norm_effect <- function(expr_data, norm_name, output_name, is_log = F){
   png(filename=output_name, width=1000, height=750, units="px")
   
-  if(log){
+  if(!is_log){
     boxplot(expr_data,
             col = "#9EDAE5", main = norm_name,
             log='y', names = seq(1:ncol(expr_data)), xlab = "Segment",
@@ -209,9 +270,17 @@ plot_norm_effect <- function(expr_data, norm_name, output_name, log = T){
 }
 
 ###########################################################
-# plot expression data distribution
-
-plot_expr_distribution <- function(expr_data, norm_name, output_name, log = T){
+# Description:
+#   Visualizes the distribution of expression data and optionally its log-transformed values.
+# Parameters:
+#   expr_data: (matrix) Expression data to be plotted.
+#   norm_name: (string) Label for the dataset (eg normalisation type), used in the plot title.
+#   output_name: (string) Path to the file where the plots will be saved.
+#   is_log: (logical) Boolean indicating if data is already in log scale. 
+#   if not - the log-transformed plot will also be produced
+# Return value:
+#   None. The plots are saved using ggsave().
+plot_expr_distribution <- function(expr_data, norm_name, output_name, is_log = F){
   
   expr_df <- as.data.frame(as.vector(expr_data))
   colnames(expr_df) <- 'expr'
@@ -219,17 +288,17 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, log = T){
   ggplot(data = expr_df) +
     geom_histogram(aes(x = expr), bins = 100) +
     xlim(0, as.numeric(quantile(expr_df$expr, probs = 0.99))) +
-    ggtitle(paste0(norm_name, '[.99 percentile]'))
+    ggtitle(paste0(norm_name, ' [.99 percentile]'))
   
   ggsave(output_name)
   
-  if(log){
+  if(!is_log){
     expr_df$expr_log2 <- log2(expr_df$expr + 1)
     
     ggplot(data = expr_df) +
       geom_histogram(aes(x = expr_log2), bins = 100) +
       xlim(0, as.numeric(quantile(expr_df$expr_log2, probs = 0.99)))+
-      ggtitle(paste0('log2', norm_name, '[.99 percentile]'))
+      ggtitle(paste0('log2 ', norm_name, ' [.99 percentile]'))
     
     ggsave(paste0(file_path_sans_ext(output_name), '_log2.', file_ext(output_name)))
 
@@ -631,3 +700,224 @@ prepare_dge_metadata <- function(metadt, main_var_name, main_var_is_bin, main_va
   
   return(metadt)
 }
+
+###########################################################33
+############################################################
+# removes to small groups for DGE comparison
+rm_too_small_groups <- function(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin, comparison_type){
+  samples_freq <- data.frame(table(pData(geomx_obj_dge_group)$main_var_factor,
+                                   pData(geomx_obj_dge_group)$cofounder_factor))
+  
+  msg1 <- 'frequency of AOI in given group per sample:'
+  print(msg1)
+  print(samples_freq)
+  
+  if(comparison_type == 'within'){
+    groups_keep <- samples_freq[samples_freq$Freq >= min_aoi_nr, ]
+    
+    # rmv samples with only 1 group with enough nr of ROI
+    groups_keep_per_sample <- data.frame(table(groups_keep$Var2))
+    sample_to_rm <- as.character(groups_keep_per_sample$Var1[groups_keep_per_sample$Freq < min_aoi_nr])
+    
+    groups_keep2 <- groups_keep[!(groups_keep$Var2 %in% sample_to_rm), ]
+    
+    msg2 <- 'only this groups will be keeped for DGE:'
+    print(msg2)
+    print(groups_keep2)
+    
+    keep_ind <- inner_join(pData(geomx_obj_dge_group), groups_keep2, 
+                           by = c('main_var_factor' = 'Var1', 'cofounder_factor' ='Var2'))
+    
+    keep_ind <-  pData(geomx_obj_dge_group)$dcc_filename %in% keep_ind$dcc_filename
+    
+    # test
+    #kk <- pData(geomx_obj_dge_group)[keep_ind, c('main_var_factor', 'cofounder_factor')]
+    
+    geomx_obj_dge_group_cleaned <- geomx_obj_dge_group[, keep_ind]
+    
+    return(list(geomx_obj = geomx_obj_dge_group_cleaned, logs = c(msg1, as.character(samples_freq), msg2, as.character(groups_keep2))))
+  } else{
+    return(list(geomx_obj = geomx_obj_dge_group, logs = c(msg1, as.character(samples_freq))))
+  }
+}
+
+########################################
+# chatgpt documentation
+
+# 
+# make_umap_tsne
+# Description:
+#   Performs UMAP and t-SNE reduction on given expression data and stores the results in the geomx object.
+# 
+# Parameters:
+#   
+#   geomx: (S4 object) GeoMx object with assay data.
+# assay_name: (string) Name of the assay or expression matrix to use.
+# assay_is_log: (logical) If the data is already in log scale.
+# Return value:
+#   (S4 object) The geomx object populated with UMAP and t-SNE results.
+# 
+# plot_umap_tsne
+# Description:
+#   Generates plots for UMAP or t-SNE results in the pheno_data.
+# 
+# Parameters:
+#   
+#   pheno_data: (data.frame) Dataframe containing the phenotype data, including UMAP/t-SNE results.
+# method_type: (character vector) Either 'UMAP' or 'tSNE' indicating the dimensionality reduction method.
+# norm_type: (string) The normalization method or assay name associated with the data.
+# color_var: (string) Column name for color grouping in the plot.
+# shape_var: (string) Column used for shape grouping in the plot, default is 'Segment'.
+# output_name: (string) The file name where the plot will be saved.
+# Return value:
+#   None. The plot is saved to output_name.
+# 
+# plot_pvca
+# Description:
+#   Plots the proportion of variance explained for each effect in PVCA analysis.
+# 
+# Parameters:
+#   
+#   pvca_obj: (list) PVCA object containing the PVCA analysis results.
+# plot_name: (string) Name used in the file title of the saved plot.
+# output_dir: (string) Directory where the plot will be saved.
+# Return value:
+#   None. The function saves a bar plot to the specified directory.
+# 
+# calculate_ora
+# Description:
+#   Conducts an Over-Representation Analysis (ORA) for the given genes against a gene set library.
+# 
+# Parameters:
+#   
+#   gene_vect: (vector) List of genes to be tested.
+# bcg_gene_vect: (vector) Background gene vector used for comparison.
+# msigdb_df: (data.frame) The gene set database to be used for ORA.
+# padj: (numeric) Adjusted p-value cutoff for the analysis, default 0.1.
+# Return value:
+#   (data.frame) A dataframe with the results of the ORA.
+# 
+# plot_volcano_deg
+# Description:
+#   Creates a volcano plot to visualize Differential Gene Expression (DGE) results.
+# 
+# Parameters:
+#   
+#   results: (data.frame) The results of the DGE analysis.
+# plot_name: (string) Title used for the plot.
+# top_n_lab: (integer) Number of top genes to label in the plot.
+# group_pos: (string) Name of the positive comparison group.
+# group_neg: (string) Name of the negative comparison group.
+# output_dir: (string) Directory where the plot file will be saved.
+# Return value:
+#   None. Saves a volcano plot as a PNG file.
+# 
+# gene_2names
+# Description:
+#   Converts Ensembl or Entrez gene IDs to gene names.
+# 
+# Parameters:
+#   
+#   gene_inp_list: (list) Nested list of gene IDs to be converted.
+# conv: (character) The type of conversion from 'ens' (Ensembl) or 'entrez'.
+# type: (string) The expected input data structure type, default is 'list'.
+# Return value:
+#   (list) List with converted gene names.
+# 
+# pathway_boxplot
+# Description:
+#   Creates and saves a violin plot for pathway scores across groups, with statistical annotations.
+# 
+# Parameters:
+#   
+#   df: (data.frame) Dataframe containing pathway scores and group information.
+# pathway_colname: (string) Column name for pathways.
+# score_colname: (string) Column name indicating the scores.
+# color_colname: (string) Column used to color the plot.
+# facet_var: (string or list) Variables for facet wrapping.
+# plot_title: (string) Title of the plot.
+# output_path: (string) File path where the plot is saved.
+# ymin: (numeric) Minimum y-axis value for the plot.
+# ymax: (numeric) Maximum y-axis value.
+# manual_colours: (vector) Manual color values for the plot.
+# Return value:
+#   None. The plot is saved as a PDF.
+# 
+# adjust_synonym_genes
+# Description:
+#   Adjusts gene names in a vector to match those in a given reference vector, using synonyms from Ensembl.
+# 
+# Parameters:
+#   
+#   geomx_gene_names: (vector) Reference vector of gene names.
+# gene_vector: (vector) Vector of gene names to be adjusted.
+# Return value:
+#   (vector) Adjusted vector of gene names with synonyms converted to match the reference.
+# 
+# prepare_msigdb_sign_list
+# Description:
+#   Prepares a list of signatures from the MSigDB database, optionally adjusting synonyms to match a reference.
+# 
+# Parameters:
+#   
+#   adjust_synonym: (logical) Whether to adjust synonyms in the gene list, default is TRUE.
+# geomx_obj: (S4 object) GeoMx object with its rownames used for synonym adjustment if needed.
+# hal: (logical) Whether to include hallmark gene sets, default is TRUE.
+# db_subcat_list: (vector) List of database subcategories to filter, defaults to various pathways.
+# Return value:
+#   (list) List of pathway signatures with adjusted genes.
+# 
+# prepare_custom_sign_list
+# Description:
+#   Prepares a signature list from a custom data frame, with optional synonym adjustment.
+# 
+# Parameters:
+#   
+#   custom_sign_df: (data.frame) DataFrame with custom gene sets.
+# adjust_synonym: (logical) Whether to adjust synonym names, default is TRUE.
+# geomx_obj: (S4 object) GeoMx object for benchmarking synonyms if needed.
+# Return value:
+#   (list) List of custom signatures, adjusted for synonyms if specified.
+# 
+# prepare_expr_mtx
+# Description:
+#   Processes an expression matrix, log-transforming if necessary and optionally removing low complexity genes.
+# 
+# Parameters:
+#   
+#   geomx_obj_path: (string) Path to the GeoMx object file.
+# norm_type: (string) Normalization type or assay name in the geomx_obj.
+# scrna_ref_cleaned_path: (string) Path to reference object for filtering low complexity genes.
+# norm_is_log: (logical) Whether the input data is already log-transformed.
+# Return value:
+#   (matrix) Log-tranformed expression matrix with low complexity genes removed if specified.
+# 
+# prepare_dge_metadata
+# Description:
+#   Processes metadata for differential gene expression analysis, preparing factors and groups for comparison.
+# 
+# Parameters:
+#   
+#   metadt: (data.frame) Metadata dataframe, typically phenotype data.
+# main_var_name: (string) Main variable name to test within.
+# main_var_is_bin: (logical) Whether the main variable is binary.
+# main_var_main_val: (string) Main value of interest for the binary variable.
+# dge_categories: (vector) Categories to include for DGE analysis.
+# cofounder_name: (string) Name of the column used for cofounder effect adjustment.
+# Return value:
+#   (data.frame) Modified metadata with adjusted groupings and factors for DGE.
+# 
+# rm_too_small_groups
+# Description:
+#   Removes groups from a GeoMx object that do not meet a specified minimum number of AOI.
+# 
+# Parameters:
+#   
+#   geomx_obj_dge_group: (S4 object) GeoMx object with differential gene expression groups defined.
+# min_aoi_nr: (integer) Minimum number of areas of interest required for a group to be kept.
+# main_var_is_bin: (logical) Indicates if the main variable is binary.
+# comparison_type: (string) Type of comparison, e.g., 'within'.
+# Return value:
+#   (S4 object) The cleaned GeoMx object with small groups removed.
+# 
+# Each function is expected to be used within the context of data analysis, particularly with genomic data or similar structured datasets.

@@ -113,6 +113,8 @@ if(comparison_type == 'within'){
   #reduced_model_formula <- ~ (1 | cofounder_factor)
 } else{stop('comparison type can be either "within" or "between"')}
 
+# stores information about eg comparion groups and samples
+runlogs <- c()
 
 # iterate through all + deconv matrices
 lapply(names(expr_list), function(expr_name){
@@ -134,13 +136,17 @@ lapply(names(expr_list), function(expr_name){
   for(data_group in unique(pData(geomx_obj_dge)[, 'dge_group'])){
     
     print(data_group)
+    runlogs <- c(runlogs, paste('dge run info for', expr_name, data_group, ':'))
     
     # filter to group
     ind <- pData(geomx_obj_dge)$dge_group == data_group
     geomx_obj_dge_group <- geomx_obj_dge[, ind]
     
-    geomx_obj_dge_group_cleaned <- rm_too_small_groups(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin, comparison_type)
+    # TODO optimise this logic
     
+    cleaned_dt <- rm_too_small_groups(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin, comparison_type)
+    geomx_obj_dge_group_cleaned <- cleaned_dt$geomx_obj
+    runlogs <- c(runlogs, cleaned_dt$logs)
     ###########################
     # TODO likelihood ratio test - anova(full model, reduced model)
     # check if main_var significantly improved the effect
@@ -195,7 +201,9 @@ lapply(names(expr_list), function(expr_name){
                            "Pr(>|t|)", "FDR")]
       dge_results <- rbind(dge_results, r_test)
     } else{
-      print(paste('error while computing dge for', expr_name, data_group, 'probably too little AOI for comparison. Check the comparison groups!!'))
+      err <- paste('error while computing dge for', expr_name, data_group, 'probably too little AOI for comparison. Check the comparison groups!!')
+      print(err)
+      runlogs <- c(runlogs, err)
       dge_results <- dge_results
     }
     
@@ -237,6 +245,8 @@ writeLines(c('DGE logs:',
              '; ', main_var_name, ' bin ', main_var_is_bin, 
              '; main var value: ', main_var_main_val,
              '; categories to compare: ', dge_categories,
+             '; min number of categories to compare within slide: ', min_aoi_nr,
              '; normalisation type: ', norm_name,
              '; low complex gene removed : ', low_complex_rmv,
-             '; deconv mtx used : ', deconv_bp_path), dge_logs_path)
+             '; deconv mtx used : ', deconv_bp_path,
+             'runlogs: ', runlogs), dge_logs_path)
