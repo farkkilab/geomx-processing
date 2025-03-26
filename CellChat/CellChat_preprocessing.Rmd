@@ -1,0 +1,287 @@
+---
+title: "Cell Chat preprocessing"
+output: pdf_document
+date: "2025-02-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(SeuratObject)
+```
+
+# geomx object
+
+```{r}
+geomx_obj = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/deconvoluted_data/geomx_qc_norm_batch_eff_rm.RDS")
+```
+
+
+Extracting expression data of the desired cell types and saving it as a r object
+
+```{r}
+bprism_res = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/deconvoluted_data/bp_res_mid_lvl_ct_45.RDS")
+```
+
+
+```{r}
+
+
+ct_names <- colnames(bprism_res@posterior.theta_f@theta.cv) 
+
+deconv_ct_list <- setNames(lapply(ct_names, function(ct_name) {
+  cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
+  
+  # Mask cell fractions if CV > 0.2
+  cell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[ct_name]] > 0.2]
+  
+  deconv_ct <- BayesPrism::get.exp(bp = bprism_res,
+                                   state.or.type = "type",
+                                   cell.name = ct_name)
+  
+  # Filter out cells with high CV
+  deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
+  
+  return(deconv_ct)
+}), ct_names)  
+
+
+
+saveRDS(deconv_ct_list, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/deconvoluted_data/bp_res_mid_lvl_ct_45_all_cell_types.RDS")
+
+```
+
+
+```{r}
+
+deconv_ct_list = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/deconvoluted_data/bp_res_mid_lvl_ct_45_all_cell_types.RDS")
+```
+
+
+
+```{r combine expression data}
+
+deconv_ct_list_int <- lapply(names(deconv_ct_list), function(ct_name){
+  mat <- deconv_ct_list[[ct_name]]
+  rownames(mat) <- gsub('\\.dcc', paste0('_', ct_name), rownames(mat))
+  
+  mat <- apply(mat, c(1, 2), function(x) {(as.integer(x))})
+  
+  return(mat)
+})
+
+names(deconv_ct_list_int) <- names(deconv_ct_list)
+
+deconv_ct_list_int_all <- do.call(rbind, deconv_ct_list_int)
+
+```
+
+
+```{r combine meta data}
+deconv_metadt_list <- lapply(names(deconv_ct_list_int), function(ct_name){
+  meta_data = sData(geomx_obj)
+  
+   new_meta <- data.frame(meta_data[,1:46])
+  
+  new_meta$dcc_filename = gsub('\\.dcc', paste0('_', ct_name), new_meta$dcc_filename)
+  mat = deconv_ct_list_int[[ct_name]]
+  
+  matched_entries = new_meta[new_meta$dcc_filename %in% rownames(mat), ]
+  rownames(matched_entries) = matched_entries$dcc_filename  
+  
+  return(matched_entries)
+})
+
+metadt_all <- do.call(rbind, deconv_metadt_list)
+
+```
+
+```{r}
+saveRDS(metadt_all, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/metadt_all.RDS")
+```
+
+
+
+#################################
+
+```{r normalization}
+library(DESeq2)
+
+## Create DESeq2Dataset object
+dds <- DESeqDataSetFromMatrix(countData = t(deconv_ct_list_int_all),
+                              colData = metadt_all,
+                              design = formula(~ Segment + NACT_status))
+
+# TODO examine eg if add Annotation_cell or NACT status?
+
+# normalise
+
+dds <- estimateSizeFactors(dds, type = "poscounts")
+
+#dds <- estimateSizeFactors(dds, type = "iterate")
+
+#dds <- estimateSizeFactors(dds) # did not work
+
+deseq2_norm_counts <- counts(dds, normalized=TRUE)
+
+
+# log transformation
+
+expr_deseq2_norm_log <- log2(deseq2_norm_counts + 1)
+```
+
+
+```{r}
+saveRDS(expr_deseq2_norm_log, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/geomx_qc_norm_batch_eff_rm_deconvoluted_deseq2_norm_log.RDS")
+
+expr_deseq2_norm_log = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/geomx_qc_norm_batch_eff_rm_deconvoluted_deseq2_norm_log.RDS")
+```
+
+
+```{r data distribution}
+Macrophages_mat <- expr_deseq2_norm_log[, grep("Macrophages", colnames(expr_deseq2_norm_log)), drop = FALSE]
+df1 <- data.frame(expression = as.vector(unlist(Macrophages_mat)))
+
+plot1 <- ggplot(df1, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Macrophages(normalized counts)") +
+  theme_minimal()
+
+```
+
+
+```{r}
+Tcells_mat <- expr_deseq2_norm_log[, grep("Tcells", colnames(expr_deseq2_norm_log)), drop = FALSE]
+df2 <- data.frame(expression = as.vector(unlist(Tcells_mat)))
+
+plot2 <- ggplot(df2, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Tcells(normalized counts)") +
+  theme_minimal()
+
+plot2 
+```
+
+```{r}
+Bcells_mat <- expr_deseq2_norm_log[, grep("Bcells", colnames(expr_deseq2_norm_log)), drop = FALSE]
+df3 <- data.frame(expression = as.vector(unlist(Bcells_mat)))
+
+plot3 <- ggplot(df3, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Bcells(normalized counts)") +
+  theme_minimal()
+
+
+```
+
+```{r}
+tumor_mat <- expr_deseq2_norm_log[, grep("tumor", colnames(expr_deseq2_norm_log)), drop = FALSE]
+df4 <- data.frame(expression = as.vector(unlist(tumor_mat)))
+
+plot4 <- ggplot(df4, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("tumor(normalized counts)") +
+  theme_minimal()
+
+```
+
+```{r}
+library(gridExtra)
+grid.arrange(plot1, plot2, plot3, plot4, nrow = 2, ncol = 2)
+```
+
+```{r}
+seuratObj_from_geomx2 =  CreateSeuratObject(
+  df,
+  assay = "RNA",
+  names.field = 2,
+  names.delim = "_",
+  meta.data = NULL,
+  project = "geomx",
+  min.cells = 0, #Include features detected in at least this many cells
+  min.features = 0 # Include cells where at least this many features are detected
+)
+```
+
+
+
+```{r}
+Tcells_mat <- expr_deseq2_norm_log[, grep("Tcells", colnames(expr_deseq2_norm_log)), drop = FALSE]
+
+Macrophages_mat <- expr_deseq2_norm_log[, grep("Macrophages", colnames(expr_deseq2_norm_log)), drop = FALSE]
+```
+
+```{r}
+row_variance <- apply(Tcells_mat, 1, var)
+row_variance_mac <- apply(Macrophages_mat, 1, var)
+```
+
+```{r}
+Tcells_mat_filtered <- Tcells_mat[row_variance >= 0.1, , drop = FALSE]
+
+
+Macrophages_mat_filtered <- Macrophages_mat[row_variance_mac < 0.005, , drop = TRUE]
+
+# 0  or 0.005
+```
+
+```{r}
+hist(row_variance, breaks = 1000, xlim = c(0,0.02))
+```
+
+
+```{r}
+df1 <- data.frame(expression = as.vector(unlist(Bcells_mat_filtered)))
+
+plot1 <- ggplot(df1, aes(x = expression)) +
+  geom_density(fill = "blue") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 1, col = "red", linetype = "dashed") +
+  geom_vline(xintercept = 2, col = "red", linetype = "dashed") +
+  ggtitle("Bcells_mat_filtered(normalized counts filtered)") +
+  theme_minimal()
+
+plot1
+```
+```{r}
+Bcells_mat <- expr_deseq2_norm_log[, grep("Bcells", colnames(expr_deseq2_norm_log)), drop = FALSE]
+```
+
+
+```{r}
+row_variance <- apply(Bcells_mat, 1, var)
+hist(row_variance, breaks = 20)
+Bcells_mat_filtered <- Bcells_mat[row_variance > 0.1, , drop = FALSE]
+
+```
+
+
+```{r}
+df = read.csv("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/bp_res_mid_lvl_ct_ct_fraction.csv")
+```
+
+```{r}
+hist(df$Tcells, breaks = 30, xlim = c(0,0.2))
+hist(df$Bcells, breaks = 30, xlim = c(0,0.4))
+hist(df$Macrophages, breaks = 30, xlim = c(0,0.4))
+```
+
+```{r}
+summary(df)
+```
+
