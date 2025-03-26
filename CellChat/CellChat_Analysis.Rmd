@@ -1,0 +1,128 @@
+---
+title: "CellChat_Analysis"
+author: "Gayani GImhani Anandagoda"
+date: '`r Sys.Date()`'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(CellChat)
+library(patchwork)
+options(stringsAsFactors = FALSE)
+```
+
+
+```{r}
+expr_deseq2_norm_log = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/geomx_qc_norm_batch_eff_rm_deconvoluted_deseq2_norm_log.RDS")
+```
+
+```{r}
+metadt_all = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/metadt_all.RDS")
+```
+
+
+```{r}
+#without_tumor <- expr_deseq2_norm_log[, !grepl("_tumor", colnames(expr_deseq2_norm_log))]
+
+
+without_other_cells <- expr_deseq2_norm_log[, !grepl("_other", colnames(expr_deseq2_norm_log))]
+
+#without_tumor_Tcells <- without_tumor_Tcells[, !grepl("_Tcells", colnames(without_tumor_Tcells))]
+
+#without_tumor_Tcells <- without_tumor_Tcells[, !grepl("_DCs", colnames(without_tumor_Tcells))]
+# meta = data.frame(samples = metadt_all$Sample, NACT_status = metadt_all$NACT_status, Patient = metadt_all$Patient, row.names = rownames(metadt_all))
+
+meta = data.frame(samples = metadt_all$Sample, row.names = rownames(metadt_all))
+
+cell_types <- sapply(strsplit(rownames(metadt_all), "_"), function(x) x[2])
+meta = data.frame(labels = cell_types, meta)
+
+
+#meta$samples <- as.factor(meta$samples)
+
+#meta <- meta[meta$labels != "tumor", ]
+meta <- meta[meta$labels != "other", ]
+#meta <- meta[meta$labels != "Tcells", ]
+#meta <- meta[meta$labels != "DCs", ]
+
+meta = data.frame(labels = meta$labels, row.names = rownames(meta))
+
+meta$labels <- as.factor(meta$labels)
+
+```
+
+
+```{r}
+cellchat_obj = createCellChat(object = without_other_cells , meta = meta, group.by = "labels")
+```
+
+
+# CellChat database
+
+```{r}
+CellChatDB <- CellChatDB.human # use CellChatDB.mouse if running on mouse data
+#showDatabaseCategory(CellChatDB)
+
+```
+
+```{r}
+# use all CellChatDB except for "Non-protein Signaling" for cell-cell communication analysis
+CellChatDB.use <- subsetDB(CellChatDB)
+```
+
+```{r}
+# set the used database in the object
+cellchat_obj@DB <- CellChatDB.use
+```
+
+# Preprocessing the expression data for cell-cell communication analysis
+
+```{r}
+cellchat_obj <- subsetData(cellchat_obj) # This step is necessary even if using the whole database
+future::plan("multisession", workers = 4) # do parallel
+cellchat_obj <- identifyOverExpressedGenes(cellchat_obj)
+cellchat_obj <- identifyOverExpressedInteractions(cellchat_obj)
+
+# execution.time = Sys.time() - ptm
+#print(as.numeric(execution.time, units = "secs"))
+
+
+
+```
+```{r}
+# check !!!!
+
+# project gene expression data onto PPI (Optional: when running it, USER should set `raw.use = FALSE` in the function `computeCommunProb()` in order to use the projected data)
+# cellchat <- projectData(cellchat, PPI.human)
+
+```
+
+
+# Part II: Inference of cell-cell communication network
+
+```{r}
+
+ptm = Sys.time()
+cellchat_obj <- computeCommunProb(cellchat_obj, type = "triMean")
+
+
+
+#triMean is used for calculating the average gene expression per cell group. 
+#[1] ">>> Run CellChat on sc/snRNA-seq data <<< [2025-03-21 20:03:14.963692]"
+#  |====================================================| 100%
+#[1] ">>> CellChat inference is done. Parameter values are stored in `object@options$parameter` <<< [2025-03-21 22:37:24.831767]"
+
+# run time : aprox: 2.5 hrs
+```
+
+```{r}
+saveRDS(cellchat_obj , file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/cellchat_obj.RDS")
+```
+
+
+
