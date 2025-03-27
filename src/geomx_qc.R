@@ -22,6 +22,7 @@ keep_high_NTC <- ifelse(batch == 'batch1', TRUE, FALSE)
 
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
 
+
 # load geomx dataset ------------------------------------------------------
 
 geomx_obj <- readNanoStringGeoMxSet(dccFiles = dcc_path, 

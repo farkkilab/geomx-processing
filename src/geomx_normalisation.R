@@ -4,7 +4,6 @@
 
 umap_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition, sample_name, 
                main_batch_var, batch_var, other_vars_bio, other_vars_tech)
-#  TODO change to factor before to avoid PFS_months fucking up
 
 exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
 

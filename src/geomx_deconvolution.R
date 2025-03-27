@@ -241,17 +241,19 @@ deconv_ct_list <- lapply(ct_names, function(ct_name){
   deconv_ct_cleaned_vst <- tryCatch({
     # do vst normalisation
     deconv_ct_cleaned_vst <- varianceStabilizingTransformation(round(t(deconv_ct_cleaned)))
+
+    # remove genes with 0 variance across whole dataset (artifact from deconv + vst)
+    per_gene_variance <- apply(deconv_ct_cleaned_vst, 1, var)
+    
+    genes_var0 <- names(per_gene_variance)[which(per_gene_variance == 0)]
+
+    deconv_ct_cleaned_vst <- deconv_ct_cleaned_vst[!(rownames(deconv_ct_cleaned_vst) %in% genes_var0),]
+
     
     plot_expr_distribution(deconv_ct_cleaned_vst, paste0(ct_name, '_vst'), 
                            file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                     scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_vst.png')), is_log = T)
-    
-    # remove genes with 0 variance across whole dataset (artifact from deconv + vst)
-    per_gene_variance <- apply(deconv_ct_cleaned_vst, 1, var)
-    genes_var0 <- names(per_gene_variance)[which(per_gene_variance == 0)]
-    
-    deconv_ct_cleaned_vst <- deconv_ct_cleaned_vst[!rownames(deconv_ct_cleaned_vst) %in% genes_var0,]
-    
+                                     scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_vst_0var_rmv.png')), is_log = T)
+
     return(ct_name = deconv_ct_cleaned_vst)  # Return the result 
   }, error = function(e) {
     print('not enough AOIs with trustable predictions to perform vst. cell type is removed')

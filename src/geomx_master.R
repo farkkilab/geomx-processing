@@ -55,9 +55,9 @@ library(progeny, quietly =T)
 
 # TODO --------------------------------------------------------------------
 
-# TODO optimise all output paths and logs to contain all important info about the run (eg in dge which roi groups were rmvd)
 # TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
 # TODO check if dcc filenames are unique in merged batched
+# TODO simplify logs by putting all console info from source() to logs
 batch <<- 'batch1' # just for running qc for batch1 with kept high NTC samples
 
 
@@ -65,10 +65,11 @@ batch <<- 'batch1' # just for running qc for batch1 with kept high NTC samples
 
 proj_dir <<- '~/Documents/phd/st'
 
+
 #data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
 data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
 
-#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1802') # batch2
+#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
 
 # input data
@@ -79,7 +80,7 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 # anno file have to contain sheet named 'Sheet1' and following column names:
 # 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
 # and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
-# anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
+#anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
 
 # path to reference scRNAseq dataset for deconvolution
@@ -88,7 +89,7 @@ scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_d
 
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-                              'stromal_cell_subtype_signatures_symbols_ensembl_ids_revised.csv')
+                              'IFNg_pathways.csv')
 
 
 # set up metadata variables names -----------------------------------------
@@ -127,7 +128,6 @@ print('GeoMx pipeline starting :O')
 print('#############')
 
 # conditionally run preprocessing -----------------------------------------
-# TODO put the printed qc info to logs
 
 run_unless_exists('Preprocessing', geomx_qc_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_qc.R'))
@@ -185,14 +185,16 @@ ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells",
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
-signature_type <<- 'msigdb' # c('msigdb', 'custom')
+signature_type <<- 'custom' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
 # custom - on custom signatures list specified in custom_sign_path
+
+signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(custom_sign_path)), '')
 
 gsea_type <<- 'ssgsea' # 'gsva' or 'ssgsea'
 
 gsea_logs_path <<- file.path(output_dir,'pathway_analysis', 'gsea', 
-                             paste0(gsea_type, '_', signature_type,'_logs.txt'))
+                             paste0(gsea_type, '_', signature_type, signature_name, '_logs.txt'))
 
 
 run_unless_exists('Pathway analysis', gsea_logs_path, 
@@ -200,8 +202,6 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 
 
 # conditionally run differential gene expression --------------------------
-# TODO put the printed deconv info to logs (eg nr of groups, removed samples etc)
-
 # TODO anova(full model, reduced model) - check if significantly improves the effect for interesting genes
 # TODO add limma voom - not so important
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
@@ -210,8 +210,7 @@ dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
-ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells", 
-                     "Macrophages", "DCs", "Endothelial cells")
+ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
@@ -221,11 +220,11 @@ comparison_type <<- 'within'
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
 main_var_name <<- 'Annotation_cell' # main variable to make comparison between
-main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
+main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
-main_var_main_val <<- 'posCD8_posIBA1'
-#main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
+#main_var_main_val <<- 'posCD8_posIBA1'
+main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
 
 
