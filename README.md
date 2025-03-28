@@ -46,7 +46,12 @@ This pipeline starts with (almost) raw geomx dsp data - DCC files (obtained from
 The pipeline was set up and tested under **UBUNTU 22.04** on the desktop machine with **20 cores and 64G RAM (32G + 32G swap)** 
 and it took around **5h to complete** for ~300 DCC files. 
 
-**R 4.2.2** version was used. All the required packages and versions can be found in **renv** file. %%%TODO%%%
+**R 4.2.2** version was used. All the required packages and versions can be found in **./renv** and can be automatially installed using renv::install() 
+after downloading the repository and opening geomx-processing.Rproj in Rstudio. (see renv vignette: https://rstudio.github.io/renv/articles/renv.html#libraries-and-repositories)
+
+!! if encountering problems with 'preprocessCore' package, it may be needed to reinstall it manually from source with additional parameters, using following commands:
+remove.packages('preprocessCore')
+BiocManager::install("preprocessCore", configure.args = c(preprocessCore = "--disable-threading"), force= TRUE, update=TRUE, type = "source")
 
 The weight of the ~300 DCC dataset is around 2G, so it's possible to run the pipeline on the smaller machine (around 8G RAM) 
 but the required tests haven't been performed.
@@ -88,7 +93,7 @@ Read the comments in the code to learn about different variables and carefully e
 If you encounter an error: read an error message - often it's an easy-to-fix problem such as wrong variable/pathway name.
 
 How to use the pipeline:
-1. Import the environment using renv (https://rstudio.github.io/renv/articles/renv.html) **TODO**
+1. Install the environment using renv::install() (https://rstudio.github.io/renv/articles/renv.html) 
 2. Change the pathways to in/out directory and all input files in the "define variables and paths" section
 3. Carefully check your metadata (annotation) xls file and change the column names within "set up metadata variables names" section. 
 4. Just run the next 2 sections - "load util functions and create dirs" and "define intermediate output paths"
