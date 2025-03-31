@@ -27,8 +27,9 @@ library(ggpubr)
 library(ggpmisc)
 library(viridis)
 library(RColorBrewer)
+library(GeomxTools)
 
-
+# TODO rerun with na.rm in cor
 # set variables -----------------------------------------------------------
 
 res_dir <- '~/Documents/phd/st/geomx-processing/results/batch1-1903/'
@@ -99,7 +100,6 @@ genes_expr_long <- melt(genes_expr, id.vars = colnames(genes_expr)[1: ncol(metad
 
 
 # load files and merge with metadata for deconvoluted data ----------------
-# TODO make another matadt_log for deconvoluted data with deconv genes from given cells
 
 deconv_all <- readRDS(deconv_path)
 
@@ -131,14 +131,14 @@ genes_expr_deconv <- dplyr::left_join(metadt, genes_expr_deconv, by = 'dcc_filen
 
 genes_expr_deconv_long <- melt(genes_expr_deconv, id.vars = colnames(genes_expr_deconv)[1: ncol(metadt)],
                         variable.name = "gene_name", 
-                        value.name = "gene_expr_")
+                        value.name = "gene_expr")
 
 # boxplots with expr across discrete vars ---------------------------------
 
 bio_vars_disc <- c('Patient', 'NACT_status', 'Annotation_cell')
 
-dt_type <- 'full_signal'
-seg_type <- 'all_segments'
+dt_type <- 'deconvolution'
+seg_type <- 'stroma'  # 'all_segments' # 'stroma' 
 
 if(dt_type == 'full_signal'){
   dt_long <- genes_expr_long
@@ -148,18 +148,18 @@ if(dt_type == 'full_signal'){
   dt_wide <- genes_expr_deconv
 }
 
-for(color_colname in c('NACT_status', 'Annotation_cell')){
-  pathway_boxplot(dt_long, 'gene_name', 'gene_expr', color_colname, facet_var = 'Segment',
-                  plot_title = paste0('genes expr per ', color_colname), 
-                  output_path = file.path(out_dir, paste0('boxpl_expr_', color_colname, '_per_segm_',dt_type,  '.pdf')),
-                  ymin=0, ymax= max(dt_long$gene_expr) + 1)
-}
-
-pathway_boxplot(dt_long, 'gene_name', 'gene_expr', 'Annotation_cell', facet_var = c('Segment', 'NACT_status'),
-                plot_title = 'genes expr per Annotation_cell', 
-                output_path = file.path(out_dir, paste0('boxpl_expr_cell_anno_per_segm_nact', dt_type, '.pdf')),
-                ymin=0, ymax= max(dt_long$gene_expr) + 1)
-
+# for(color_colname in c('NACT_status', 'Annotation_cell')){
+#   pathway_boxplot(dt_long, 'gene_name', 'gene_expr', color_colname, facet_var = 'Segment',
+#                   plot_title = paste0('genes expr per ', color_colname), 
+#                   output_path = file.path(out_dir, paste0('boxpl_expr_', color_colname, '_per_segm_',dt_type,  '.pdf')),
+#                   ymin=0, ymax= max(dt_long$gene_expr) + 1)
+# }
+# 
+# pathway_boxplot(dt_long, 'gene_name', 'gene_expr', 'Annotation_cell', facet_var = c('Segment', 'NACT_status'),
+#                 plot_title = 'genes expr per Annotation_cell', 
+#                 output_path = file.path(out_dir, paste0('boxpl_expr_cell_anno_per_segm_nact', dt_type, '.pdf')),
+#                 ymin=0, ymax= max(dt_long$gene_expr) + 1)
+# 
 
 # scatterplots for continuous vars ----------------------------------------
 
@@ -183,8 +183,8 @@ if(seg_type == 'stroma'){
 # metadt_long_all <- metadt_long
 #metadt_long <- metadt_long_all[metadt_long_all$Segment == 'tumor', ]
 
-for(gname in genes_interest){
-  for(cont_colname in bio_vars_cont){
+for(gname in unique(dt_long$gene_name)){
+  for(cont_colname in ct_interest){
     for(color_colname in c(bio_vars_disc, 'PFS_months')){
       
       print(gname)
@@ -192,20 +192,23 @@ for(gname in genes_interest){
       print(color_colname)
       
       if(color_colname == 'PFS_months'){
-        manual_colours <- viridis(length(unique(as.factor(metadt_long$PFS_months))))
+        manual_colours <- viridis(length(unique(as.factor(dt_long$PFS_months))))
         dt_long$PFS_months <- as.factor(dt_long$PFS_months)
       } else{
-        manual_colours <- brewer.pal(length(unique(as.factor(metadt_long[[color_colname]]))), 'Paired')
+        manual_colours <- brewer.pal(length(unique(as.factor(dt_long[[color_colname]]))), 'Paired')
       }
       
       M1 <- lm(get(cont_colname) ~ gene_expr + Patient, data = dt_long[dt_long$gene_name == gname,])
       
-      if(cont_colname != 'PFS_months'){
+      if(color_colname != 'PFS_months'){
       
       ggplot(data = dt_long[dt_long$gene_name == gname,], aes(x = gene_expr, y = get(cont_colname))) +
       geom_point(aes(color = get(color_colname), shape = Segment)) + 
       ggtitle(paste0(gname, ' expression vs ', cont_colname),
-              subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2))) +
+              subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2),
+                               'correlation coefficient: ', 
+                               round(cor(dt_long[dt_long$gene_name == gname,]$gene_expr, 
+                                         dt_long[dt_long$gene_name == gname,][[cont_colname]]), 2))) +
       xlab(gname) +
       ylab(paste0(cont_colname)) +
       guides(color=guide_legend(title=color_colname)) +
@@ -219,7 +222,7 @@ for(gname in genes_interest){
       }
 
       #####################
-      if(!(cont_colname %in% c('Patient', 'PFS_months'))){
+      if(!(color_colname %in% c('Patient', 'PFS_months'))){
         
         ggplot(data = dt_long[dt_long$gene_name == gname,],
                aes(x = gene_expr, y = get(cont_colname), color = get(color_colname))) +
@@ -243,55 +246,58 @@ for(gname in genes_interest){
 
 # CXCR6 vs CXCL16
 
-xname <- 'CXCR6'
-yname <- 'P2RX7' # and CXCL16
+# genes_of_cells <- list(Macrophages = c('CXCL16', 'TLR9'),
+#                        DCs = c('CXCL16', 'TLR9', 'CCD7'),
+#                        Tcells = c('CXCR6', 'CCL5', 'P2RX7'))
 
+xname <- 'CXCR6_Tcells'
 
-color_colname <- 'NACT_status'
-
-for(color_colname in c(bio_vars_disc, 'PFS_months')){
-
-  if(color_colname == 'PFS_months'){
-    manual_colours <- viridis(length(unique(as.factor(dt_long$PFS_months))))
-    dt_wide$PFS_months <- as.factor(dt_wide$PFS_months)
-  } else{
-    manual_colours <- brewer.pal(length(unique(as.factor(dt_long$PFS_months))), 'Paired')
-  }
-  
-  print(color_colname)
-  
-  M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide)
-
-  ggplot(data = dt_wide, aes(x = get(xname), y = get(yname))) +
-  geom_point(aes(color = as.factor(get(color_colname)), shape = Segment)) + 
-  ggtitle(paste(xname, 'vs', yname,  'expression'),
-          subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2))) +
-  xlab(xname) +
-  ylab(yname) +
-  guides(color=guide_legend(title=color_colname)) +
-  scale_color_manual(values=manual_colours) +
-  geom_smooth(method='lm', formula= y~x) +
-  stat_poly_eq(use_label(c("R2")))
-  
-  ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
-         width = 2000, height = 2000, unit = 'px')
-  
-  if(!color_colname %in% c('Patient', 'PFS_months')){
-    ggplot(data = dt_wide, aes(x = get(xname), y = get(yname), color = as.factor(get(color_colname)))) +
-    geom_point(aes(shape = Segment)) + 
-    ggtitle(paste(xname, 'vs', yname,  'expression')) +
-    xlab(xname) +
-    ylab(yname) +
-    guides(color=guide_legend(title=color_colname)) +
-    scale_color_manual(values=manual_colours) +
-    geom_smooth(method='lm', formula= y~x)+
-    stat_poly_eq(use_label(c("R2")))
+for(yname in c('P2RX7_Tcells', 'CXCL16_Macrophages', 'CXCL16_DCs')){
+  for(color_colname in c(bio_vars_disc, 'PFS_months')){
     
-    ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_per_group.png')),
+    if(color_colname == 'PFS_months'){
+      manual_colours <- viridis(length(unique(as.factor(dt_long$PFS_months))))
+      dt_wide$PFS_months <- as.factor(dt_wide$PFS_months)
+    } else{
+      manual_colours <- brewer.pal(length(unique(as.factor(dt_long$PFS_months))), 'Paired')
+    }
+    
+    print(color_colname)
+    
+    M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide)
+    
+    ggplot(data = dt_wide, aes(x = get(xname), y = get(yname))) +
+      geom_point(aes(color = as.factor(get(color_colname)), shape = Segment)) + 
+      ggtitle(paste(xname, 'vs', yname,  'expression'),
+              subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2), 
+              'correlation coefficient: ', round(cor(dt_wide[[yname]], dt_wide[[xname]]), 2))) +
+      xlab(xname) +
+      ylab(yname) +
+      guides(color=guide_legend(title=color_colname)) +
+      scale_color_manual(values=manual_colours) +
+      geom_smooth(method='lm', formula= y~x) +
+      stat_poly_eq(use_label(c("R2")))
+      #stat_correlation(method = 'pearson')
+    
+    ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
            width = 2000, height = 2000, unit = 'px')
-  }
     
+    if(!color_colname %in% c('Patient', 'PFS_months')){
+      ggplot(data = dt_wide, aes(x = get(xname), y = get(yname), color = as.factor(get(color_colname)))) +
+        geom_point(aes(shape = Segment)) + 
+        ggtitle(paste(xname, 'vs', yname,  'expression')) +
+        xlab(xname) +
+        ylab(yname) +
+        guides(color=guide_legend(title=color_colname)) +
+        scale_color_manual(values=manual_colours) +
+        geom_smooth(method='lm', formula= y~x)+
+        stat_poly_eq(use_label(c("R2")))
+      
+      ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_per_group.png')),
+             width = 2000, height = 2000, unit = 'px')
+    }
     #stat_correlation(method = 'pearson')
     #stat_poly_eq(use_label(c("R2")))
-
+  }
 }
+
