@@ -18,6 +18,10 @@ segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less th
 # while processing batch1 separately they're keeped 
 keep_high_NTC <- ifelse(batch == 'batch1', TRUE, FALSE)
 
+# 3 slides from b1 have high NTC count but they behave ok - suspected contamination
+# normal value should be 1000
+max_ntc <- 3000 
+
 # create dirs -------------------------------------------------------------
 
 dir.create(file.path(output_dir, 'qc'), showWarnings = T, recursive = T)
@@ -104,7 +108,7 @@ qc_params <-
        percentAligned = 75,    # Minimum % of reads aligned (80%)
        percentSaturation = 50, # Minimum sequencing saturation (50%)
        minNegativeCount = 1,   # Minimum negative control counts (10, 1 in log scale)
-       maxNTCCount = 1000,     # Maximum counts observed in NTC well (1000)
+       maxNTCCount = max_ntc,     # Maximum counts observed in NTC well (1000)
        minNuclei = 20,         # Minimum # of nuclei estimated (100) 
        minArea = 1000)         # Minimum segment area (5000)
 
