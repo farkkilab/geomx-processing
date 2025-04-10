@@ -29,11 +29,13 @@ library(viridis)
 library(RColorBrewer)
 library(GeomxTools)
 
-# TODO rerun with na.rm in cor
+# TODO rerun for tumor
+# TODO rerun for doublepos
+
 # set variables -----------------------------------------------------------
 
 res_dir <- '~/Documents/phd/st/geomx-processing/results/batch1-1903/'
-out_dir <- '~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell'
+main_out_dir <- '~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell'
 
 geomx_path <- file.path(res_dir, "geomx_qc_norm_batch_eff_rm.RDS")
 deconv_path <- file.path(res_dir, "deconvolution", "bayes_prism", "bp_res_mid_lvl_ct_expr_mtx_cleaned_vst_harmony_batch_corr.RDS")
@@ -45,20 +47,20 @@ gsea_all_path <- file.path(res_dir, "pathway_analysis", "gsea",  "ssgsea_norm_ha
 # gsea_deconv_tcell_path <- file.path(res_dir, "pathway_analysis", "gsea",  "ssgsea_norm_harmony_batch_corr_deconv_Tcells_msigdb.csv")
 
 
-dir.create(out_dir)
+dir.create(main_out_dir)
 
 source(file.path('~/Documents/phd/st/', 'geomx-processing', 'src', 'geomx_utils.R'))
 
 # set important variables -------------------------------------------------
 
 ct_interest <- c('DCs', 'Tcells', 'Macrophages')
-metadt_important <- c('dcc_filename', 'Patient', 'Sample', 'NACT_status', 'PFS_months', 
+metadt_important <- c('dcc_filename', 'Patient', 'Sample', 'NACT_status', 
                       'Segment', 'Annotation_cell', 'Roi')
 
 genes_interest <- c('CXCR6', 'CXCL16', 'CCL5', 'CCR7', 'P2RX7', 'TLR9')
 
 bio_vars_disc <- c('Patient', 'NACT_status', 'Annotation_cell')
-bio_vars_cont <- c('PFS_months', ct_interest)
+bio_vars_cont <- c(ct_interest)
 
 genes_of_cells <- list(Macrophages = c('CXCL16', 'TLR9'),
                        DCs = c('CXCL16', 'TLR9', 'CCD7'),
@@ -135,169 +137,259 @@ genes_expr_deconv_long <- melt(genes_expr_deconv, id.vars = colnames(genes_expr_
 
 # boxplots with expr across discrete vars ---------------------------------
 
-bio_vars_disc <- c('Patient', 'NACT_status', 'Annotation_cell')
+dt_type <- 'full_signal' # 'deconvolution', 'full_signal'
+seg_type <- 'all_segments'  # 'all_segments' # 'stroma' 'tumor'
+anno <- 'all_anno' # 'all', 'double_pos'
 
-dt_type <- 'deconvolution'
-seg_type <- 'stroma'  # 'all_segments' # 'stroma' 
-
-if(dt_type == 'full_signal'){
-  dt_long <- genes_expr_long
-  dt_wide <- genes_expr
-} else if(dt_type == 'deconvolution'){
-  dt_long <- genes_expr_deconv_long
-  dt_wide <- genes_expr_deconv
-}
-
-# for(color_colname in c('NACT_status', 'Annotation_cell')){
-#   pathway_boxplot(dt_long, 'gene_name', 'gene_expr', color_colname, facet_var = 'Segment',
-#                   plot_title = paste0('genes expr per ', color_colname), 
-#                   output_path = file.path(out_dir, paste0('boxpl_expr_', color_colname, '_per_segm_',dt_type,  '.pdf')),
-#                   ymin=0, ymax= max(dt_long$gene_expr) + 1)
-# }
-# 
-# pathway_boxplot(dt_long, 'gene_name', 'gene_expr', 'Annotation_cell', facet_var = c('Segment', 'NACT_status'),
-#                 plot_title = 'genes expr per Annotation_cell', 
-#                 output_path = file.path(out_dir, paste0('boxpl_expr_cell_anno_per_segm_nact', dt_type, '.pdf')),
-#                 ymin=0, ymax= max(dt_long$gene_expr) + 1)
-# 
-
-# scatterplots for continuous vars ----------------------------------------
-
-bio_vars_cont <- c('PFS_months', ct_interest)
-bio_vars_disc <- c('Patient', 'NACT_status', 'Annotation_cell')
-
-if(seg_type == 'stroma'){
-  dt_long <- dt_long[dt_long$Segment == 'stroma', ]
-  dt_wide <- dt_wide[dt_wide$Segment == 'stroma', ]
-}
-
-# each gene per PFS and ct_fraction
-
-# coloured by c('Patient', 'NACT_status', 'Annotation_cell')
-
-# gname <- genes_interest[1]
-# 
-# cont_colname <- bio_vars_cont[1]
-# color_colname <- bio_vars_disc[2]
-# color_colname <- 'NACT_status'
-# metadt_long_all <- metadt_long
-#metadt_long <- metadt_long_all[metadt_long_all$Segment == 'tumor', ]
-
-for(gname in unique(dt_long$gene_name)){
-  for(cont_colname in ct_interest){
-    for(color_colname in c(bio_vars_disc, 'PFS_months')){
+for(dt_type in c('full_signal', 'deconvolution')){
+  for(seg_type in c('all_segments', 'stroma', 'tumor')){
+    for(anno in c('all_anno', 'doublepos')){
       
-      print(gname)
-      print(cont_colname)
-      print(color_colname)
+      ###############################
+      ##############################3
+      out_dir <- file.path(main_out_dir, paste0(dt_type, seg_type, anno, sep = '_'))
+      dir.create(out_dir)
       
-      if(color_colname == 'PFS_months'){
-        manual_colours <- viridis(length(unique(as.factor(dt_long$PFS_months))))
-        dt_long$PFS_months <- as.factor(dt_long$PFS_months)
-      } else{
-        manual_colours <- brewer.pal(length(unique(as.factor(dt_long[[color_colname]]))), 'Paired')
+      if(dt_type == 'full_signal'){
+        dt_long <- genes_expr_long
+        dt_wide <- genes_expr
+        xnames <- c('CXCR6','CXCL16')
+        ynames <- c('P2RX7', 'CXCL16', 'CXCR6', 'TLR9')
+      } else if(dt_type == 'deconvolution'){
+        dt_long <- genes_expr_deconv_long
+        dt_wide <- genes_expr_deconv
+        xnames <- c('CXCR6_Tcells', 'CXCL16_Macrophages')
+        ynames <- c('P2RX7_Tcells', 'CXCL16_Macrophages', 'CXCL16_DCs', 'CXCR6_Tcells', 'TLR9_DCs', 'TLR9_Macrophages')
       }
       
-      M1 <- lm(get(cont_colname) ~ gene_expr + Patient, data = dt_long[dt_long$gene_name == gname,])
+      # for(color_colname in c('NACT_status', 'Annotation_cell')){
+      #   pathway_boxplot(dt_long, 'gene_name', 'gene_expr', color_colname, facet_var = 'Segment',
+      #                   plot_title = paste0('genes expr per ', color_colname), 
+      #                   output_path = file.path(out_dir, paste0('boxpl_expr_', color_colname, '_per_segm_',dt_type,  '.pdf')),
+      #                   ymin=0, ymax= max(dt_long$gene_expr) + 1)
+      # }
+      # 
+      # pathway_boxplot(dt_long, 'gene_name', 'gene_expr', 'Annotation_cell', facet_var = c('Segment', 'NACT_status'),
+      #                 plot_title = 'genes expr per Annotation_cell', 
+      #                 output_path = file.path(out_dir, paste0('boxpl_expr_cell_anno_per_segm_nact', dt_type, '.pdf')),
+      #                 ymin=0, ymax= max(dt_long$gene_expr) + 1)
+      # 
       
-      if(color_colname != 'PFS_months'){
+      # scatterplots for continuous vars ----------------------------------------
       
-      ggplot(data = dt_long[dt_long$gene_name == gname,], aes(x = gene_expr, y = get(cont_colname))) +
-      geom_point(aes(color = get(color_colname), shape = Segment)) + 
-      ggtitle(paste0(gname, ' expression vs ', cont_colname),
-              subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2),
-                               'correlation coefficient: ', 
-                               round(cor(dt_long[dt_long$gene_name == gname,]$gene_expr, 
-                                         dt_long[dt_long$gene_name == gname,][[cont_colname]]), 2))) +
-      xlab(gname) +
-      ylab(paste0(cont_colname)) +
-      guides(color=guide_legend(title=color_colname)) +
-      scale_color_manual(values=manual_colours) +
-      geom_smooth(method='lm', formula= y~x) +
-      stat_poly_eq(use_label(c("R2")))
       
-      ggsave(file.path(out_dir, paste0('scatter_expr_', cont_colname, '_by_', color_colname, '_', gname,'_', dt_type, '_lm_all.png')),
-             width = 2000, height = 2000, unit = 'px')
-      
+      if(seg_type == 'stroma'){
+        dt_long <- dt_long[dt_long$Segment == 'stroma', ]
+        dt_wide <- dt_wide[dt_wide$Segment == 'stroma', ]
+      } else if(seg_type == 'tumor'){
+        dt_long <- dt_long[dt_long$Segment == 'tumor', ]
+        dt_wide <- dt_wide[dt_wide$Segment == 'tumor', ]
       }
-
-      #####################
-      if(!(color_colname %in% c('Patient', 'PFS_months'))){
-        
-        ggplot(data = dt_long[dt_long$gene_name == gname,],
-               aes(x = gene_expr, y = get(cont_colname), color = get(color_colname))) +
-          geom_point(aes(shape = Segment)) +
-          ggtitle(paste0(gname, ' expression vs ', cont_colname)) +
-          xlab(gname) +
-          ylab(paste0(cont_colname)) +
-          guides(color=guide_legend(title=color_colname)) +
-          scale_color_manual(values=manual_colours) +
-          geom_smooth(method='lm', formula= y~x) +
-          # stat_poly_line() +
-          stat_poly_eq(use_label(c("R2")))
-        
-        ggsave(file.path(out_dir, paste0('scatter_expr_', cont_colname, '_by_', color_colname, '_', gname,'_', dt_type, '_lm_per_group.png')),
-               width = 2000, height = 2000, unit = 'px')
-      } 
+      
+      if(anno == 'doublepos'){
+        dt_long <- dt_long[dt_long$Annotation_cell == "posCD8_posIBA1", ]
+        dt_wide <- dt_wide[dt_wide$Annotation_cell == "posCD8_posIBA1", ]
+      }
+      
+      
+      
+      # gene expr vs cell fraction ----------------------------------------------
+      # each gene per PFS and ct_fraction
+      # coloured by c('Patient', 'NACT_status', 'Annotation_cell', 'PFS_months')
+      
+      for(gname in unique(dt_long$gene_name)){
+        for(cont_colname in ct_interest){
+          for(color_colname in bio_vars_disc){
+            
+            print(gname)
+            print(cont_colname)
+            print(color_colname)
+            
+            # if(color_colname == 'PFS_months'){
+            #   manual_colours <- viridis(length(unique(as.factor(dt_long$PFS_months))))
+            #   dt_long$PFS_months <- as.factor(dt_long$PFS_months)
+            # } else{
+            #   manual_colours <- brewer.pal(length(unique(as.factor(dt_long[[color_colname]]))), 'Paired')
+            # }
+            
+            manual_colours <- brewer.pal(12, 'Paired')
+            
+            dt_gene <- dt_long[dt_long$gene_name == gname,]
+            dt_gene <- dt_gene[!is.na(dt_gene$gene_expr) & !is.na(dt_gene[[cont_colname]]), ]
+            
+            M1 <- lm(get(cont_colname) ~ gene_expr + Patient, data = dt_gene)
+            #M2 <- lm(get(cont_colname) ~ gene_expr, data = dt_gene)
+            
+            #if(color_colname != 'PFS_months'){
+            
+            ggplot(data = dt_gene, aes(x = gene_expr, y = get(cont_colname))) +
+              geom_point(aes(color = get(color_colname), shape = Segment)) + 
+              ggtitle(paste0(gname, ' expression vs ', cont_colname),
+                      subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2),
+                                       'correlation coefficient: ', 
+                                       round(cor(dt_gene$gene_expr, dt_gene[[cont_colname]]), 2))) +
+              xlab(gname) +
+              ylab(paste0(cont_colname)) +
+              guides(color=guide_legend(title=color_colname)) +
+              scale_color_manual(values=manual_colours) +
+              geom_smooth(method='lm', formula= y~x) +
+              stat_poly_eq(use_label(c("R2", "p")))
+            
+            ggsave(file.path(out_dir, paste0('scatter_expr_', cont_colname, '_by_', color_colname, '_', gname,'_', dt_type, '_lm_all.png')),
+                   width = 2000, height = 2000, unit = 'px')
+            
+            #}
+            
+            #####################
+            if(!(color_colname %in% c('Patient', 'PFS_months'))){
+              
+              ggplot(data = dt_long[dt_long$gene_name == gname,],
+                     aes(x = gene_expr, y = get(cont_colname), color = get(color_colname))) +
+                geom_point(aes(shape = Segment)) +
+                ggtitle(paste0(gname, ' expression vs ', cont_colname)) +
+                xlab(gname) +
+                ylab(paste0(cont_colname)) +
+                guides(color=guide_legend(title=color_colname)) +
+                scale_color_manual(values=manual_colours) +
+                geom_smooth(method='lm', formula= y~x) +
+                # stat_poly_line() +
+                stat_poly_eq(use_label(c("R2", "p")))
+              
+              ggsave(file.path(out_dir, paste0('scatter_expr_', cont_colname, '_by_', color_colname, '_', gname,'_', dt_type, '_lm_per_group.png')),
+                     width = 2000, height = 2000, unit = 'px')
+            } 
+          }
+        }
+      }
+      
+      
+      # gene vs gene expression -------------------------------------------------
+      
+      for(xname in xnames){
+        for(yname in ynames){
+          for(color_colname in bio_vars_disc){
+            
+            # if(color_colname == 'PFS_months'){
+            #   manual_colours <- viridis(length(unique(as.factor(dt_long$PFS_months))))
+            #   dt_wide$PFS_months <- as.factor(dt_wide$PFS_months)
+            # } else{
+            #   manual_colours <- brewer.pal(length(unique(as.factor(dt_long$PFS_months))), 'Paired')
+            # }
+            
+            manual_colours <- brewer.pal(12, 'Paired')
+            
+            print(color_colname)
+            
+            dt_wide_sel <- dt_wide[!is.na(dt_wide[[xname]]) & !is.na(dt_wide[[yname]]), ]
+            
+            M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide_sel)
+            
+            ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname))) +
+              geom_point(aes(color = as.factor(get(color_colname)), shape = Segment)) + 
+              ggtitle(paste(xname, 'vs', yname,  'expression'),
+                      subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2), 
+                                       'correlation coefficient: ', round(cor(dt_wide_sel[[yname]], dt_wide_sel[[xname]]), 2))) +
+              xlab(xname) +
+              ylab(yname) +
+              guides(color=guide_legend(title=color_colname)) +
+              scale_color_manual(values=manual_colours) +
+              geom_smooth(method='lm', formula= y~x) +
+              stat_poly_eq(use_label(c("R2", "p")))
+            #stat_correlation(method = 'pearson')
+            
+            ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
+                   width = 2000, height = 2000, unit = 'px')
+            
+            if(!color_colname %in% c('Patient', 'PFS_months')){
+              ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname), color = as.factor(get(color_colname)))) +
+                geom_point(aes(shape = Segment)) + 
+                ggtitle(paste(xname, 'vs', yname,  'expression')) +
+                xlab(xname) +
+                ylab(yname) +
+                guides(color=guide_legend(title=color_colname)) +
+                scale_color_manual(values=manual_colours) +
+                geom_smooth(method='lm', formula= y~x)+
+                stat_poly_eq(use_label(c("R2", "p")))
+              
+              ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_per_group.png')),
+                     width = 2000, height = 2000, unit = 'px')
+            }
+            #stat_correlation(method = 'pearson')
+            #stat_poly_eq(use_label(c("R2")))
+          }
+        }
+      }
+      
+      #######################################
+      #######################################
+      
     }
   }
 }
 
 
-# CXCR6 vs CXCL16
 
-# genes_of_cells <- list(Macrophages = c('CXCL16', 'TLR9'),
-#                        DCs = c('CXCL16', 'TLR9', 'CCD7'),
-#                        Tcells = c('CXCR6', 'CCL5', 'P2RX7'))
 
-xname <- 'CXCR6_Tcells'
+# selecting groups for DGE ------------------------------------------------
 
-for(yname in c('P2RX7_Tcells', 'CXCL16_Macrophages', 'CXCL16_DCs')){
-  for(color_colname in c(bio_vars_disc, 'PFS_months')){
-    
-    if(color_colname == 'PFS_months'){
-      manual_colours <- viridis(length(unique(as.factor(dt_long$PFS_months))))
-      dt_wide$PFS_months <- as.factor(dt_wide$PFS_months)
-    } else{
-      manual_colours <- brewer.pal(length(unique(as.factor(dt_long$PFS_months))), 'Paired')
-    }
-    
-    print(color_colname)
-    
-    M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide)
-    
-    ggplot(data = dt_wide, aes(x = get(xname), y = get(yname))) +
-      geom_point(aes(color = as.factor(get(color_colname)), shape = Segment)) + 
-      ggtitle(paste(xname, 'vs', yname,  'expression'),
-              subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2), 
-              'correlation coefficient: ', round(cor(dt_wide[[yname]], dt_wide[[xname]]), 2))) +
-      xlab(xname) +
-      ylab(yname) +
-      guides(color=guide_legend(title=color_colname)) +
-      scale_color_manual(values=manual_colours) +
-      geom_smooth(method='lm', formula= y~x) +
-      stat_poly_eq(use_label(c("R2")))
-      #stat_correlation(method = 'pearson')
-    
-    ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
-           width = 2000, height = 2000, unit = 'px')
-    
-    if(!color_colname %in% c('Patient', 'PFS_months')){
-      ggplot(data = dt_wide, aes(x = get(xname), y = get(yname), color = as.factor(get(color_colname)))) +
-        geom_point(aes(shape = Segment)) + 
-        ggtitle(paste(xname, 'vs', yname,  'expression')) +
-        xlab(xname) +
-        ylab(yname) +
-        guides(color=guide_legend(title=color_colname)) +
-        scale_color_manual(values=manual_colours) +
-        geom_smooth(method='lm', formula= y~x)+
-        stat_poly_eq(use_label(c("R2")))
-      
-      ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_per_group.png')),
-             width = 2000, height = 2000, unit = 'px')
-    }
-    #stat_correlation(method = 'pearson')
-    #stat_poly_eq(use_label(c("R2")))
-  }
-}
+# full signal
+# genes_expr_dge <- genes_expr[genes_expr$Annotation_cell == 'posCD8_posIBA1', ]
+# genes_expr_dge$CXCR6_CXCL16_sum <- genes_expr_dge$CXCL16 + genes_expr_dge$CXCR6
 
+
+# deconv signal
+genes_expr_dge <- genes_expr_deconv[genes_expr_deconv$Annotation_cell == 'posCD8_posIBA1', ]
+genes_expr_dge$CXCR6_CXCL16_sum <- genes_expr_dge$CXCL16_DCs + genes_expr_dge$CXCR6_Tcells
+
+
+perc_all <- quantile(genes_expr_dge$CXCR6_CXCL16_sum, probs = c(0.25, 0.75), na.rm = T)
+
+genes_expr_dge$CXCR6_CXCL16_sum_label <- ifelse(genes_expr_dge$CXCR6_CXCL16_sum <= as.numeric(perc_all[1]), 'low', 
+                                                ifelse(genes_expr_dge$CXCR6_CXCL16_sum >= as.numeric(perc_all[2]), 'high', 'mid'))
+
+ggplot(data = genes_expr_dge, aes(x = CXCR6_Tcells, y = CXCL16_DCs, color = CXCR6_CXCL16_sum_label, shape = Segment)) +
+  geom_point()
+
+ggsave('~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/dge/cxcr6_cxcl16macro_deconv.pdf')
+
+# percentiles for stroma only
+
+perc_stroma <- quantile(genes_expr_dge$CXCR6_CXCL16_sum[genes_expr_dge$Segment == 'stroma'], probs = c(0.25, 0.75))
+
+genes_expr_dge$CXCR6_CXCL16_sum_label_stroma <- ifelse(genes_expr_dge$CXCR6_CXCL16_sum <= as.numeric(perc_stroma[1]), 'low', 
+                                                ifelse(genes_expr_dge$CXCR6_CXCL16_sum >= as.numeric(perc_stroma[2]), 'high', 'mid'))
+
+genes_expr_dge$CXCR6_CXCL16_sum_label_stroma <- ifelse(genes_expr_dge$Segment == 'stroma', 
+                                                       genes_expr_dge$CXCR6_CXCL16_sum_label_stroma, NA)
+
+
+genes_expr_dge <- genes_expr_dge[, c('dcc_filename', 'CXCR6_CXCL16_sum_label', 'CXCR6_CXCL16_sum_label_stroma')]
+
+# for deconv
+# colnames(genes_expr_dge) <- c('dcc_filename', 'CXCR6_CXCL16macro_deconv_sum_label', 'CXCR6_CXCL16macro_deconv_sum_label_stroma')
+colnames(genes_expr_dge) <- c('dcc_filename', 'CXCR6_CXCL16dc_deconv_sum_label', 'CXCR6_CXCL16dc_deconv_sum_label_stroma')
+
+
+# merge with geomx_object
+pData(geomx_obj2) <- left_join(pData(geomx_obj), genes_expr_dge)
+
+# save RDS object
+
+saveRDS(geomx_obj, '~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/geomx_labels_for_cornell.RDS')
+
+
+# labels_checkup
+# 
+# geomx_obj2 <- readRDS('~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/geomx_labels_for_cornell.RDS')
+# metadt2 <- pData(geomx_obj2)[, c("dcc_filename", "Segment", "Sample", "Annotation_cell", "CXCR6_CXCL16_sum_label"                        
+#                                  , "CXCR6_CXCL16_sum_label_stroma", "CXCR6_CXCL16macro_deconv_sum_label"            
+#                                  , "CXCR6_CXCL16macro_deconv_sum_label_stroma", "CXCR6_CXCL16dc_deconv_sum_label"               
+#                                  , "CXCR6_CXCL16dc_deconv_sum_label_stroma")]
+# 
+# metadt2 <- left_join(metadt2, genes_expr_dge[, c('dcc_filename', 'CXCR6_CXCL16_sum')])
+# metadt2 <- metadt2[metadt2$Annotation_cell == 'posCD8_posIBA1', ]
+# 
+# 
+# 
+# min(metadt2$CXCR6_CXCL16_sum[metadt2$CXCR6_CXCL16dc_deconv_sum_label_stroma == 'high'], na.rm = T)
+# max(metadt2$CXCR6_CXCL16_sum[metadt2$CXCR6_CXCL16dc_deconv_sum_label_stroma == 'low'], na.rm = T)
