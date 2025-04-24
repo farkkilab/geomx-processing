@@ -139,15 +139,18 @@ genes_expr_deconv_long <- melt(genes_expr_deconv, id.vars = colnames(genes_expr_
 
 dt_type <- 'full_signal' # 'deconvolution', 'full_signal'
 seg_type <- 'all_segments'  # 'all_segments' # 'stroma' 'tumor'
-anno <- 'all_anno' # 'all', 'double_pos'
+anno <- 'double_pos' # 'all', 'double_pos'
 
-for(dt_type in c('full_signal', 'deconvolution')){
+for(dt_type in c('full_signal', 'deconvolution')){ 
   for(seg_type in c('all_segments', 'stroma', 'tumor')){
     for(anno in c('all_anno', 'doublepos')){
       
+      print(seg_type)
+      print(anno)
+      
       ###############################
       ##############################3
-      out_dir <- file.path(main_out_dir, paste0(dt_type, seg_type, anno, sep = '_'))
+      out_dir <- file.path(main_out_dir, paste(dt_type, seg_type, anno, sep = '_'))
       dir.create(out_dir)
       
       if(dt_type == 'full_signal'){
@@ -159,7 +162,7 @@ for(dt_type in c('full_signal', 'deconvolution')){
         dt_long <- genes_expr_deconv_long
         dt_wide <- genes_expr_deconv
         xnames <- c('CXCR6_Tcells', 'CXCL16_Macrophages')
-        ynames <- c('P2RX7_Tcells', 'CXCL16_Macrophages', 'CXCL16_DCs', 'CXCR6_Tcells', 'TLR9_DCs', 'TLR9_Macrophages')
+        ynames <- c('P2RX7_Tcells', 'CXCL16_Macrophages', 'CXCL16_DCs', 'CXCR6_Tcells')
       }
       
       # for(color_colname in c('NACT_status', 'Annotation_cell')){
@@ -264,7 +267,7 @@ for(dt_type in c('full_signal', 'deconvolution')){
       
       
       # gene vs gene expression -------------------------------------------------
-      
+      print(' ^^^^ and now scatters ^^^^')
       for(xname in xnames){
         for(yname in ynames){
           for(color_colname in bio_vars_disc){
@@ -276,44 +279,50 @@ for(dt_type in c('full_signal', 'deconvolution')){
             #   manual_colours <- brewer.pal(length(unique(as.factor(dt_long$PFS_months))), 'Paired')
             # }
             
-            manual_colours <- brewer.pal(12, 'Paired')
-            
-            print(color_colname)
-            
-            dt_wide_sel <- dt_wide[!is.na(dt_wide[[xname]]) & !is.na(dt_wide[[yname]]), ]
-            
-            M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide_sel)
-            
-            ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname))) +
-              geom_point(aes(color = as.factor(get(color_colname)), shape = Segment)) + 
-              ggtitle(paste(xname, 'vs', yname,  'expression'),
-                      subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2), 
-                                       'correlation coefficient: ', round(cor(dt_wide_sel[[yname]], dt_wide_sel[[xname]]), 2))) +
-              xlab(xname) +
-              ylab(yname) +
-              guides(color=guide_legend(title=color_colname)) +
-              scale_color_manual(values=manual_colours) +
-              geom_smooth(method='lm', formula= y~x) +
-              stat_poly_eq(use_label(c("R2", "p")))
-            #stat_correlation(method = 'pearson')
-            
-            ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
-                   width = 2000, height = 2000, unit = 'px')
-            
-            if(!color_colname %in% c('Patient', 'PFS_months')){
-              ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname), color = as.factor(get(color_colname)))) +
-                geom_point(aes(shape = Segment)) + 
-                ggtitle(paste(xname, 'vs', yname,  'expression')) +
+            if(xname != yname){
+              print(xname)
+              print(yname)
+              
+              manual_colours <- brewer.pal(12, 'Paired')
+              
+              print(color_colname)
+              
+              dt_wide_sel <- dt_wide[!is.na(dt_wide[[xname]]) & !is.na(dt_wide[[yname]]), ]
+              
+              M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide_sel)
+              
+              ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname))) +
+                geom_point(aes(color = as.factor(get(color_colname)), shape = Segment)) + 
+                ggtitle(paste(xname, 'vs', yname,  'expression'),
+                        subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2), 
+                                         'correlation coefficient: ', round(cor(dt_wide_sel[[yname]], dt_wide_sel[[xname]]), 2))) +
                 xlab(xname) +
                 ylab(yname) +
                 guides(color=guide_legend(title=color_colname)) +
                 scale_color_manual(values=manual_colours) +
-                geom_smooth(method='lm', formula= y~x)+
+                geom_smooth(method='lm', formula= y~x) +
                 stat_poly_eq(use_label(c("R2", "p")))
+              #stat_correlation(method = 'pearson')
               
-              ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_per_group.png')),
+              ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
                      width = 2000, height = 2000, unit = 'px')
+              
+              if(!color_colname %in% c('Patient', 'PFS_months')){
+                ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname), color = as.factor(get(color_colname)))) +
+                  geom_point(aes(shape = Segment)) + 
+                  ggtitle(paste(xname, 'vs', yname,  'expression')) +
+                  xlab(xname) +
+                  ylab(yname) +
+                  guides(color=guide_legend(title=color_colname)) +
+                  scale_color_manual(values=manual_colours) +
+                  geom_smooth(method='lm', formula= y~x)+
+                  stat_poly_eq(use_label(c("R2", "p")))
+                
+                ggsave(file.path(out_dir, paste0('scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_per_group.png')),
+                       width = 2000, height = 2000, unit = 'px')
+              }
             }
+            
             #stat_correlation(method = 'pearson')
             #stat_poly_eq(use_label(c("R2")))
           }
@@ -336,47 +345,100 @@ for(dt_type in c('full_signal', 'deconvolution')){
 # genes_expr_dge <- genes_expr[genes_expr$Annotation_cell == 'posCD8_posIBA1', ]
 # genes_expr_dge$CXCR6_CXCL16_sum <- genes_expr_dge$CXCL16 + genes_expr_dge$CXCR6
 
+geomx_obj2 <- geomx_obj
 
-# deconv signal
-genes_expr_dge <- genes_expr_deconv[genes_expr_deconv$Annotation_cell == 'posCD8_posIBA1', ]
-genes_expr_dge$CXCR6_CXCL16_sum <- genes_expr_dge$CXCL16_DCs + genes_expr_dge$CXCR6_Tcells
-
-
-perc_all <- quantile(genes_expr_dge$CXCR6_CXCL16_sum, probs = c(0.25, 0.75), na.rm = T)
-
-genes_expr_dge$CXCR6_CXCL16_sum_label <- ifelse(genes_expr_dge$CXCR6_CXCL16_sum <= as.numeric(perc_all[1]), 'low', 
-                                                ifelse(genes_expr_dge$CXCR6_CXCL16_sum >= as.numeric(perc_all[2]), 'high', 'mid'))
-
-ggplot(data = genes_expr_dge, aes(x = CXCR6_Tcells, y = CXCL16_DCs, color = CXCR6_CXCL16_sum_label, shape = Segment)) +
-  geom_point()
-
-ggsave('~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/dge/cxcr6_cxcl16macro_deconv.pdf')
-
-# percentiles for stroma only
-
-perc_stroma <- quantile(genes_expr_dge$CXCR6_CXCL16_sum[genes_expr_dge$Segment == 'stroma'], probs = c(0.25, 0.75))
-
-genes_expr_dge$CXCR6_CXCL16_sum_label_stroma <- ifelse(genes_expr_dge$CXCR6_CXCL16_sum <= as.numeric(perc_stroma[1]), 'low', 
-                                                ifelse(genes_expr_dge$CXCR6_CXCL16_sum >= as.numeric(perc_stroma[2]), 'high', 'mid'))
-
-genes_expr_dge$CXCR6_CXCL16_sum_label_stroma <- ifelse(genes_expr_dge$Segment == 'stroma', 
-                                                       genes_expr_dge$CXCR6_CXCL16_sum_label_stroma, NA)
+out_dir_dge <- file.path(main_out_dir, 'dge')
+dir.create(out_dir_dge)
 
 
-genes_expr_dge <- genes_expr_dge[, c('dcc_filename', 'CXCR6_CXCL16_sum_label', 'CXCR6_CXCL16_sum_label_stroma')]
+dt_type <- 'full_signal'
+seg_type <- 'all_segments'
 
-# for deconv
-# colnames(genes_expr_dge) <- c('dcc_filename', 'CXCR6_CXCL16macro_deconv_sum_label', 'CXCR6_CXCL16macro_deconv_sum_label_stroma')
-colnames(genes_expr_dge) <- c('dcc_filename', 'CXCR6_CXCL16dc_deconv_sum_label', 'CXCR6_CXCL16dc_deconv_sum_label_stroma')
+for(dt_type in c('full_signal', 'deconvolution')){ 
+  for(seg_type in c('all_segments', 'stroma', 'tumor')){
+    
+    if(dt_type == 'full_signal'){
+      dt_wide <- genes_expr
+      cxcr6_name <- 'CXCR6'
+      cxcl16_names <- c('CXCL16')
+    } else if(dt_type == 'deconvolution'){
+      dt_wide <- genes_expr_deconv
+      cxcr6_name <- 'CXCR6_Tcells'
+      cxcl16_names <- c('CXCL16_Macrophages', 'CXCL16_DCs')
+    }
+    
+    if(seg_type == 'stroma'){
+      dt_wide <- dt_wide[dt_wide$Segment == 'stroma', ]
+    } else if(seg_type == 'tumor'){
+      dt_wide <- dt_wide[dt_wide$Segment == 'tumor', ]
+    }
+
+    dt_wide <- dt_wide[dt_wide$Annotation_cell == "posCD8_posIBA1", ]
 
 
-# merge with geomx_object
-pData(geomx_obj2) <- left_join(pData(geomx_obj), genes_expr_dge)
+    for(cxcl16_name in cxcl16_names){
+      dt_wide$CXCR6_CXCL16_sum <- dt_wide[[cxcr6_name]] + dt_wide[[cxcl16_name]]
+      
+      perc_all <- quantile(dt_wide$CXCR6_CXCL16_sum, probs = c(0.25, 0.75), na.rm = T)
+      
+      dt_wide$CXCR6_CXCL16_sum_label <- ifelse(dt_wide$CXCR6_CXCL16_sum <= as.numeric(perc_all[1]), 'low', 
+                                               ifelse(dt_wide$CXCR6_CXCL16_sum >= as.numeric(perc_all[2]), 'high', 'mid'))
+      
+      ggplot(data = dt_wide, aes(x = get(cxcr6_name), y = get(cxcl16_name), color = CXCR6_CXCL16_sum_label, shape = Segment)) +
+        geom_point()
+      
+      ggsave(file.path(out_dir_dge, paste0(paste(dt_type, seg_type, 'doublepos', cxcr6_name, cxcl16_name, 'quartiles', sep = '_'), '.png')))
+      
+      # merge with geomx_obj
+      dt_dge_lab <- dt_wide[, c('dcc_filename', 'CXCR6_CXCL16_sum_label')]
+      colnames(dt_dge_lab) <- c('dcc_filename', paste(dt_type, seg_type, cxcr6_name, cxcl16_name, 'label', sep = '_'))
+      
+      pData(geomx_obj2) <- left_join(pData(geomx_obj2), dt_dge_lab)
+    }
+    }}
 
-# save RDS object
+saveRDS(geomx_obj2, file.path(main_out_dir, 'dge', 'geomx_labels_for_cornell.RDS'))
 
-saveRDS(geomx_obj, '~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/geomx_labels_for_cornell.RDS')
-
+# # deconv signal
+# genes_expr_dge <- genes_expr_deconv[genes_expr_deconv$Annotation_cell == 'posCD8_posIBA1', ]
+# genes_expr_dge$CXCR6_CXCL16_sum <- genes_expr_dge$CXCL16_DCs + genes_expr_dge$CXCR6_Tcells
+# 
+# 
+# perc_all <- quantile(genes_expr_dge$CXCR6_CXCL16_sum, probs = c(0.25, 0.75), na.rm = T)
+# 
+# genes_expr_dge$CXCR6_CXCL16_sum_label <- ifelse(genes_expr_dge$CXCR6_CXCL16_sum <= as.numeric(perc_all[1]), 'low', 
+#                                                 ifelse(genes_expr_dge$CXCR6_CXCL16_sum >= as.numeric(perc_all[2]), 'high', 'mid'))
+# 
+# ggplot(data = genes_expr_dge, aes(x = CXCR6_Tcells, y = CXCL16_DCs, color = CXCR6_CXCL16_sum_label, shape = Segment)) +
+#   geom_point()
+# 
+# ggsave('~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/dge/cxcr6_cxcl16macro_deconv.pdf')
+# 
+# # percentiles for stroma only
+# 
+# perc_stroma <- quantile(genes_expr_dge$CXCR6_CXCL16_sum[genes_expr_dge$Segment == 'stroma'], probs = c(0.25, 0.75))
+# 
+# genes_expr_dge$CXCR6_CXCL16_sum_label_stroma <- ifelse(genes_expr_dge$CXCR6_CXCL16_sum <= as.numeric(perc_stroma[1]), 'low', 
+#                                                 ifelse(genes_expr_dge$CXCR6_CXCL16_sum >= as.numeric(perc_stroma[2]), 'high', 'mid'))
+# 
+# genes_expr_dge$CXCR6_CXCL16_sum_label_stroma <- ifelse(genes_expr_dge$Segment == 'stroma', 
+#                                                        genes_expr_dge$CXCR6_CXCL16_sum_label_stroma, NA)
+# 
+# 
+# genes_expr_dge <- genes_expr_dge[, c('dcc_filename', 'CXCR6_CXCL16_sum_label', 'CXCR6_CXCL16_sum_label_stroma')]
+# 
+# # for deconv
+# # colnames(genes_expr_dge) <- c('dcc_filename', 'CXCR6_CXCL16macro_deconv_sum_label', 'CXCR6_CXCL16macro_deconv_sum_label_stroma')
+# colnames(genes_expr_dge) <- c('dcc_filename', 'CXCR6_CXCL16dc_deconv_sum_label', 'CXCR6_CXCL16dc_deconv_sum_label_stroma')
+# 
+# 
+# # merge with geomx_object
+# pData(geomx_obj2) <- left_join(pData(geomx_obj), genes_expr_dge)
+# 
+# # save RDS object
+# 
+# saveRDS(geomx_obj, '~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/geomx_labels_for_cornell.RDS')
+# 
 
 # labels_checkup
 # 
