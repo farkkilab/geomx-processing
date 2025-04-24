@@ -5,7 +5,11 @@
 # define variables --------------------------------------------------------
 
 # main experimental conditions
-exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
+if(is.null(main_experimental_condition)){
+  exp_design <- as.formula(paste('~', aoi_segment_var))
+} else{
+  exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
+}
 
 # all variables to check for variance
 batch_vars <- c(primary_batch_var, secondary_batch_var, other_vars_tech, 
@@ -17,6 +21,12 @@ norm_type <- 'deseq2_vst' # best to use vst data, eventually deseq2_norm
 
 # PVCA threshold
 pct_threshold <- 0.6 
+
+# biological covariates which effect should be ignored by limma 
+# if NULL no cov are added to limma rmv batch eff
+# TODO check if this is beneficial 
+# cov_design <- formula(~ Patient + Site) 
+cov_design <- NULL
 
 # make dirs and set additional vars ---------------------------------------
 
@@ -61,6 +71,7 @@ if(!norm_is_log){
 
 pvcaObj_ini <- pvcaBatchAssess(exprset_deseq2_norm, batch_factors_names, pct_threshold) 
 
+saveRDS(pvcaObj_ini, file.path(output_dir, 'batch_correction', 'before_correction_deseq2_norm.RDS'))
 plot_pvca(pvcaObj_ini, 'before_correction_deseq2_norm', file.path(output_dir, 'batch_correction'))
 
 # remove batch effect with limma ------------------------------------------
@@ -115,10 +126,16 @@ exprset_after_harmony <- ExpressionSet(assayData=harmony_res,
 
 
 pvcaObj_limma <- pvcaBatchAssess(exprset_after_limma, batch_factors_names, pct_threshold) 
-pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
+saveRDS(pvcaObj_ini, file.path(output_dir, 'batch_correction', 
+                               paste0('after_correction_limma_', primary_batch_var, secondary_batch_var,
+                                      '_cov_', covname, '.RDS')))
 
 plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', primary_batch_var, secondary_batch_var,
                                 '_cov_', covname), file.path(output_dir, 'batch_correction'))
+
+pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
+saveRDS(pvcaObj_ini, file.path(output_dir, 'batch_correction', 
+                               paste0('after_correction_harmony_', primary_batch_var, secondary_batch_var, '.RDS')))
 
 plot_pvca(pvcaObj_harmony, paste0('after_correction_harmony_', primary_batch_var, secondary_batch_var), 
           file.path(output_dir, 'batch_correction'))

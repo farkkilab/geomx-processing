@@ -18,8 +18,6 @@ library(reshape2, quietly =T)
 library(Matrix)
 
 # script specific packages
-# TODO move to renv
-
 library(Biobase, quietly =T)
 library(NanoStringNCTools, quietly =T)
 library(GeomxTools, quietly =T)
@@ -46,31 +44,17 @@ library(GSVA, quietly =T)
 library(clusterProfiler, quietly =T)
 library(progeny, quietly =T)
 
-# library(ggpubr)
-# library(topGO)
-# library(fgsea)
-# library(fpc)
-# library(dbscan)
-
-
-# TODO --------------------------------------------------------------------
-
-# TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
-# TODO check if dcc filenames are unique in merged batched
-# TODO simplify logs by putting all console info from source() to logs
-batch <<- 'batch1' # just for running qc for batch1 with kept high NTC samples
+# or batch1, batch2, batch12 etc
+batch <<- 'demo' # just for running demo data
 
 
 # define variables and paths ----------------------------------------------
 
-proj_dir <<- '~/Documents/phd/st'
+proj_dir <<- '~/Documents/phd/st/geomx-processing'
+pdrive_dir <<- '/media/Pdrive/h30492/farkkilab2/9_EyeMT'
 
-
-#data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
-data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
-
-#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
+data_dir <- file.path(proj_dir, 'demo_data')
+output_dir <<- file.path(proj_dir, 'results', 'demo_batch')
 
 # input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
@@ -80,16 +64,15 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 # anno file have to contain sheet named 'Sheet1' and following column names:
 # 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
 # and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
-#anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
- anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
+anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_demobatch.xlsx') 
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name in metadata
-scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS')
+scrna_ref_path <<- file.path(pdrive_dir, '9_EyeMT_reference_scRNAseq/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS')
+scrna_ref_path <<- '/home/iganiemi/Documents/phd/st/data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS'
 
 # path to csv file with custom gene signatures
-custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-                              'IFNg_pathways.csv')
+custom_sign_path <<- file.path(data_dir, 'signatures', 'ct_markers.csv')
 
 
 # set up metadata variables names -----------------------------------------
@@ -103,15 +86,15 @@ batch_var <<- 'batch_nr'
 
 aoi_segment_var <<- "Segment"
 main_roi_label <<- "Annotation_cell" 
-main_experimental_condition <<- 'NACT_status'
+main_experimental_condition <<- NULL # usually 'NACT_status', but NULL for demo data
 sample_name <<- 'Sample'
 
-other_vars_bio <<- c("Segment_geomx", "Patient", "Site", 'PFS', 'PFS_months')
-other_vars_tech <<- c('Slide_Name', "batch_nr_sample_collection")
+other_vars_bio <<- c("Patient", "Site")
+other_vars_tech <<- c('Slide_Name')
 
 # load util functions and create dirs -------------------------------------
 
-source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
+source(file.path(proj_dir, 'src', 'geomx_utils.R'))
 
 dir.create(output_dir, recursive = T, showWarnings = F)
 
@@ -130,36 +113,27 @@ print('#############')
 # conditionally run preprocessing -----------------------------------------
 
 run_unless_exists('Preprocessing', geomx_qc_path, 
-                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_qc.R'))
+                  file.path(proj_dir, 'src', 'geomx_qc.R'))
 
 # conditionally run normalisation -----------------------------------------
 
 run_unless_exists('Normalisation', geomx_norm_path, 
-                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_normalisation.R'))
+                  file.path(proj_dir, 'src', 'geomx_normalisation.R'))
 
 
 # conditonally run batch effect removal -----------------------------------
-# TODO compute voom() weights for dge - not so important
-# (voom computes precision weights for the downstream dge)
-
 # !!! check throughfully the 1st PVCA plots - if another variables are responsible for variance 
 # primary_batch_var and secondary_batch_var values should be changed
 # secondary batch variable has to be INDEPENDENT from the primary_batch_var
 
 # should be the same as in batch effect rm script
 # if analysing each batch separately, only batch_var is considered
-# if analysisng many big batches together, both main_batch_var and batch_var are considered
+# if analysing many big batches together, both main_batch_var and batch_var are considered
 primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
 if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
 
-# biological covariates which effect should be ignored by limma 
-# if NULL no cov are added to limma rmv batch eff
-# TODO check if this is beneficial 
-# cov_design <- formula(~ Patient + Site) 
-cov_design <- NULL
-
 run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path, 
-                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_batch_effect_rmv.R'))
+                  file.path(proj_dir, 'src', 'geomx_batch_effect_rmv.R'))
 
 # conditionally run deconvolution -----------------------------------------
 
@@ -170,10 +144,12 @@ deconv_logs_path <<- file.path(output_dir,'deconvolution',
                              paste0('deconv_', scrna_anno, '_logs.txt'))
 
 run_unless_exists('Deconvolution', deconv_logs_path, 
-                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
+                  file.path(proj_dir, 'src', 'geomx_deconvolution.R'))
 
 # conditionally run pathway analysis --------------------------------------
-# TODO add limma fry calculation - another algorithm for pathway analysis not super important
+
+# cell type column name in reference scRNAseq dataset
+scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
 pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
@@ -189,22 +165,20 @@ signature_type <<- 'custom' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
 # custom - on custom signatures list specified in custom_sign_path
 
-signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(custom_sign_path)), '')
-
 gsea_type <<- 'ssgsea' # 'gsva' or 'ssgsea'
+
+signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(custom_sign_path)), '')
 
 gsea_logs_path <<- file.path(output_dir,'pathway_analysis', 'gsea', 
                              paste0(gsea_type, '_', signature_type, signature_name, '_logs.txt'))
 
 
 run_unless_exists('Pathway analysis', gsea_logs_path, 
-                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_pathway_analysis.R'))
+                  file.path(proj_dir, 'src', 'geomx_pathway_analysis.R'))
 
 
 # conditionally run differential gene expression --------------------------
-# TODO anova(full model, reduced model) - check if significantly improves the effect for interesting genes
-# TODO add limma voom - not so important
-# https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
+scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
 dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
@@ -223,8 +197,7 @@ main_var_name <<- 'Annotation_cell' # main variable to make comparison between
 main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
-#main_var_main_val <<- 'posCD8_posIBA1'
-main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
+main_var_main_val <<- 'CD8' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
 
 
@@ -236,7 +209,7 @@ dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name,
 dge_logs_path <<- file.path(output_dir, 'dge', dge_name, 'dge_logs.txt')
 
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
-                  file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
+                  file.path(proj_dir, 'src', 'geomx_dge.R'))
 
 
 

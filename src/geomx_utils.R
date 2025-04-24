@@ -703,6 +703,7 @@ prepare_msigdb_sign_list <- function(adjust_synonym = T, geomx_obj = NULL, hal =
 #   geomx_obj: (S4 object) GeoMx object for benchmarking synonyms if needed.
 # Return value:
 #   (list) list of vectors with custom signatures, adjusted for synonyms if specified.
+# TODO all gene names uppercase and remove dashes
 prepare_custom_sign_list <- function(custom_sign_df, adjust_synonym = T, geomx_obj = NULL){
   sign_list <- as.list(custom_sign_df)
   sign_list <- lapply(sign_list, function(l){l[l !=""]})

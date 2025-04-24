@@ -20,8 +20,11 @@ meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_
                 main_roi_label, other_vars_bio)
 
 # main experimental conditions for limma batch eff rmv
-exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
-
+if(is.null(main_experimental_condition)){
+  exp_design <- as.formula(paste('~', aoi_segment_var))
+} else{
+  exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
+}
 # make dirs and set additional vars ---------------------------------------
 
 dir.create(file.path(output_dir, 'deconvolution'), showWarnings = T, recursive = T)

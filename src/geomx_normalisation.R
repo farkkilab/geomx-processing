@@ -5,7 +5,12 @@
 umap_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition, sample_name, 
                main_batch_var, batch_var, other_vars_bio, other_vars_tech)
 
-exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
+if(is.null(main_experimental_condition)){
+  exp_design <- as.formula(paste('~', aoi_segment_var))
+} else{
+  exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
+}
+
 
 # make dirs and source functions ------------------------------------------
 

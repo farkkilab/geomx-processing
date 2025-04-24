@@ -94,6 +94,8 @@ sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
 
 gsva_list_long <- lapply(1:length(expr_list), function(x){
 
+  print(names(expr_list)[x])
+  
   if(gsea_type == 'gsva'){
     # do gsva
     gsea <- gsva(gsvaParam(expr_list[[x]], sign_list, kcdf="Gaussian", minSize = 5))
