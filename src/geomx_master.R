@@ -56,22 +56,22 @@ pdrive_dir <<- '/media/Pdrive/h30492/farkkilab2/9_EyeMT'
 data_dir <- file.path(proj_dir, 'demo_data')
 output_dir <<- file.path(proj_dir, 'results', 'demo_batch')
 
-# input data
+# path to input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
                 full.names = TRUE, recursive = TRUE)
 pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
+# path to file with metadata
 # anno file have to contain sheet named 'Sheet1' and following column names:
 # 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
 # and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
 anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_demobatch.xlsx') 
 
-# path to reference scRNAseq dataset for deconvolution
+# path to reference scRNAseq dataset for deconvolution (if needed)
 # have to contain 'cell_type' column name in metadata
 scrna_ref_path <<- file.path(pdrive_dir, '9_EyeMT_reference_scRNAseq/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS')
-scrna_ref_path <<- '/home/iganiemi/Documents/phd/st/data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS'
 
-# path to csv file with custom gene signatures
+# path to csv file with custom gene signatures (if needed)
 custom_sign_path <<- file.path(data_dir, 'signatures', 'ct_markers.csv')
 
 
@@ -86,7 +86,7 @@ batch_var <<- 'batch_nr'
 
 aoi_segment_var <<- "Segment"
 main_roi_label <<- "Annotation_cell" 
-main_experimental_condition <<- NULL # usually 'NACT_status', but NULL for demo data
+main_experimental_condition <<- NULL # eg 'NACT_status', but NULL for demo data
 sample_name <<- 'Sample'
 
 other_vars_bio <<- c("Patient", "Site")
@@ -126,7 +126,7 @@ run_unless_exists('Normalisation', geomx_norm_path,
 # primary_batch_var and secondary_batch_var values should be changed
 # secondary batch variable has to be INDEPENDENT from the primary_batch_var
 
-# should be the same as in batch effect rm script
+
 # if analysing each batch separately, only batch_var is considered
 # if analysing many big batches together, both main_batch_var and batch_var are considered
 primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
@@ -161,7 +161,7 @@ ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells",
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
-signature_type <<- 'custom' # c('msigdb', 'custom')
+signature_type <<- 'custom' # within c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
 # custom - on custom signatures list specified in custom_sign_path
 
@@ -192,12 +192,12 @@ ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endotheli
 # DGE parameters
 comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
-# between - comparisons between slides
+# between - comparisons between samples
 main_var_name <<- 'Annotation_cell' # main variable to make comparison between
-main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
+main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately (FALSE)
 # if FALSE all labels in main_var_name will be compared as they are
 
-main_var_main_val <<- 'CD8' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
+main_var_main_val <<- 'CD8' # if main_var_is_bin - TRUE - name of the main value (ITS REGEX - careful!)
 dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
 
 
