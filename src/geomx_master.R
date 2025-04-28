@@ -54,7 +54,7 @@ proj_dir <<- '~/Documents/phd/st/geomx-processing'
 pdrive_dir <<- '/media/Pdrive/h30492/farkkilab2/9_EyeMT'
 
 data_dir <- file.path(proj_dir, 'demo_data')
-output_dir <<- file.path(proj_dir, 'results', 'demo_batch')
+output_dir <<- file.path(proj_dir, 'results', 'demo_batch2')
 
 # path to input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
@@ -180,7 +180,7 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # conditionally run differential gene expression --------------------------
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
+dge_inp_data_type <<- c('all') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
@@ -198,7 +198,7 @@ main_var_is_bin <<- TRUE # should variable be compared with all others at once (
 # if FALSE all labels in main_var_name will be compared as they are
 
 main_var_main_val <<- 'CD8' # if main_var_is_bin - TRUE - name of the main value (ITS REGEX - careful!)
-dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
+dge_categories <<- c('Segment') # categories to divide to when making DGE separately
 
 
 # don't change it - identifier of dge run
