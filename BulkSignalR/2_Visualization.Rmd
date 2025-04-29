@@ -1,0 +1,150 @@
+---
+title: "BulkSignalR_Visualization"
+author: "Gayani GImhani Anandagoda"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r saveobj, eval=FALSE}
+
+output_dir <- 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/ouput_batch1/stroma/'
+
+nact_status = NULL
+
+segment = "stroma"
+
+
+bsrinf = readRDS(paste0(output_dir,'bsrinf',nact_status,'_',segment,'.RDS'))
+bsrdm = readRDS(paste0(output_dir,'bsrdm',nact_status,'_',segment,'.RDS'))
+
+
+
+```
+
+## Reduction strategies
+
+1. Reducing a BSRInference object to pathway
+
+```{r ReduceToPathway, eval=FALSE,cache=FALSE}
+
+bsrinf.redP <- reduceToPathway(bsrinf)
+
+# Reducing a BSRInference object to best pathway
+
+bsrinf.redBP    <- reduceToBestPathway(bsrinf) 
+
+
+# Further reduction
+
+# bsrinf.L    <- reduceToLigand(bsrinf)
+# bsrinf.R    <- reduceToReceptor(bsrinf)
+
+#### double reduction/ combined reduction
+
+# bsrinf.redP  <- reduceToPathway(bsrinf)  
+# bsrinf.redPBP <- reduceToBestPathway(bsrinf.redP)  
+```
+
+```{r}
+df = read.csv("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/Immune_pws/msigdb_signatures_to_filter_full.csv", sep = ",")
+
+merged_unique <- unique(unlist(df))
+merged_unique <- merged_unique[merged_unique != ""]
+#merged_unique
+
+obj = bsrinf.redBP
+pairs = LRinter(obj)
+selected <- pairs$L %in% merged_unique
+#selected <- pairs$L == merged_unique
+pairs     <- pairs[selected,]
+ligands   <- ligands(obj)[selected]
+receptors <- receptors(obj)[selected]
+pathways  <- pairs$pw.name
+t.genes   <- tGenes(obj)[selected]
+t.corrs   <- tgCorr(obj)[selected]
+
+for (i in seq_len(nrow(pairs))){
+  tg <- t.genes[[i]]
+  t.genes[[i]] <- tg[pairs$rank[i]:length(tg)]
+  
+  tc <- t.corrs[[i]]
+  t.corrs[[i]] <- tc[pairs$rank[i]:length(tc)]
+}
+
+bsrinf.redBP@LRinter = pairs
+bsrinf.redBP@ligands = ligands
+bsrinf.redBP@receptors = receptors
+bsrinf.redBP@t.genes = t.genes
+bsrinf.redBP@tg.corr = t.corrs
+
+```
+
+
+step 4 : Building a BSRSignature object
+
+
+1. Scoring by ligand-receptor
+
+```{r scoringLR  ,cache=FALSE,results=FALSE,eval=FALSE}
+
+     bsrsig.redBP <- getLRGeneSignatures(bsrinf.redBP, qval.thres=0.001)
+
+     scoresLR_pw <- scoreLRGeneSignatures(bsrdm, bsrsig.redBP,
+                                       name.by.pathway=TRUE)
+     
+     scoresLR <- scoreLRGeneSignatures(bsrdm, bsrsig.redBP,
+                                       name.by.pathway=FALSE)
+     
+```
+
+```{r}
+geomx_obj <- readRDS('C:/Users/Sahas/Downloads/Masters_Thesis/Data/Batch01/geomx_qc_norm_batch_eff_rm.RDS')
+
+meta_data = sData(geomx_obj )
+
+meta_data = data.frame(meta_data[,c(2,5,6,7,24,25,28)])
+meta_data <- meta_data %>% filter(Segment == segment)
+
+colnames(scoresLR_pw) = meta_data$Sample
+
+colnames(scoresLR) = meta_data$Sample
+
+# we can add ROI co-ordinates 
+
+```
+
+```{r}
+#library(pheatmap)
+library(ComplexHeatmap)
+library(circlize)
+
+col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+
+pheatmap(scoresLR[1:22,],fontsize_col = 4,cellheight = 10,fontsize_row = 6,color = col_fun)
+```
+
+
+```{r}
+col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+
+pdf(paste0(output_dir,"heatmap_LR.pdf"), width = 10, height = 8)  # Width and height in inches
+
+pheatmap(scoresLR[1:22,],fontsize_col = 4,cellheight = 10,fontsize_row = 6,color = col_fun, main = paste0(segment,": gene signatures per samples"))
+
+dev.off()
+
+
+
+
+pdf(paste0(output_dir,"heatmap_PW.pdf"), width = 10, height = 8)  # Width and height in inches
+
+pheatmap(scoresLR_pw,fontsize_col = 4,cellheight = 10,fontsize_row = 6,color = col_fun, main = paste0(segment,": pathway signatures per samples"))
+
+dev.off()
+
+```
+
