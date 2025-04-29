@@ -1,0 +1,265 @@
+---
+title: "CellChat Ligand Receptor Analysis"
+author: "Gayani GImhani Anandagoda"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r libraries}
+library(Seurat)
+library(SeuratObject)
+library(DESeq2)
+library(CellChat)
+library(patchwork)
+library(ggplot2)
+library(dplyr)
+library(ggpubr)  
+
+#library(GeomxTools)
+#options(stringsAsFactors = FALSE)
+```
+
+```{r variables}
+
+#cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types  "Bcells","DCs"
+
+cell_frac_cutoff = 0.01 # 0.01 or 0.005
+
+# row_variance_cutoff = NULL
+
+nact_status = NULL # pre , post
+
+segment = NULL # stroma , tumor
+
+annotation = NULL # "negCD8_negIBA1" # Add cell annotation CD8 and IBA1 
+
+min_cells = 10
+
+```
+
+
+```{r}
+expr_deseq2_norm_log = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/processed_expr_matrix_for_cellchat/expr_deseq2_norm_log_0.01.RDS")
+
+metadt_all = readRDS(("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/processed_expr_matrix_for_cellchat/metadt_all_0.01.RDS"))
+
+output_dir = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/ouput_batch1/DEGs/stroma_tumor_combined/"
+
+```
+
+
+```{r meta data}
+
+meta = data.frame(samples = metadt_all$Sample, NACT_status = metadt_all$NACT_status, Patient = metadt_all$Patient, Segment = metadt_all$Segment , Annotation = metadt_all$Annotation_cell, row.names = rownames(metadt_all))
+
+
+# Apply filters based on which variables are not NULL
+if (!is.null(nact_status)) {
+  meta <- meta %>% filter(NACT_status == nact_status)
+}
+
+if (!is.null(segment)) {
+  meta <- meta %>% filter(Segment == segment)
+}
+
+if (!is.null(annotation)) {
+  meta <- meta %>% filter(Annotation == annotation)
+}
+
+
+
+cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
+
+meta = data.frame(labels =paste0(cell_types,"-",meta$Segment), meta)
+
+meta$samples <- as.factor(meta$samples)
+
+meta$labels <- as.factor(meta$labels)
+
+
+meta_filter = rownames(meta) %in% colnames(expr_deseq2_norm_log)
+
+meta = meta[meta_filter,]
+
+
+temp_filter = colnames(expr_deseq2_norm_log) %in% rownames(meta)
+
+expr_deseq2_norm_log_filtered = expr_deseq2_norm_log[,temp_filter]
+
+
+```
+
+
+```{r cell type abundance plot}
+
+# Group the metadata
+df_grouped_samples <- meta %>%
+  group_by(Segment, NACT_status, Annotation, labels) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Define a custom ggplot function to avoid repetition
+create_bar_plot <- function(data, x, facet_formula) {
+  ggplot(data, aes_string(x = x, y = "count", fill = "labels")) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(facet_formula) +
+    theme_minimal() +
+    geom_hline(yintercept = 10, linetype = "solid", color = "black") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      strip.text.y = element_text(angle = 0)
+    )
+}
+
+# Create individual plots
+plot1 <- create_bar_plot(df_grouped_samples, "Annotation", ". ~ Segment")
+plot2 <- create_bar_plot(df_grouped_samples, "Annotation", ". ~ NACT_status")
+plot3 <- create_bar_plot(df_grouped_samples, "NACT_status", ". ~ Segment")
+
+# Save all plots to a PDF
+pdf(file.path(output_dir, "cell_type_abundance.pdf"), width = 10, height = 6)
+ggarrange(plot1, plot2, plot3, ncol = 2)
+dev.off()
+
+message("Plots saved to cell_type_abundance.pdf")
+
+```
+
+
+```{r checking the cell counts of the cell group, eval=FALSE}
+
+# Find the labels with fewer than 10 cells
+low_count_labels <- unique(df_grouped_samples[df_grouped_samples$count < min_cells,]$labels)
+
+# Check if any cell type has a low count
+if (length(low_count_labels) > 0) {
+  warning("The following cell types have fewer than 10 cells: ", paste(low_count_labels, collapse = ", "))
+  stop("Stopping execution due to low cell count.check the cell type abundance plots and set the min_cells counts")
+}
+
+```
+
+
+```{r create cell chat obj}
+cellchat_obj = createCellChat(object = expr_deseq2_norm_log_filtered, meta = meta, group.by = "labels")
+```
+
+
+
+```{r CellChat database}
+CellChatDB <- CellChatDB.human # use CellChatDB.mouse if running on mouse data
+#showDatabaseCategory(CellChatDB)
+
+# use all CellChatDB except for "Non-protein Signaling" for cell-cell communication analysis
+CellChatDB.use <- subsetDB(CellChatDB)
+
+# set the used database in the object
+cellchat_obj@DB <- CellChatDB.use
+
+cellchat_obj <- subsetData(cellchat_obj) # This step is necessary even if using the whole database
+```
+
+```{r Preprocessing the expression data, eval=FALSE}
+
+
+#Identify over-expressed signaling genes associated with each cell group
+
+# # Preprocessing the expression data for cell-cell communication analysis
+
+
+future::plan("multisession", workers = 4) # do parallel
+cellchat_obj <- identifyOverExpressedGenes(cellchat_obj)
+cellchat_obj <- identifyOverExpressedInteractions(cellchat_obj)
+
+# execution.time = Sys.time() - ptm
+#print(as.numeric(execution.time, units = "secs"))
+
+
+# check !!!!
+
+# project gene expression data onto PPI (Optional: when running it, USER should set `raw.use = FALSE` in the function `computeCommunProb()` in order to use the projected data)
+# cellchat <- projectData(cellchat, PPI.human)
+```
+
+
+
+```{r Inference of cell-cell communication network}
+
+# # Part II: Inference of cell-cell communication network
+
+ptm = Sys.time()
+cellchat_obj <- computeCommunProb(cellchat_obj, type = "triMean")
+
+
+file_name = paste0(output_dir,"cellchat_obj_batch1_",cell_frac_cutoff,"_",nact_status,annotation,segment,".RDS")
+
+saveRDS(cellchat_obj , file = file_name)
+```
+
+```{r computeCommunProbPathway}
+cellchat = cellchat_obj
+
+cellchat <- computeCommunProbPathway(cellchat)
+
+cellchat = filterCommunication(cellchat, min.cells = min_cells) 
+
+df.net <- subsetCommunication(cellchat, sources.use = c(1,2,3,4), targets.use = c(1,2,3,4))
+
+df.net <- df.net %>% arrange(-prob)
+
+
+file_name1 = paste0(output_dir,"/LRpairs_Tcells_Macrophages_",cell_frac_cutoff,"_",nact_status,"_",annotation,"_",segment,".RDS")
+
+#file_name2 = paste0(output_dir,"/LRpairs_Tcells_Macrophages_",cell_frac_cutoff,"_",nact_status,"_",annotation,"_",segment,".csv")
+
+#write.csv(df.net, file = file_name2, row.names = FALSE)
+
+saveRDS(df.net, file = file_name1)
+
+```
+
+######################
+
+```{r multinichent DEGs, eval=FALSE}
+#DEG_geomx = read.csv("C:/Users/Sahas/Downloads/Masters_Thesis/Data/Batch01/DGE_pre_post_merged/dge_all_dge_within_slide_Annotation_cell_bin_FALSE__Segment.csv")
+
+temp = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/sender_receiver_de.RDS")
+
+#multinichenet_DEG_prestromaVspretumor = temp %>% filter(sender == "Tcells", receiver == "Macrophages")
+
+multinichenet_DEG_stromavsTumor = temp %>% filter(sender == "Tcells", receiver == "Macrophages", p_adj_ligand < 0.05, p_adj_receptor < 0.05)
+
+ligands = unique(multinichenet_DEG_stromavsTumor$ligand)
+receptors = unique(multinichenet_DEG_stromavsTumor$receptor)
+
+DEG_info_ligand = multinichenet_DEG_stromavsTumor %>% filter(contrast == "stroma-tumor") %>% select(clusters = sender, features = ligand,logFC = lfc_ligand,pvalues = p_val_ligand, pvalues.adj = p_adj_ligand) %>% unique()
+
+DEG_info_receptor = multinichenet_DEG_stromavsTumor %>% filter(contrast == "stroma-tumor") %>% select(clusters = receiver, features = receptor,logFC = lfc_receptor,pvalues = p_val_receptor, pvalues.adj = p_adj_receptor) %>% unique()
+
+DEG_info = rbind(DEG_info_ligand,DEG_info_receptor)
+
+DEG_info = DEG_info[!duplicated(DEG_info$features),]
+
+cellchat_obj@var.features[["features"]] = DEG_info$features
+
+
+cellchat_obj@var.features[[paste0("features", ".info")]] = DEG_info
+```
+
+```{r multinichent prioritized ligands}
+
+DE = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/sender_receiver_de.RDS")
+
+temp = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/prioritization_tables_all_cell_types.RDS")
+
+
+
+
+ligand_activities_target_de_tbl = temp$ligand_activities_target_de_tbl
+```
+
