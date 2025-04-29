@@ -1,0 +1,350 @@
+---
+title: "test_visualization"
+author: "Gayani GImhani Anandagoda"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(tidyr)
+library(scales)
+library(patchwork)
+library(RColorBrewer)
+```
+
+```{r}
+sender = "Tcells-stroma"
+receiver = "Macrophages-stroma"
+
+input_dir <- "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/ouput_batch1/DEGs/stroma_tumor_combined"  
+
+output_dir = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/ouput_batch1/DEGs/stroma_tumor_combined"
+
+# List all .RDS files that contain "LRpairs" in their name
+rds_files <- list.files(path = input_dir, pattern = "LRpairs.*\\.RDS$", full.names = TRUE)
+
+rds_list <- lapply(rds_files, readRDS) # read all the LR objects
+
+matched_string <- sub(".*0\\.01(.*?)\\.RDS$", "\\1",(basename(rds_files)))
+
+# Trim leading underscores or spaces if needed
+matched_string <- gsub("^[_]+", "", matched_string)
+
+#names(rds_list) <- matched_string
+names(rds_list) <- paste0(sender,"_",receiver)
+
+plot_folder_name  = "/plots"
+
+if (!dir.exists(paste0(output_dir,plot_folder_name))) {
+  new_dir = paste0(output_dir,plot_folder_name)
+  dir.create(new_dir,recursive = TRUE)
+  message("Directory created")
+  output_dir = new_dir
+} else {
+  output_dir = paste0(output_dir,plot_folder_name)
+}
+
+```
+
+
+```{r heatmaps}
+
+Com_direction = paste0(sender,"-",receiver)
+
+preprocess_ligand_receptor_heatmap <- function(df) {
+  
+  df$com_direction <- paste0(df$source, "-", df$target)
+  
+  temp <- df %>% filter(com_direction == Com_direction, annotation != "ECM-Receptor", pval < 0.01)
+  
+  #temp = temp[temp$prob >= 0.1, ]
+  
+  #df_filtered <- temp %>% select(ligand,receptor,prob,pathway_name)
+  df_filtered <- temp %>% select(ligand,receptor,prob)
+
+  #pathway_name_order <- df_filtered %>%
+  #group_by(pathway_name) %>%
+  #summarise(max_prob = max(prob, na.rm = TRUE)) %>%
+  #arrange(max_prob) %>%
+  #pull(pathway_name)
+  
+  #df_filtered$pathway_name <- factor(df_filtered$pathway_name, levels = pathway_name_order)
+
+  return( df_filtered)
+  
+}
+
+ 
+processed_list <- lapply(rds_list, preprocess_ligand_receptor_heatmap)
+
+#processed_list[paste0(sender,"_",receiver)] = lapply(rds_list, preprocess_ligand_receptor_heatmap)
+
+# Combine all dataframes into one and take distinct rows
+all_pairs <- bind_rows(lapply(processed_list, function(df) df[, -3])) %>% distinct()
+
+# A helper function to fill in missing pairs with prob = 0
+fill_missing_pairs <- function(df, all_pairs) {
+  df_complete <- full_join(all_pairs, df, by = c("ligand","receptor"))
+  #df_complete <- full_join(all_pairs, df, by = c("ligand", "pathway_name","receptor"))
+  df_complete$prob[is.na(df_complete$prob)] <- 0
+  
+  df_long <- df_complete %>%
+   pivot_wider(
+      names_from = receptor,
+      values_from = prob,
+      values_fill = list(prob = 0)
+    ) %>%
+    pivot_longer(
+      cols = -c(ligand),
+      #cols = -c(ligand, pathway_name),
+      names_to = "receptor",
+      values_to = "prob"
+    )
+  return(df_long)
+  
+}
+
+processed_list <- lapply(processed_list, fill_missing_pairs, all_pairs = all_pairs)
+
+```
+
+
+
+```{r cleaner code}
+
+# https://jokergoo.github.io/2022/03/08/support-hcl-colormaps-in-complexheatmap/
+
+max_prob = max(sapply(processed_list, function(df) max(df$prob, na.rm = TRUE)))
+
+brewer_colors <- brewer.pal(9,"YlGnBu")
+
+shared_scale <- scale_fill_gradientn(
+  colors = brewer_colors,
+  values = rescale(c(0, max_prob/2, max_prob)),
+  limits = c(0, max_prob),
+  name = "Probabilities"
+)
+
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 6),
+    axis.text.y = element_text(size = 5)
+  )
+
+# Function to create heatmap plot
+make_heatmap <- function(data, condition_label, show_legend = FALSE) {
+  
+  data_labeled <- data %>%
+  #distinct(ligand, pathway_name) %>%
+  distinct(ligand) %>%
+  arrange(desc(ligand)) %>%  # Match ggplot heatmap order
+  mutate(y_pos = row_number())
+  
+  data_plot <- data %>%
+  left_join(data_labeled, by = "ligand") %>%
+  mutate(y_pos = as.numeric(factor(ligand, levels = data_labeled$ligand))) 
+  
+  ggplot(na.omit(data_plot), aes(x = receptor, y = y_pos, fill = prob)) +
+    geom_tile(color = "white") +
+    shared_scale +
+    scale_y_continuous(
+      name = "Ligands",
+      breaks = data_plot$y_pos,
+      labels = data_plot$ligand,
+      #sec.axis = dup_axis(
+      #  breaks = data_plot$y_pos,
+      #  labels = data_plot$pathway_name.y,
+      #  name = "Pathway"
+      #)
+    ) +
+    scale_x_discrete(name = "Receptors") +
+    #labs(title = paste0(condition_label,": (",sender, "-",receiver,")")) +
+    labs(title = condition_label) +
+    custom_theme +
+    theme(
+      axis.text.y.left = element_text(size = 5),
+      axis.text.y.right = element_text(size = 5),
+      axis.title.y.right = element_text(color = "black"),
+      axis.ticks.y.right = element_blank(),
+      legend.position = ifelse(show_legend, "right", "none") 
+    )
+    
+}
+
+# Generate plots
+
+heatmaps_list <- mapply(
+  FUN = make_heatmap,
+  data = processed_list,
+  condition_label = names(processed_list),
+  MoreArgs = list(show_legend = TRUE),
+  SIMPLIFY = FALSE
+)
+
+```
+
+
+```{r heatmap}
+
+ 
+#file_name = paste0("LR_heatmaps_",sender, "-",receiver,".pdf")
+
+file_name = paste0("LR_heatmaps_Tcells_Macrophages.pdf")
+
+pdf(file.path(output_dir, file_name), width = 10, height = 6)
+
+for (name in names(heatmaps_list)) {
+  print(heatmaps_list[[name]])
+}
+
+
+dev.off()
+
+message("Plots saved")
+
+```
+
+
+```{r making combined plots, eval=FALSE}
+
+#file_name = paste0("LR_heatmaps_combined_",sender, "-",receiver,".pdf")
+
+file_name = paste0("LR_heatmaps_combined_Tcells_macrophages.pdf")
+
+plot_title = paste0("Ligand-Receptor Interaction Probabilities: ",sender, "-",receiver)
+
+pdf(file.path(output_dir, file_name), width = 10, height = 6)
+
+combined_plot1 <- (heatmaps_list$`Tcells-tumor_Macrophages-tumor` + heatmaps_list$`Tcells-stroma_Macrophages-stroma` ) + # + heatmaps_list$posCD8_negIBA1_ + heatmaps_list$posCD8_posIBA1_
+  plot_layout(guides = "collect") &
+  plot_annotation(title = plot_title)
+
+
+print(combined_plot1)
+
+dev.off()
+```
+
+
+```{r all pathways bar plot, eval=FALSE}
+
+pdf(file.path(output_dir, "Top_interaction_per_pathway_Macrophages_Tcells_0.1_filtered.pdf"), width = 10, height = 6)
+
+plot_top_interactions_per_pathway <- function(df, condition_label) {
+  # Add composite direction column
+  df$com_direction <- paste0(df$source, "-", df$target)
+  
+  # Filter for Tcells-Tcells and remove ECM-Receptor
+  temp <- df %>%
+    filter(com_direction == "Macrophages-Tcells", annotation != "ECM-Receptor", pval < 0.01) %>%
+    select(ligand, receptor, prob, pathway_name)
+  
+  #temp <- temp[temp$prob >= 0.1, ]
+  
+  # Get top interaction per pathway
+  filtered_df <- temp %>%
+    group_by(pathway_name) %>%
+    slice_max(order_by = prob, n = 1) %>%
+    ungroup()
+  
+  # Create interaction label
+  filtered_df$interaction <- paste(filtered_df$ligand, filtered_df$receptor, sep = " - ")
+  
+  # Order interaction by descending prob
+  filtered_df$interaction <- factor(filtered_df$interaction, levels = filtered_df$interaction[order(-filtered_df$prob)])
+  
+  # Color mapping
+  colors <- scales::col_numeric(palette = c("lightblue", "darkblue"), domain = NULL)(filtered_df$prob)
+  
+  # Plot
+  p <- ggplot(filtered_df, aes(x = prob , y = reorder(pathway_name, prob), fill = interaction)) +
+    geom_bar(stat = "identity", show.legend = TRUE) +
+    scale_fill_manual(values = setNames(colors, filtered_df$interaction)) +
+    labs(
+      title = paste("Most probable Ligand-Receptor Interaction per Pathway\nMacrophages-Tcells (", condition_label, ")", sep = ""),
+      x = "Probability",
+      y = "Pathway",
+      fill = "Ligand - Receptor"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  print(p)
+}
+
+plot1 = plot_top_interactions_per_pathway(df.net.tumor, "Tumor")
+
+plot2 = plot_top_interactions_per_pathway(df.net.stroma, "stroma")
+
+
+
+
+
+#grid.arrange(plot1,plot2, ncol = 2)
+
+dev.off()
+print("Plots saved to density_plots.pdf")
+```
+
+
+```{r eval=FALSE}
+df.net.combined_pre = rbind(df.net.pre.tumor,df.net.pre.stroma)
+
+combined.mhcII_pre = df.net.combined_pre[df.net.combined_pre$pathway_name == "MHC-II",]
+
+direction = paste0(combined.mhcII_pre$source,"-",combined.mhcII_pre$target)
+
+combined.mhcII_pre = data.frame(combined.mhcII_pre ,com_direction = direction)
+
+```
+
+```{r eval=FALSE}
+df.net.combined_post = rbind(df.net.post.tumor,df.net.post.stroma)
+
+combined.mhcII_post = df.net.combined_post[df.net.combined_post$pathway_name == "MHC-II",]
+
+direction = paste0(combined.mhcII_post$source,"-",combined.mhcII_post$target)
+
+combined.mhcII_post = data.frame(combined.mhcII_post ,com_direction = direction)
+
+#y_label = unique(direction)
+```
+
+```{r bubble plots per pathway, eval=FALSE}
+#pdf(file.path(output_dir, "LR_MHCII.pdf"), width = 10, height = 6)
+
+ggplot(combined.mhcII_pre, aes(x = Segment , y = interaction_name_2 )) +
+  geom_point(aes(size = prob, fill = com_direction), shape = 21) +
+  facet_grid(. ~ com_direction, scales = "free_y", space = "free_y") +
+  scale_size(range = c(1, 5)) +
+  theme_minimal() +
+  labs(title = "MHCII pathway interactions in pre samples",
+       x = "Segment",
+       y = "Ligand-Receptor Pair") +
+  theme(axis.text.x = element_text(angle = 0),
+        strip.text = element_text(size = 8))
+
+ggplot(combined.mhcII_post, aes(x = Segment , y = interaction_name_2 )) +
+  geom_point(aes(size = prob, fill = com_direction), shape = 21) +
+  facet_grid(. ~ com_direction, scales = "free_y", space = "free_y") +
+  scale_size(range = c(1, 5)) +
+  theme_minimal() +
+  labs(title = "MHCII pathway interactions in post samples",
+       x = "Segment",
+       y = "Ligand-Receptor Pair") +
+  theme(axis.text.x = element_text(angle = 0),
+        strip.text = element_text(size = 8))
+
+# grid.arrange(plot1,plot2, ncol = 2)
+
+#dev.off()
+#print("Plots saved to density_plots.pdf")
+```
+
