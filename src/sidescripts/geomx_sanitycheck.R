@@ -9,8 +9,8 @@ library(ggpmisc)
 library(reshape2)
 
 # TODO pfs and os with quartiles for every batch 
-# heatmaps per annotation
-# stacked barplots per annotation
+# TODO heatmaps per annotation
+# TODO stacked barplots per annotation
 
 # SD and SD_BG are identical
 ###########################
