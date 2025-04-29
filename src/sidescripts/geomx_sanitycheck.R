@@ -149,9 +149,11 @@ colnames(cell_fraq$sd) <- gsub('.', ' ', colnames(cell_fraq$sd), fixed = T)
 sapply(1:length(cell_fraq), function(x){
   print(x)
   cell_fraq_res <- as.data.frame(cell_fraq[[x]])
-  ct_gsea_all_fraq <- left_join(ct_gsea_all, cell_fraq_res[, c('dcc_filename', ct_names)])
+  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts + cell_fraq_res$`Endothelial cells`
   
-  for(ct_name in ct_names[!ct_names == 'DCs']){
+  ct_gsea_all_fraq <- left_join(ct_gsea_all, cell_fraq_res[, c('dcc_filename', c(ct_names, 'stroma'))])
+  
+  for(ct_name in c(ct_names[!ct_names == 'DCs'], 'stroma')){
     print(ct_name)
     ct_gsea_all_fraq_ct <- ct_gsea_all_fraq[grepl(ct_name, ct_gsea_all_fraq$pathway), ]
     
@@ -181,6 +183,10 @@ cell_fraq_sd <- cell_fraq_sd[, c('dcc_filename', ct_names)]
 colnames(cell_fraq_sd) <- c('dcc_filename', paste0(ct_names, '_sd'))   
 
 cell_fraq_both <- left_join(cell_fraq_bp, cell_fraq_sd)
+
+cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_bp + cell_fraq_both$`Endothelial cells_bp`
+cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_sd + cell_fraq_both$`Endothelial cells_sd`
+
 cell_fraq_both_long <- melt(cell_fraq_both, id.vars = c('dcc_filename', 'Segment', 'Annotation_cell'),
                             variable.name = 'cell_type', value.name = 'fraction')
 
@@ -188,7 +194,7 @@ cell_fraq_both_long$deconv_type <- ifelse(grepl('bp', cell_fraq_both_long$cell_t
 cell_fraq_both_long$cell_type <- gsub('_bp|_sd', '', cell_fraq_both_long$cell_type)
 
 # make a paired plot
-for(ct in ct_names){
+for(ct in c(ct_names, 'stroma')){
   
   cell_fraq_both_long_ct <- cell_fraq_both_long[cell_fraq_both_long$cell_type == ct, ]
   
