@@ -1,0 +1,219 @@
+---
+title: "Nichnetr Analysis"
+author: "Gayani GImhani Anandagoda"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries , eval=FALSE}
+library("ggplot2")
+library(gridExtra)
+library(nichenetr)
+#library(Seurat)
+#library(SeuratObject)
+library(tidyverse)
+library(DESeq2)
+library(dplyr)
+```
+
+
+```{r variables}
+
+############################### preprocessing ###############################
+
+cell_types = c("Tcells","Macrophages") # c("Tcells","Bcells","DCs","Macrophages") 
+
+row_variance_cutoff = NULL
+
+cell_frac_cutoff = 0.01  
+
+input_dir = "C:/Users/Sahas/Downloads/Masters_Thesis/Data/Batch01/"
+
+output_dir = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/batch1_output/Nichenet_obj_processed/"
+
+
+```
+
+```{r loading inputs}
+
+
+bprism_res = readRDS(paste0(input_dir,"bp_res_mid_lvl_ct.RDS"))
+
+cell_fractions_df = read.csv(paste0(input_dir,"bp_res_mid_lvl_ct_ct_fraction.csv"))
+
+geomx_obj = readRDS(paste0(input_dir,"geomx_qc_norm_batch_eff_rm.RDS"))
+
+```
+
+```{r Extracting expression data and normalization and filtering based on cell frcation}
+# Extracting expression data of the desired cell types and saving it as a r object
+
+if (is.null(cell_types)) { # If the cell types are not defined take all the cell types in the prism object
+  ct_names <- colnames(bprism_res@posterior.theta_f@theta.cv)
+
+}else{
+  ct_names <- cell_types
+}
+
+
+
+deconv_ct_list <- setNames(lapply(ct_names, function(ct_name) {
+  cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
+  
+  # Mask cell fractions if CV > 0.2
+  cell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[ct_name]] > 0.2]
+  
+  deconv_ct <- BayesPrism::get.exp(bp = bprism_res,
+                                   state.or.type = "type",
+                                   cell.name = ct_name)
+  
+  # Filter out cells with high CV
+  deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
+  
+  # vst Normalization
+  
+  deconv_ct <- varianceStabilizingTransformation(round(t(deconv_ct)))
+  
+  # filtering based on cell fraction 
+  
+  if(!is.null(cell_frac_cutoff)){
+    
+    formatted_ct_names <- gsub(" ", ".", ct_name) #because the cell fraction dataframe colnames are different: dot instead of space
+    
+    cells_greater_than_cutoff <- cell_fractions_df[cell_fractions_df[, formatted_ct_names] >= cell_frac_cutoff,]$dcc_filename
+    
+    deconv_ct <- deconv_ct[(colnames(deconv_ct) %in% cells_greater_than_cutoff), ]
+    
+  }
+  
+  
+  return(deconv_ct)
+}), ct_names)  
+
+
+#saveRDS(deconv_ct_list, file = paste0(output_dir,"deconv_ct_list.RDS"))
+```
+
+
+
+```{r }
+
+deconv_metadt_list <- lapply(names(deconv_ct_list), function(ct_name){
+  meta_data = sData(geomx_obj)
+  
+   new_meta <- data.frame(meta_data[,c(2,5,6,7,24,25,28)])
+  
+  new_meta$dcc_filename = gsub('\\.dcc', paste0('_', ct_name), new_meta$dcc_filename)
+  mat = deconv_ct_list[[ct_name]]
+  
+  matched_entries = new_meta[new_meta$dcc_filename %in% rownames(mat), ]
+  rownames(matched_entries) = matched_entries$dcc_filename  
+  
+  return(matched_entries)
+})
+
+metadt_all <- do.call(rbind, deconv_metadt_list)
+
+meta = data.frame(samples = metadt_all$Sample, NACT_status = metadt_all$NACT_status, Patient = metadt_all$Patient, Segment = metadt_all$Segment , Annotation = metadt_all$Annotation_cell, row.names = rownames(metadt_all))
+
+
+cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
+
+meta = data.frame(labels = cell_types, meta)
+
+meta$samples <- as.factor(meta$samples)
+
+meta$labels <- as.factor(meta$labels)
+
+# meta = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/meta.RDS")
+
+```
+
+
+```{r expression distribution plots}
+pdf(file.path(output_dir, "density_plots.pdf"), width = 10, height = 6)
+
+# Function to generate density plots
+create_density_plot <- function(data, title) {
+  ggplot(data, aes(x = expression)) +
+    geom_density(fill = "blue", alpha = 0.5) +
+    ggtitle(title) +
+    theme_minimal()
+}
+
+if (!is.null(row_variance_cutoff)) {
+  expr_plots_and_filtered_data <- lapply(ct_names, function(ct_name) {
+    cell_type_exp_norm <- as.data.frame(deconv_ct_list[[ct_name]])
+    row_variance <- apply(cell_type_exp_norm, 1, var, na.rm = TRUE)
+    
+    # Filter rows based on variance
+    filtered_data <- cell_type_exp_norm[row_variance > row_variance_cutoff, , drop = FALSE]
+    if (nrow(filtered_data) == 0) return(NULL)
+    
+    df <- data.frame(expression = as.vector(unlist(filtered_data)))
+    plot <- create_density_plot(df, paste0(ct_name, " : row variance cutoff = ", row_variance_cutoff))
+    
+    list(filtered_data = filtered_data, plot = plot)
+  })
+  
+  # Remove NULL entries
+  expr_plots_and_filtered_data <- Filter(Negate(is.null), expr_plots_and_filtered_data)
+  
+  # Extract plots
+  plots <- lapply(expr_plots_and_filtered_data, `[[`, "plot")
+  if (length(plots) > 0) do.call("grid.arrange", c(plots, ncol = 2))
+  
+  # Extract filtered data
+  filtered_data_list <- setNames(lapply(expr_plots_and_filtered_data, `[[`, "filtered_data"), ct_names)
+} else {
+  plots <- lapply(ct_names, function(ct_name) {
+    df <- data.frame(expression = as.vector(unlist(as.data.frame(deconv_ct_list[[ct_name]]))))
+    create_density_plot(df, paste0(ct_name, " : row variance cutoff = NULL"))
+  })
+  
+  if (length(plots) > 0) do.call("grid.arrange", c(plots, ncol = 2))
+  print("row_variance_cutoff is NULL.")
+}
+
+dev.off()
+print("Plots saved to density_plots.pdf")
+
+
+```
+
+
+```{r saving files}
+
+if (!is.null(row_variance_cutoff)){
+  
+  file_name <- paste0(output_dir, "bp_res_mid_lvl_ct_45_filtered_deconv_ct_list_rv_",row_variance_cutoff)
+  
+  saveRDS(filtered_data_list, file = paste0(file_name,".RDS"))
+  
+  deconv_ct_list_filtered = filtered_data_list
+  
+} else{
+  
+    file_name <- paste0(output_dir, "bp_res_mid_lvl_ct_45_filtered_deconv_ct_list_cf_0.01")
+  
+  saveRDS(deconv_ct_list, file = paste0(file_name,".RDS"))
+  
+  
+}
+
+```
+
+
+```{r, eval=FALSE}
+  deconv_ct <- apply(deconv_ct, c(1, 2), function(x) {(as.integer(x))})
+  
+  zero_percent <- apply(deconv_ct, 2, function(col) {
+  mean(col == 0) * 100  # percent of zeros
+})
+  deconv_ct <- deconv_ct[, zero_percent <= 90]
+```
+
