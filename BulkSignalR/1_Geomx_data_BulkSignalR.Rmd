@@ -20,14 +20,24 @@ library(dplyr)
 
 
 ```{r}
-output_dir <- 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR'
+null.model = NULL # c("automatic", "mixedNormal", "normal", "kernelEmpirical","empirical", "stable")
 
+normalize = FALSE
 
+#method = "q3_norm" # c("UQ",TC") or user defined if the provided data are normalized
+
+output_dir <- 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/ouput_batch1/'
+
+nact_status = NULL
+
+segment = NULL
+
+annotation = NULL
 ```
 
 ```{r loading,eval=FALSE}
 
-geomx_obj <- readRDS('geomx_qc_norm.RDS')
+geomx_obj <- readRDS('C:/Users/Sahas/Downloads/Masters_Thesis/Data/Batch01/geomx_qc_norm_batch_eff_rm.RDS')
 
 count_geomx = data.frame(geomx_obj@assayData$exprs) # count data
 
@@ -36,38 +46,37 @@ count_geomx = data.frame(geomx_obj@assayData$exprs) # count data
 
 ```  
 
+```{r seperating}
+meta_data = sData(geomx_obj )
+  
+meta_data = data.frame(meta_data[,c(2,5,6,7,24,25,28)])
 
-```{r seperating,eval=FALSE}
-## seperating stroma and tumor AOIs
+meta_data$dcc_filename <- gsub('-', '.', meta_data$dcc_filename)
 
-segment  = geomx_obj@phenoData@data$Segment
+# Apply filters based on which variables are not NULL
+if (!is.null(nact_status)) {
+  meta_data <- meta_data %>% filter(NACT_status == nact_status)
+}
 
-sample = geomx_obj@phenoData@data$Sample
+if (!is.null(segment)) {
+  meta_data <- meta_data %>% filter(Segment == segment)
+}
 
-combined = mapply(paste, sample, segment, MoreArgs = list(sep = "_"))
+if (!is.null(annotation)) {
+  meta_data <- meta_data %>% filter(Annotation == annotation)
+}
 
-colnames(count_geomx) = combined 
+col_ids = colnames(count_geomx)  %in% meta_data$dcc_filename
 
-col_ids_stroma <- which(grepl("stroma", colnames(count_geomx), ignore.case = TRUE))
-
-# Create a new dataframe with only those columns
-stroma_df <- count_geomx[, col_ids_stroma]
-
-col_ids_tumor <- which(grepl("tumor", colnames(count_geomx), ignore.case = TRUE))
-
-# Create a new dataframe with only those columns
-tumor_df <- count_geomx[, col_ids_tumor]
-
-
+count_geomx = count_geomx[,col_ids]
 
 ```
-
 
 
 step 01 : Prepare Dataset
 
 ```{r prepareDataset , eval=FALSE,cache=FALSE}
-bsrdm_stroma <- prepareDataset(counts = stroma_df)
+bsrdm <- prepareDataset(counts = count_geomx)
 
 
 #bsrdm <- prepareDataset(counts = count_geomx, method = "TC")
@@ -89,8 +98,8 @@ step 02 : learnParameters
 ```{r learnParameters , eval=FALSE,cache=FALSE,results=FALSE}
 set.seed(123)
 
-bsrdm <- learnParameters(bsrdm_stroma, 
-         plot.folder = file.path(output_dir, 'figures/geomx/stroma_n_tumor/'), filename = "geomxUQ_stroma", verbose = TRUE)
+bsrdm <- learnParameters(bsrdm, 
+         plot.folder = file.path(output_dir), filename = paste0("geomxUQ_",nact_status,'_',segment), verbose = TRUE)
 
 # user can specify the null model from null.model = c("automatic", "mixedNormal", "normal", "kernelEmpirical","empirical", "stable")
 
@@ -107,7 +116,7 @@ bsrdm <- learnParameters(bsrdm_stroma,
 step 03 : Building a BSRInference object
 
 ```{r BSRInference , eval=FALSE,cache=FALSE}
-bsrinf_stroma <- initialInference(bsrdm)
+bsrinf <- initialInference(bsrdm)
 
 
 # parameters of initialInference method of bsrdm class
@@ -122,7 +131,7 @@ bsrinf_stroma <- initialInference(bsrdm)
 #fdr.proc=c("BH","Bonferroni","Holm","Hochberg",                "SidakSS","SidakSD","BY","ABH","TSBH"))
 
 
-LRinter.dataframe <- LRinter(bsrinf_stroma)
+LRinter.dataframe <- LRinter(bsrinf)
 
 #head(LRinter.dataframe[order(LRinter.dataframe$qval <= 0.001),
   #c("L",  "R" ,"LR.corr", "pw.id",  "pw.name",  "pval"  , "qval")])
@@ -132,19 +141,22 @@ LRinter.dataframe <- LRinter(bsrinf_stroma)
 
 
 ```{r BSRInferenceTfile, eval=FALSE}
+# change to : write as a R object
+
 write.table(LRinter.dataframe[order(LRinter.dataframe$qval <= 0.001),],
-            file.path(output_dir, 'figures/geomx/stroma_n_tumor/geomx_LR_stroma.csv'),
+            file.path(output_dir, paste0("geomx_LR_",nact_status,'_',segment,'.csv')),
             row.names = FALSE,
             sep = "\t",
             quote = FALSE)
 ```
 
 
-```{r objectLoading, eval=FALSE}
-# loading generated BulkSignalR objects
+```{r saveobj, eval=FALSE}
 
-#bsrdm <- readRDS('C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/geomx_output/stroma_n_tumor/stroma/bsrdm_stroma.RDS')
-bsrinf_stroma <- readRDS('C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/geomx_output/stroma_n_tumor/stroma/bsrinf_stroma.RDS')
+saveRDS(bsrinf, file = paste0(output_dir,'bsrinf',nact_status,'_',segment,'.RDS'))
+saveRDS(bsrdm, file = paste0(output_dir,'bsrdm',nact_status,'_',segment,'.RDS'))
+
+
 ```
 
 ## Reduction strategies
@@ -159,7 +171,7 @@ bsrinf_stroma <- readRDS('C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-recepto
 
 
 ```{r ReduceToBestPathway, eval=FALSE,cache=FALSE}
-     bsrinf.redBP    <- reduceToBestPathway(bsrinf_stroma)
+     bsrinf.redBP    <- reduceToBestPathway(bsrinf)
 ```
 
 3. Reducing to ligands or receptors
@@ -185,12 +197,12 @@ step 4 : Building a BSRSignature object
 
      bsrsig.redBP <- getLRGeneSignatures(bsrinf.redBP, qval.thres=0.001)
 
-     scoresLR <- scoreLRGeneSignatures(bsrdm_stroma, bsrsig.redBP,
+     scoresLR <- scoreLRGeneSignatures(bsrdm, bsrsig.redBP,
                                        name.by.pathway=FALSE)
      
      simpleHeatmap(scoresLR[1:10,], 
-                   path = 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/figures/geomx/stroma_n_tumor/',
-                   filename = "geomx_scoresLR_stroma",
+                   path = output_dir,
+                   filename = "geomx_scoresLR_pre_stroma",
                    column.names = TRUE, 
                    height = 5, width = 9,
                    pointsize = 10,
@@ -207,8 +219,8 @@ step 4 : Building a BSRSignature object
                                             name.by.pathway=TRUE)
      
      simpleHeatmap(scoresPathway[c(19,16,17,55,54,64),], 
-                   path = 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/figures/geomx/stroma_n_tumor/',
-                   filename = "geomx_scoresPathway_stroma",
+                   path = output_dir,
+                   filename = "geomx_scoresPathway_pre_stroma",
                    column.names = TRUE, 
                    width = 9, 
                    height = 5, 
@@ -229,7 +241,7 @@ signatureHeatmaps(
         pathway = pathway1,
         bsrdm = bsrdm,
         bsrsig = bsrsig.redPBP,
-        path = 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/figures/geomx/stroma_n_tumor/',
+        path = output_dir,
         filename = "geomx_signatureheatmap_tumor",
         h.width  = 15,
         h.height = 10 ,
@@ -244,8 +256,8 @@ alluvialPlot(bsrinf_stroma,
               keywords = c("B2M"),
               type = "L",
               qval.thres = 0.001,
-              path = 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/figures/geomx/stroma_n_tumor/',
-              filename = "geomx_alluvial_stroma", 
+              path = output_dir,
+              filename = "geomx_alluvial_pre_stroma", 
               width  = 16, 
               height = 12
               )
@@ -267,9 +279,9 @@ pathways <- c(pathway1,pathway2,pathway3,pathway4)
 bubblePlotPathwaysLR(bsrinf_stroma,
     pathways = pathways, 
     qval.thres  = 1,
-    path = 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/figures/geomx/stroma_n_tumor/',
+    path = output_dir,
     color = "red",
-    filename  = "geomx_bubble_stroma", 
+    filename  = "geomx_bubble_pre_stroma", 
     width  = 16, 
     height = 7,
     pointsize = 8
@@ -282,9 +294,9 @@ bubblePlotPathwaysLR(bsrinf_stroma,
 
 ```{r Chordiagram,results=FALSE,eval=FALSE} 
 chordDiagramLR (bsrinf_stroma,
-                  path = 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/figures/geomx/stroma_n_tumor/',
-                  filename = "geomx_chord_stroma",
-                  pw.id.filter = "R-HSA-877300",
+                  path = output_dir,
+                  filename = "geomx_chord_pre_stroma",
+                  pw.id.filter = "R-HSA-198933",
                   limit = 20,
                   width = 5, 
                   height = 4.5
@@ -407,18 +419,6 @@ lr2ct <- assignCellTypesToInteractions(bsrdm, bsrinf, tme.scores)
 
 
 Saving Objects: 
-
-
-
-
-```{r saveobj, eval=FALSE}
-
-saveRDS(bsrinf_stroma, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/geomx_output/stroma_n_tumor/bsrinf_stroma.RDS")
-saveRDS(bsrdm, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/BulkSignalR/geomx_output/stroma_n_tumor/bsrdm_stroma.RDS")
-
-
-```
-
 
 
 ```{r}
