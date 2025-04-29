@@ -26,39 +26,100 @@ metadt_all = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/Ce
 ```
 
 
-```{r}
-#without_tumor <- expr_deseq2_norm_log[, !grepl("_tumor", colnames(expr_deseq2_norm_log))]
+```{r meta data}
 
-
-without_other_cells <- expr_deseq2_norm_log[, !grepl("_other", colnames(expr_deseq2_norm_log))]
-
-#without_tumor_Tcells <- without_tumor_Tcells[, !grepl("_Tcells", colnames(without_tumor_Tcells))]
-
-#without_tumor_Tcells <- without_tumor_Tcells[, !grepl("_DCs", colnames(without_tumor_Tcells))]
-# meta = data.frame(samples = metadt_all$Sample, NACT_status = metadt_all$NACT_status, Patient = metadt_all$Patient, row.names = rownames(metadt_all))
-
-meta = data.frame(samples = metadt_all$Sample, row.names = rownames(metadt_all))
+meta = data.frame(samples = metadt_all$Sample, NACT_status = metadt_all$NACT_status, Patient = metadt_all$Patient, row.names = rownames(metadt_all))
 
 cell_types <- sapply(strsplit(rownames(metadt_all), "_"), function(x) x[2])
 meta = data.frame(labels = cell_types, meta)
 
-
-#meta$samples <- as.factor(meta$samples)
-
-#meta <- meta[meta$labels != "tumor", ]
-meta <- meta[meta$labels != "other", ]
-#meta <- meta[meta$labels != "Tcells", ]
-#meta <- meta[meta$labels != "DCs", ]
-
-meta = data.frame(labels = meta$labels, row.names = rownames(meta))
+meta$samples <- as.factor(meta$samples)
 
 meta$labels <- as.factor(meta$labels)
 
 ```
 
 
+```{r create cell chat obj}
+cellchat_obj = createCellChat(object = expr_deseq2_norm_log , meta = meta, group.by = "labels")
+```
+
+
+```{r filtering}
+
+# this has to be done to the CellChat object
+# filtering the genes with variance greater than row_variance_cutoff  
+
+Tcells_mat <- expr_deseq2_norm_log[, grep("tumor", colnames(expr_deseq2_norm_log)), drop = FALSE]
+row_variance_cutoff = 0.01
+
+row_variance <- apply(Tcells_mat, 1, var)
+
+Tcells_mat_filtered <- Tcells_mat[row_variance >= row_variance_cutoff, , drop = FALSE]
+
+
+dim(Tcells_mat_filtered)
+```
+
 ```{r}
-cellchat_obj = createCellChat(object = without_other_cells , meta = meta, group.by = "labels")
+library(CellChat)
+
+# Extract the expression matrix from the CellChat object
+expr_matrix <- cellchat_obj@data # Ensure this is the correct slot
+
+# Compute variance for each gene
+gene_variances <- apply(expr_matrix, 1, var)
+
+# Filter genes that have variance >= 0.01
+filtered_genes <- names(gene_variances[gene_variances >= 0.01])
+
+# Subset the CellChat object to retain only filtered genes
+cellchat_obj@data <- expr_matrix[filtered_genes, ]
+
+# Check the number of remaining genes
+length(filtered_genes)
+
+```
+
+```{r}
+library(CellChat)
+
+# Extract metadata containing cell type information
+cell_metadata <- cellchat_obj@meta  # Ensure this contains cell type info
+cell_types <- unique(cell_metadata$labels)  # Adjust column name if needed
+
+# Initialize a list to store gene variances for each cell type
+gene_variances_list <- list()
+
+# Compute variance for each gene in each cell type
+for (cell in cell_types) {
+  # Get indices of cells belonging to this cell type
+  cell_indices <- which(cell_metadata$labels == cell)
+  
+  # Extract expression matrix for this cell type
+  expr_matrix_subset <- cellchat_obj@data[, cell_indices]
+  
+  # Compute variance for each gene
+  gene_variances_list[[cell]] <- apply(expr_matrix_subset, 1, var)
+}
+
+# Convert the list to a data frame for easier manipulation
+gene_variance_df <- as.data.frame(do.call(cbind, gene_variances_list))
+
+# Keep genes that have variance >= 0.01 in at least one cell type
+filtered_genes <- rownames(gene_variance_df)[apply(gene_variance_df, 1, function(x) any(x >= 0.01))]
+
+# Subset the CellChat object to retain only selected genes
+cellchat_obj@data <- cellchat_obj@data[filtered_genes, ]
+
+# Check the number of remaining genes
+length(filtered_genes)
+
+```
+
+```{r}
+apply(gene_variance_df, 2, function(x) sum(x >= 0.01, na.rm = TRUE))
+
 ```
 
 
@@ -94,6 +155,7 @@ cellchat_obj <- identifyOverExpressedInteractions(cellchat_obj)
 
 
 ```
+
 ```{r}
 # check !!!!
 
@@ -123,6 +185,7 @@ cellchat_obj <- computeCommunProb(cellchat_obj, type = "triMean")
 ```{r}
 saveRDS(cellchat_obj , file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/CellChat/deconvoluted_data/cellchat_obj.RDS")
 ```
+
 
 
 
