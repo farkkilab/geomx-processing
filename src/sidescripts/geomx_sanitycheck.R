@@ -7,6 +7,10 @@ library(ggpubr)
 library(viridis)
 library(ggpmisc)
 library(reshape2)
+library(tibble)
+library(ComplexHeatmap)
+library(circlize)
+library(tidyverse)
 
 # TODO pfs and os with quartiles for every batch 
 # TODO heatmaps per annotation
@@ -26,6 +30,8 @@ output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004'
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
 
 ct_names <- c('Bcells', 'DCs', 'Endothelial cells', 'Fibroblasts', 'Macrophages', 'NKcells', 'Tcells', 'tumor')
+cells_immune <- c('Bcells', 'DCs', 'Macrophages', 'NKcells', 'Tcells')
+
 ct_markers_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'ct_markers.csv')
 
 ct_gsea_all_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'ssgsea_norm_harmony_batch_corr_all_custom_ct_markers.csv.csv')
@@ -175,12 +181,14 @@ sapply(1:length(cell_fraq), function(x){
 # pairwise bp-sd comparison
 
 cell_fraq_bp <- as.data.frame(cell_fraq$bp)
-cell_fraq_bp <- cell_fraq_bp[, c('dcc_filename','Segment', 'Annotation_cell', ct_names)]
-colnames(cell_fraq_bp) <- c('dcc_filename', 'Segment', 'Annotation_cell', paste0(ct_names, '_bp'))       
+cell_fraq_bp$other <- cell_fraq_bp$`Mast cells` + cell_fraq_bp$other
+cell_fraq_bp <- cell_fraq_bp[, c('dcc_filename','Segment', 'Annotation_cell','other', ct_names)]
+colnames(cell_fraq_bp) <- c('dcc_filename', 'Segment', 'Annotation_cell','other_bp', paste0(ct_names, '_bp'))       
 
 cell_fraq_sd <- as.data.frame(cell_fraq$sd)
-cell_fraq_sd <- cell_fraq_sd[, c('dcc_filename', ct_names)]
-colnames(cell_fraq_sd) <- c('dcc_filename', paste0(ct_names, '_sd'))   
+cell_fraq_sd$other <- cell_fraq_sd$`Mast cells` + cell_fraq_bp$other
+cell_fraq_sd <- cell_fraq_sd[, c('dcc_filename','other', ct_names)]
+colnames(cell_fraq_sd) <- c('dcc_filename','other_sd', paste0(ct_names, '_sd'))   
 
 cell_fraq_both <- left_join(cell_fraq_bp, cell_fraq_sd)
 
@@ -238,3 +246,73 @@ for(deconv_type in c('bp', 'sd')){
          width = 2000, height = 2000, unit = 'px')
 }
 
+
+# heatmaps and stacked barplots -------------------------------------------
+
+# TODO not really visible - after making better lables - rerun for each Annotation_cell in facet
+sapply(c('bp', 'sd'), function(deconv_type){
+  sapply(c('stroma', 'tumor'), function(seg){
+    
+    cell_fraq_both_long_deconv_seg <- cell_fraq_both_long[cell_fraq_both_long$Segment == seg &
+                                                            cell_fraq_both_long$deconv_type == deconv_type, ]
+
+    cell_fraq_both_long_deconv_seg <- arrange(cell_fraq_both_long_deconv_seg, Annotation_cell) %>%
+      rowid_to_column()
+    cell_fraq_both_long_deconv_seg <- cell_fraq_both_long_deconv_seg[!cell_fraq_both_long_deconv_seg$cell_type == 'stroma', ]
+    
+    anno_color_mapping <- setNames(viridis(length(unique(cell_fraq_both_long_deconv_seg$Annotation_cell))),
+                                   unique(cell_fraq_both_long_deconv_seg$Annotation_cell))
+    
+    ggplot(data = cell_fraq_both_long_deconv_seg, aes(x = reorder(dcc_filename, rowid), 
+                                                      y = fraction, fill = cell_type)) +
+      geom_bar(position="fill", stat="identity") +
+      ggtitle(seg) +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 3,
+                                       color = anno_color_mapping[cell_fraq_both_long_deconv_seg$Annotation_cell])) +
+      scale_x_discrete(labels = cell_fraq_both_long_deconv_seg$Annotation_cell) 
+    
+    ggsave(file.path(output_dir, 'sanity_check', paste0('barplot_',deconv_type, '_', seg, '.png')),
+           width = 1500, height = 1000, unit = 'px')
+
+    cell_fraq_both_long_deconv_seg_imm <- filter(cell_fraq_both_long_deconv_seg, cell_type %in% cells_immune)
+
+    ggplot(data = cell_fraq_both_long_deconv_seg_imm, aes(x = reorder(dcc_filename, rowid), y = fraction, fill = cell_type)) +
+      geom_bar(position="fill", stat="identity") +
+      ggtitle(seg) +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 3,
+                                       color = anno_color_mapping[cell_fraq_both_long_deconv_seg$Annotation_cell])) +
+      scale_x_discrete(labels = cell_fraq_both_long_deconv_seg$Annotation_cell)
+
+    ggsave(file.path(output_dir, 'sanity_check', paste0('barplot_',deconv_type, '_', seg, '_immune.png')),
+           width = 1500, height = 1000, unit = 'px')
+  })
+})
+
+#########################33
+# heatmaps
+
+col_fun = viridis(100)
+
+
+sapply(c('bp', 'sd'), function(deconv_type){
+  
+  png(filename = file.path(output_dir, 'sanity_check', paste0('hmap_',deconv_type, '_all.png')), width=1000, height=750)
+  Heatmap(t(as.matrix(cell_fraq_both[, paste0(c(ct_names, 'other'), '_', deconv_type)])), col = col_fun) %v%
+    HeatmapAnnotation(segment = cell_fraq_both$Segment, 
+                      col = list(segment = c("stroma" = "green", "tumor" = "blue")))
+  dev.off()
+  
+  sapply(c('stroma', 'tumor'), function(seg){
+    ct_frac_seg <- cell_fraq_both[cell_fraq_both$Segment == seg, ]
+
+    png(filename = file.path(output_dir, 'sanity_check', paste0('hmap_',deconv_type, '_', seg, '.png')), width=1000, height=750)
+    print(Heatmap(t(as.matrix(ct_frac_seg[, paste0(c(ct_names, 'other'), '_', deconv_type)])), col = col_fun) %v%
+            HeatmapAnnotation(roi_type = ct_frac_seg$Annotation_cell))
+    dev.off()
+
+    png(filename = file.path(output_dir, 'sanity_check', paste0('hmap_',deconv_type, '_', seg, '_immune.png')), width=1000, height=750)
+    print(Heatmap(t(as.matrix(ct_frac_seg[, paste0(cells_immune, '_', deconv_type)])), col = col_fun) %v%
+            HeatmapAnnotation(roi_type = ct_frac_seg$Annotation_cell))
+    dev.off()
+  })
+})
