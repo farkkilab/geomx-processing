@@ -36,42 +36,57 @@ organism = "human"
 
 cell_types = c("Tcells","Macrophages") 
 
-cell_frac_cutoff = NULL
+cell_frac_cutoff = 0.01 # cutoff was null in run 02 should set to 0.01
 
 celltype_id = "labels" 
 
 cell_idents = c("Tcells","Macrophages")
 
-sample_id = "new_sample_id"
+sample_id = "new_sample_ID"
 
-group_id = "NACT_Segment"
+group_id = "Segment"
 
 min_cells = 4
 
 batches = NA
 
-covariates =  NA # "samples" 
+covariates =  "samples"  
 
 min_sample_prop = 0.50 
 
 fraction_cutoff = 0.05
 
+logFC_threshold = 0.5
+p_val_threshold = 0.05
+p_val_adj = TRUE 
+
+
+top_n_target = 250
+verbose = TRUE
+cores_system = 2
+
 input_dir = "C:/Users/Sahas/Downloads/Masters_Thesis/Data/Batch01/"
 
-#bprism_res = readRDS(paste0(input_dir,"bp_res_mid_lvl_ct.RDS"))
+bprism_res = readRDS(paste0(input_dir,"bp_res_mid_lvl_ct.RDS"))
 
-#geomx_obj = readRDS(paste0(input_dir,"geomx_qc_norm_batch_eff_rm.RDS"))
+geomx_obj = readRDS(paste0(input_dir,"geomx_qc_norm_batch_eff_rm.RDS"))
+
+cell_fractions_df = read.csv(paste0(input_dir,"bp_res_mid_lvl_ct_ct_fraction.csv"))
+
+output_dir = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/poststromaVsposttumor_run_02/"
+
+NACT_status_filtered_group = "post"
 
 ```
 
 ```{r}
 
 # Set contrasts
-contrasts_oi <- c("'pre_tumor-pre_stroma','pre_stroma-pre_tumor'")
+contrasts_oi <- c("'tumor-stroma','stroma-tumor'")
 
 # Create a contrast table
-contrast_tbl <- tibble(contrast = c("pre_tumor-pre_stroma","pre_stroma-pre_tumor"), 
-                       group = c("pre_tumor", "pre_stroma"))  
+contrast_tbl <- tibble(contrast = c("tumor-stroma","stroma-tumor"), 
+                       group = c("tumor", "stroma"))  
 ```
 
 
@@ -109,7 +124,7 @@ deconv_ct_list <- setNames(lapply(ct_names, function(ct_name) {
     
     cells_greater_than_cutoff <- cell_fractions_df[cell_fractions_df[, formatted_ct_names] >= cell_frac_cutoff,]$dcc_filename
     
-    deconv_ct <- deconv_ct[(colnames(deconv_ct) %in% cells_greater_than_cutoff), ]
+    deconv_ct <- deconv_ct[(rownames(deconv_ct) %in% cells_greater_than_cutoff), ]
     
   }
   
@@ -117,7 +132,7 @@ deconv_ct_list <- setNames(lapply(ct_names, function(ct_name) {
   return(deconv_ct)
 }), ct_names)  
 
-deconv_ct_list = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/deconv_ct_list.RDS")
+
 ```
 
 
@@ -136,7 +151,8 @@ deconv_ct_list_combined <- do.call(rbind, deconv_ct_list_int)
 
 deconv_ct_list_combined = t(deconv_ct_list_combined)
 
-deconv_ct_list_combined = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/deconv_ct_list_combined.RDS")
+
+saveRDS(deconv_ct_list_combined, file = paste0(output_dir,"deconv_ct_list_combined.RDS"))
 
 ```
 
@@ -158,13 +174,13 @@ deconv_metadt_list <- lapply(names(deconv_ct_list_int), function(ct_name){
 
 metadt_all <- do.call(rbind, deconv_metadt_list)
 
-metadt_all = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/metadt_all.RDS")
+#metadt_all = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/metadt_all.RDS")
 
 meta = data.frame(samples = metadt_all$Sample, NACT_status = metadt_all$NACT_status, Patient = metadt_all$Patient, Segment = metadt_all$Segment , Annotation = metadt_all$Annotation_cell, row.names = rownames(metadt_all))
 
-meta = data.frame(meta , NACT_Segment = paste0(meta$NACT_status,'_',meta$Segment))
+meta = data.frame(meta , new_sample_ID = paste0(meta$samples,'_',meta$Segment))
 
-#meta = meta %>% filter(NACT_status == "post") 
+meta = meta %>% filter(NACT_status == NACT_status_filtered_group) 
 
 cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
 
@@ -189,6 +205,7 @@ deconv_ct_list_combined = deconv_ct_list_combined[,deconv_ct_list_combined_filte
 
 # meta = readRDS("C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/stromaVstumor/meta.RDS")
 
+saveRDS(metadt_all, file = paste0(output_dir,"metadt_all.RDS"))
 
 ```
 
@@ -410,19 +427,15 @@ sender_receiver_de = multinichenetr::combine_sender_receiver_de(
 # plot to check the p value distribution
 DE_info$hist_pvals
 
-saveRDS(sender_receiver_de, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/sender_receiver_de.RDS" )
+
+saveRDS(sender_receiver_de, file = paste0(output_dir,"sender_receiver_de.RDS"))
+
+
 ```
 
 ```{r Ligand activity prediction}
 
-logFC_threshold = 0.5
-p_val_threshold = 0.05
-p_val_adj = TRUE 
 
-
-top_n_target = 250
-verbose = TRUE
-cores_system = 2
 
 ###### Step 05. Ligand activity prediction #####
 
@@ -456,13 +469,10 @@ ligand_activities_targets_DEgenes = suppressMessages(suppressWarnings(
 ))
 
 ligand_activities_targets_DEgenes$ligand_activities %>% head(5)
+
+
+saveRDS(ligand_activities_targets_DEgenes, file = paste0(output_dir,"ligand_activities_targets_DEgenes.RDS"))
 ```
-
-```{r saveRDS}
-
-saveRDS(ligand_activities_targets_DEgenes, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/ligand_activities_targets_DEgenes.RDS" )
-```
-
 
 
 
@@ -501,14 +511,11 @@ prioritization_tables = suppressMessages(multinichenetr::generate_prioritization
 # This table gives the final prioritization score of each interaction, and the values of the individual prioritization criteria.
 
 prioritization_tables$group_prioritization_tbl %>% head(5)
+
+saveRDS(prioritization_tables, file = paste0(output_dir,"prioritization_tables.RDS"))
+
 ```
 
-
-```{r save table}
-# SAVE THE "prioritization_tables" TABLE AS A R OBJECT
-
-saveRDS(prioritization_tables, file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/prioritization_tables_all_cell_types.RDS")
-```
 
 
 ###################### Visualization ################
@@ -537,16 +544,15 @@ colors_receiver <- RColorBrewer::brewer.pal(n = length(senders_receivers), name 
 circos_list <- make_circos_group_comparison(prioritized_tbl_oi, colors_sender, colors_receiver)
 
 
-
-pdf(file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/circos_plot_stroma.pdf", width = 10, height = 10)
+pdf(file = paste0(output_dir,"circos_plot_stroma.pdf"), width = 10, height = 10)
 circos_list$stroma
 dev.off()
 
-pdf(file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/circos_plot_tumor.pdf", width = 10, height = 10)
+pdf(file = paste0(output_dir,"circos_plot_tumor.pdf"), width = 10, height = 10)
 circos_list$tumor
 dev.off()
 
-pdf(file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/circos_plot_legend.pdf", width = 10, height = 10)
+pdf(file = paste0(output_dir,"circos_plot_legend.pdf"), width = 10, height = 10)
 circos_list$legend
 dev.off()
 ```
@@ -556,44 +562,20 @@ dev.off()
 ########### Generating bubble plots
 
 ```{r bubble plots , width = 10, height = 10}
-group_oi = "post_tumor"
+group_oi = "tumor"
 
 prioritized_tbl_oi_M_50 = prioritized_tbl_oi_all %>% 
   filter(group == group_oi)
 
-plot_oi = make_sample_lr_prod_activity_plots_Omnipath(
+plot1 = make_sample_lr_prod_activity_plots_Omnipath(
   prioritization_tables, 
   prioritized_tbl_oi_M_50 %>% inner_join(lr_network_all)
   )
 
 
-pdf(file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/bubble_plot_tumor.pdf", width = 17, height = 10)
-plot_oi
+pdf(file = paste0(output_dir,"bubble_plot_",group_oi,".pdf"), width = 17, height = 10)
+plot1
 dev.off()
-
-
-
-group_oi = "post_stroma"
-
-prioritized_tbl_oi_M_50 = prioritized_tbl_oi_all %>% 
-  filter(group == group_oi)
-
-plot_oi = make_sample_lr_prod_activity_plots_Omnipath(
-  prioritization_tables, 
-  prioritized_tbl_oi_M_50 %>% inner_join(lr_network_all)
-  )
-
-
-
-pdf(file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/bubble_plot_stroma.pdf", width = 17, height = 10)
-plot_oi
-dev.off()
-```
-
-
-```{r}
-group_oi = "post_stroma"
-
 
 prioritized_tbl_oi_M_50 = get_top_n_lr_pairs(
   prioritization_tables, 
@@ -602,12 +584,12 @@ prioritized_tbl_oi_M_50 = get_top_n_lr_pairs(
   receivers_oi = "Tcells",
   senders_oi = "Macrophages")
 
-plot_oi = make_sample_lr_prod_activity_plots_Omnipath(
+plot2 = make_sample_lr_prod_activity_plots_Omnipath(
   prioritization_tables, 
   prioritized_tbl_oi_M_50 %>% inner_join(lr_network_all))
 
-pdf(file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/bubble_plot_stroma_receiver_Tcells.pdf", width = 17, height = 10)
-plot_oi
+pdf(file = paste0(output_dir,"bubble_plot_Macrophages_to_Tcells",group_oi,".pdf"), width = 17, height = 10)
+plot2
 dev.off()
 
 
@@ -620,11 +602,65 @@ prioritized_tbl_oi_M_50 = get_top_n_lr_pairs(
   receivers_oi = "Macrophages",
   senders_oi = "Tcells")
 
-plot_oi = make_sample_lr_prod_activity_plots_Omnipath(
+plot3 = make_sample_lr_prod_activity_plots_Omnipath(
   prioritization_tables, 
   prioritized_tbl_oi_M_50 %>% inner_join(lr_network_all))
-pdf(file = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/MultiNichnetR/without_sample_as_covariate/post_stromaVspost_tumor/bubble_plot_stroma_sender_Tcells.pdf", width = 17, height = 10)
-plot_oi
+pdf(file = paste0(output_dir,"bubble_plot_Tcells_to_Macrophages",group_oi,".pdf"), width = 17, height = 10)
+plot3
+dev.off()
+
+
+```
+
+
+```{r}
+group_oi = "stroma"
+
+prioritized_tbl_oi_M_50 = prioritized_tbl_oi_all %>% 
+  filter(group == group_oi)
+
+plot4 = make_sample_lr_prod_activity_plots_Omnipath(
+  prioritization_tables, 
+  prioritized_tbl_oi_M_50 %>% inner_join(lr_network_all)
+  )
+
+
+
+pdf(file = paste0(output_dir,"bubble_plot_",group_oi,".pdf"), width = 17, height = 10)
+plot4
+dev.off()
+
+
+prioritized_tbl_oi_M_50 = get_top_n_lr_pairs(
+  prioritization_tables, 
+  50, 
+  groups_oi = group_oi, 
+  receivers_oi = "Tcells",
+  senders_oi = "Macrophages")
+
+plot5 = make_sample_lr_prod_activity_plots_Omnipath(
+  prioritization_tables, 
+  prioritized_tbl_oi_M_50 %>% inner_join(lr_network_all))
+
+pdf(file = paste0(output_dir,"bubble_plot_Macrophages_to_Tcells",group_oi,".pdf"), width = 17, height = 10)
+plot5
+dev.off()
+
+
+
+
+prioritized_tbl_oi_M_50 = get_top_n_lr_pairs(
+  prioritization_tables, 
+  50, 
+  groups_oi = group_oi, 
+  receivers_oi = "Macrophages",
+  senders_oi = "Tcells")
+
+plot6 = make_sample_lr_prod_activity_plots_Omnipath(
+  prioritization_tables, 
+  prioritized_tbl_oi_M_50 %>% inner_join(lr_network_all))
+pdf(file = paste0(output_dir,"bubble_plot_Tcells_to_Macrophages",group_oi,".pdf"), width = 17, height = 10)
+plot6
 dev.off()
 
 ```
