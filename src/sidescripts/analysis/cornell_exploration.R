@@ -135,6 +135,8 @@ genes_expr_deconv_long <- melt(genes_expr_deconv, id.vars = colnames(genes_expr_
                         variable.name = "gene_name", 
                         value.name = "gene_expr")
 
+
+
 # boxplots with expr across discrete vars ---------------------------------
 
 dt_type <- 'full_signal' # 'deconvolution', 'full_signal'
@@ -331,10 +333,153 @@ for(dt_type in c('full_signal', 'deconvolution')){
       
       #######################################
       #######################################
-      
     }
   }
 }
+
+
+
+# scatters with ssgsea signatures -----------------------------------------
+
+clin <- fread('~/Documents/phd/st/data/geomx/clinical data/9_eyemt_patient_clinical_data_SENSITIVE.csv')
+
+ssgsea_all <- fread(file.path(main_out_dir, 'ssgsea', "ssgsea_norm_harmony_batch_corr_all_custom_cxcr6_cxcl16_signatures.csv.csv"))
+ssgsea_macro <- fread(file.path(main_out_dir, 'ssgsea', "ssgsea_norm_harmony_batch_corr_deconv_Macrophages_custom_cxcr6_cxcl16_signatures.csv.csv"))
+ssgsea_tcells <- fread(file.path(main_out_dir, 'ssgsea', "ssgsea_norm_harmony_batch_corr_deconv_Tcells_custom_cxcr6_cxcl16_signatures.csv.csv"))
+ssgsea_dcs <- fread(file.path(main_out_dir, 'ssgsea', "ssgsea_norm_harmony_batch_corr_deconv_DCs_custom_cxcr6_cxcl16_signatures.csv.csv"))
+
+ssgsea_deconv <- rbind(ssgsea_dcs, ssgsea_macro, ssgsea_tcells)
+ssgsea_deconv$pathway <- paste0(ssgsea_deconv$pathway, '_', ssgsea_deconv$expr_signal)
+##################
+
+dt_type <- 'full_signal' # 'deconvolution', 'full_signal'
+seg_type <- 'all_segments'  # 'all_segments' # 'stroma' 'tumor'
+anno <- 'double_pos' # 'all', 'double_pos'
+
+for(dt_type in c('full_signal', 'deconvolution')){ 
+  for(seg_type in c('all_segments', 'stroma', 'tumor')){
+    for(anno in c('all_anno', 'doublepos')){
+      
+      print(seg_type)
+      print(anno)
+      
+      ###############################
+      ##############################3
+      out_dir <- file.path(main_out_dir, paste(dt_type, seg_type, anno, sep = '_'))
+      dir.create(out_dir)
+      
+      if(dt_type == 'full_signal'){
+        gsea_res <- ssgsea_all
+        xnames <- c('CXCR6_signature_0','CXCR6_signature_05')
+        ynames <- c('CXCL16_signature_0', 'CXCL16_signature_05')
+      } else if(dt_type == 'deconvolution'){
+        gsea_res <- ssgsea_deconv
+        xnames <- c('CXCR6_signature_0_deconv_Tcells', 'CXCR6_signature_05_deconv_Tcells')
+        ynames <- c('CXCL16_signature_0_deconv_DCs', 'CXCL16_signature_05_deconv_DCs',
+                    'CXCL16_signature_0_deconv_Macrophages', 'CXCL16_signature_05_deconv_Macrophages')
+      }
+      
+      if(seg_type == 'stroma'){
+        gsea_res <- gsea_res[gsea_res$Segment == 'stroma', ]
+      } else if(seg_type == 'tumor'){
+        gsea_res <- gsea_res[gsea_res$Segment == 'tumor', ]
+      }
+      
+      if(anno == 'doublepos'){
+        gsea_res <- gsea_res[gsea_res$Annotation_cell == "posCD8_posIBA1", ]
+      }
+      
+      gsea_res_wide <- dcast(gsea_res, dcc_filename+Patient+NACT_status+Annotation_cell+Segment~pathway, value.var='ssgsea_score')
+      
+      gsea_res_wide <- left_join(gsea_res_wide, clin[, c('Patient', 'PFS_months', 'OS_months')])
+      
+      ##############
+      print(' ^^^^ and now scatters ^^^^')
+      for(xname in xnames){
+        for(yname in ynames){
+          # for(color_colname in bio_vars_disc){
+          # 
+          #   if(xname != yname){
+          #     print(xname)
+          #     print(yname)
+          #     
+          #     manual_colours <- brewer.pal(12, 'Paired')
+          #     
+          #     print(color_colname)
+          #     
+          #     dt_wide_sel <- gsea_res_wide[!is.na(gsea_res_wide[[xname]]) & !is.na(gsea_res_wide[[yname]]), ]
+          #     
+          #     M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide_sel)
+          #     
+          #     ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname))) +
+          #       geom_point(aes(color = as.factor(get(color_colname)), shape = Segment)) + 
+          #       ggtitle(paste(xname, 'vs', yname,  'ssgsea score'),
+          #               subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2), 
+          #                                'correlation coefficient: ', round(cor(dt_wide_sel[[yname]], dt_wide_sel[[xname]]), 2))) +
+          #       xlab(xname) +
+          #       ylab(yname) +
+          #       guides(color=guide_legend(title=color_colname)) +
+          #       scale_color_manual(values=manual_colours) +
+          #       geom_smooth(method='lm', formula= y~x) +
+          #       stat_poly_eq(use_label(c("R2", "p")))
+          #     #stat_correlation(method = 'pearson')
+          #     
+          #     ggsave(file.path(out_dir,'gsea', paste0('ssgsea_scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
+          #            width = 2000, height = 2000, unit = 'px')
+          #     
+          #     if(!color_colname %in% c('Patient', 'PFS_months', 'OS_months')){
+          #       ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname), color = as.factor(get(color_colname)))) +
+          #         geom_point(aes(shape = Segment)) + 
+          #         ggtitle(paste(xname, 'vs', yname,  'ssgsea score')) +
+          #         xlab(xname) +
+          #         ylab(yname) +
+          #         guides(color=guide_legend(title=color_colname)) +
+          #         scale_color_manual(values=manual_colours) +
+          #         geom_smooth(method='lm', formula= y~x)+
+          #         stat_poly_eq(use_label(c("R2", "p")))
+          #       
+          #       ggsave(file.path(out_dir, 'gsea', paste0('ssgsea_scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_per_group.png')),
+          #              width = 2000, height = 2000, unit = 'px')
+          #     }
+          #   }
+          #   
+          #   #stat_correlation(method = 'pearson')
+          #   #stat_poly_eq(use_label(c("R2")))
+          # }
+          for(color_colname in c('PFS_months', 'OS_months')){
+            
+            print(color_colname)
+            
+            dt_wide_sel <- gsea_res_wide[!is.na(gsea_res_wide[[xname]]) & !is.na(gsea_res_wide[[yname]]), ]
+            
+            M1 <- lm(get(yname) ~ get(xname) + Patient, data = dt_wide_sel)
+            
+            ggplot(data = dt_wide_sel, aes(x = get(xname), y = get(yname))) +
+              geom_point(aes(color = as.numeric(get(color_colname)), shape = Segment)) + 
+              ggtitle(paste(xname, 'vs', yname,  'ssgsea score'),
+                      subtitle = paste('lm(y ~ x | Patient) : R2' , round(summary(M1)$r.squared, 2), 
+                                       'correlation coefficient: ', round(cor(dt_wide_sel[[yname]], dt_wide_sel[[xname]]), 2))) +
+              xlab(xname) +
+              ylab(yname) +
+              guides(color=guide_legend(title=color_colname)) +
+              #scale_color_manual(values=manual_colours) +
+              geom_smooth(method='lm', formula= y~x) +
+              stat_poly_eq(use_label(c("R2", "p")))
+            #stat_correlation(method = 'pearson')
+            
+            ggsave(file.path(out_dir,'gsea', paste0('ssgsea_scatter_', xname, '_vs_', yname, '_by_', color_colname, '_', dt_type, '_lm_all.png')),
+                   width = 2000, height = 2000, unit = 'px')
+            
+            
+          }
+          
+          
+        }
+      }
+      ############
+    }
+  }
+  }
 
 
 
