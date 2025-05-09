@@ -143,29 +143,15 @@ lapply(names(expr_list), function(expr_name){
     geomx_obj_dge_group <- geomx_obj_dge[, ind]
     
     # TODO optimise this logic
-    
+    # for 'within' comparison remove samples which desn't contain enough nr of AOI per group
     cleaned_dt <- rm_too_small_groups(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin, comparison_type)
     geomx_obj_dge_group_cleaned <- cleaned_dt$geomx_obj
     runlogs <- c(runlogs, cleaned_dt$logs)
-    ###########################
-    # TODO likelihood ratio test - anova(full model, reduced model)
-    # check if main_var significantly improved the effect
-    # but it have to be done per gene - maybe worth to check afterwards for interesting genes
     
-    # genename <- 'ACAT1'
-    # dat <- data.frame(expr = geomx_obj_dge_group_cleaned@assayData[[expr_name]][genename, ], 
-    #                   pData(geomx_obj_dge_group_cleaned)[, c('main_var_factor', 'cofounder_factor')])
-    # 
-    # full_model <- lmerTest::lmer(formula(expr ~ main_var_factor + (1 + main_var_factor | cofounder_factor)), dat)
-    # reduced_model <- lmerTest::lmer(formula(expr ~ (1 + main_var_factor | cofounder_factor)), dat)
-    # anova_results <- anova(reduced_model, full_model)
-    #########################
-    
-
     # run LMM:
     # formula follows conventions defined by the lme4 package
     mixed_result <- tryCatch({
-      mixedOutmc <- mixedModelDE(
+      mixedOutmc <- mixedModelDE2(
         geomx_obj_dge_group_cleaned,
         elt = expr_name,
         modelFormula = model_formula, 
@@ -227,11 +213,14 @@ lapply(names(expr_list), function(expr_name){
       dge_results_group <- dge_results[dge_results$data_group == dt_group, ]
       
       for(cont in unique(dge_results_group$Contrast)){
-        dge_results_group_cont <- dge_results_group[dge_results_group$Contrast == cont, ]
-        groups <- strsplit(cont, split = ' - ', fixed = T)
         
-        plot_volcano_deg(dge_results_group_cont, dt_group, 20, groups[[1]][1], groups[[1]][2],
-                         file.path(output_dir, 'dge', dge_name, expr_name))
+        if(cont != ''){ # artifact from returning NA when lmm fails
+          dge_results_group_cont <- dge_results_group[dge_results_group$Contrast == cont, ]
+          groups <- strsplit(cont, split = ' - ', fixed = T)
+          
+          plot_volcano_deg(dge_results_group_cont, dt_group, 20, groups[[1]][1], groups[[1]][2],
+                           file.path(output_dir, 'dge', dge_name, expr_name))
+        }
       }
     }
   }

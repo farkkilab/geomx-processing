@@ -856,3 +856,150 @@ rm_too_small_groups <- function(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin
     return(list(geomx_obj = geomx_obj_dge_group, logs = c(msg1, as.character(samples_freq))))
   }
 }
+
+########################################333
+# mdified function from GeoMx package with trycatch to skip errors while lmm cannot be computed
+# TODO better to unwrap it all and rewrite nicer
+mixedModelDE2 <- function (object, elt = "exprs", modelFormula = NULL, groupVar = "group", 
+                           nCores = 1, multiCore = TRUE, pAdjust = "BY", pairwise = TRUE) 
+{
+  if (is.null(modelFormula)) {
+    modelFormula <- design(object)
+  }
+  mTerms <- all.vars(modelFormula)
+  if ("1" %in% mTerms) {
+    mTerms <- mTerms[which(!(mTerms %in% "1"))]
+  }
+  if (!groupVar %in% mTerms) {
+    stop("Error: groupVar needs to be defined as fixed effect in the model.\n")
+  }
+  if (any(!mTerms %in% names(sData(object)))) {
+    stop("Error: Not all terms in the model formula are in pheno or protocol data.\n")
+  }
+  pDat <- sData(object)[, mTerms]
+  for (i in names(pDat)) {
+    if (inherits(i, "character")) {
+      pDat[, i] <- as.factor(pDat[, i])
+    }
+  }
+  if (nCores > 1) {
+    deFunc <- function(i, groupVar, pDat, modelFormula, 
+                       exprs, pairwise = TRUE) {
+      dat <- data.frame(expr = exprs$exprs[i, ], pDat)
+      
+      lmout_list <- tryCatch({
+        lmOut <- lmerTest::lmer(modelFormula, dat)
+        
+        lsm <- lmerTest::ls_means(lmOut, which = groupVar,
+                                  pairwise = pairwise)
+        lmOut <- matrix(stats::anova(lmOut)[groupVar, "Pr(>F)"],
+                        ncol = 1, dimnames = list(groupVar, "Pr(>F)"))
+        lsmOut <- matrix(cbind(lsm[, "Estimate"], lsm[,
+                                                      "Pr(>|t|)"]), ncol = 2, dimnames = list(gsub(groupVar,
+                                                                                                   "", rownames(lsm)), c("Estimate", "Pr(>|t|)")))
+        
+        return(list(anova = lmOut, lsmeans = lsmOut))  # Return the result of mixedModelDE
+      }, error = function(e) {
+        # Return an empty dataframe if an error occurs eg to little AOIs
+        print(paste0('lmm model for gene ', i, 'cannot be computed'))
+        lmOut_NA <- matrix(NA, ncol = 1, dimnames = list(groupVar, "Pr(>F)"))
+        lsmOut_NA <- matrix(cbind(NA, NA), ncol = 2, dimnames = list("", c("Estimate", "Pr(>|t|)")))
+        
+        return(list(anova = lmOut_NA, lsmeans = lsmOut_NA))
+      })
+      
+      #########################
+      # lmOut <- suppressWarnings(lmerTest::lmer(modelFormula, 
+      #                                          dat))
+      # if (pairwise == FALSE) {
+      #   lsm <- lmerTest::ls_means(lmOut, which = groupVar, 
+      #                             pairwise = FALSE)
+      # }
+      # else {
+      #   lsm <- lmerTest::ls_means(lmOut, which = groupVar, 
+      #                             pairwise = TRUE)
+      # }
+      # lmOut <- matrix(stats::anova(lmOut)[groupVar, "Pr(>F)"], 
+      #                 ncol = 1, dimnames = list(groupVar, "Pr(>F)"))
+      # lsmOut <- matrix(cbind(lsm[, "Estimate"], lsm[, 
+      #                                               "Pr(>|t|)"]), ncol = 2, dimnames = list(gsub(groupVar, 
+      #                                                                                            "", rownames(lsm)), c("Estimate", "Pr(>|t|)")))
+      # return(list(anova = lmOut, lsmeans = lsmOut))
+      #####################3
+    }
+    exprs <- new.env()
+    exprs$exprs <- assayDataElement(object, elt = elt)
+    if (multiCore & Sys.info()["sysname"] != "Windows") {
+      mixedOut <- parallel::mclapply(featureNames(object), 
+                                     deFunc, groupVar, pDat, formula(paste("expr", 
+                                                                           as.character(modelFormula)[2], sep = " ~ ")), 
+                                     exprs, mc.cores = nCores)
+    }
+    else {
+      cl <- parallel::makeCluster(getOption("cl.cores", 
+                                            nCores))
+      mixedOut <- parallel::parLapply(cl, featureNames(object), 
+                                      deFunc, groupVar, pDat, formula(paste("expr", 
+                                                                            as.character(modelFormula)[2], sep = " ~ ")), 
+                                      exprs, pairwise)
+      suppressWarnings(parallel::stopCluster(cl))
+    }
+    mixedOut <- rbind(array(lapply(mixedOut, function(x) x[["anova"]])), 
+                      array(lapply(mixedOut, function(x) x[["lsmeans"]])))
+    colnames(mixedOut) <- featureNames(object)
+    rownames(mixedOut) <- c("anova", "lsmeans")
+  }
+  else {
+    deFunc <- function(expr, groupVar, pDat, modelFormula, 
+                       pairwise = TRUE) {
+      dat <- data.frame(expr = expr, pDat)
+      
+      lmout_list <- tryCatch({
+        lmOut <- lmerTest::lmer(modelFormula, dat)
+        
+        lsm <- lmerTest::ls_means(lmOut, which = groupVar,
+                                  pairwise = pairwise)
+        lmOut <- matrix(stats::anova(lmOut)[groupVar, "Pr(>F)"],
+                        ncol = 1, dimnames = list(groupVar, "Pr(>F)"))
+        lsmOut <- matrix(cbind(lsm[, "Estimate"], lsm[,
+                                                      "Pr(>|t|)"]), ncol = 2, dimnames = list(gsub(groupVar,
+                                                                                                   "", rownames(lsm)), c("Estimate", "Pr(>|t|)")))
+        
+        return(list(anova = lmOut, lsmeans = lsmOut))  # Return the result of mixedModelDE
+      }, error = function(e) {
+        # Return an empty dataframe if an error occurs eg to little AOIs
+        print(paste0('lmm model for gene ', i, 'cannot be computed'))
+        return(list(anova = NA, lsmeans = NA))
+      })
+      
+      #######################
+      # lmOut <- suppressMessages(lmerTest::lmer(modelFormula, 
+      #                                          dat))
+      # if (pairwise == FALSE) {
+      #   lsm <- lmerTest::ls_means(lmOut, which = groupVar, 
+      #                             pairwise = FALSE)
+      # }
+      # else {
+      #   lsm <- lmerTest::ls_means(lmOut, which = groupVar, 
+      #                             pairwise = TRUE)
+      # }
+      # lmOut <- matrix(stats::anova(lmOut)[groupVar, "Pr(>F)"], 
+      #                 ncol = 1, dimnames = list(groupVar, "Pr(>F)"))
+      # lsmOut <- matrix(cbind(lsm[, "Estimate"], lsm[, 
+      #                                               "Pr(>|t|)"]), ncol = 2, dimnames = list(gsub(groupVar, 
+      #                                                                                            "", rownames(lsm)), c("Estimate", "Pr(>|t|)")))
+      # return(list(anova = lmOut, lsmeans = lsmOut))
+      
+      ############################
+    }
+    mixedOut <- assayDataApply(object, 1, deFunc, groupVar, 
+                               pDat, formula(paste("expr", as.character(modelFormula)[2], 
+                                                   sep = " ~ ")), pairwise, elt = elt)
+  }
+  if (!is.null(pAdjust)) {
+    mixedOut["anova", ] <- p.adjust(mixedOut["anova", ], 
+                                    method = pAdjust)
+  }
+  return(mixedOut)
+}
+

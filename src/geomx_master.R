@@ -55,7 +55,7 @@ library(progeny, quietly =T)
 
 # TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
 # TODO simplify logs by putting all console info from source() to logs
-batch <<- 'batch12' # just for running qc for batch1 with kept high NTC samples
+batch <<- 'batch1' # just for running qc for batch1 with kept high NTC samples
 
 
 # define variables and paths ----------------------------------------------
@@ -64,12 +64,12 @@ proj_dir <<- '~/Documents/phd/st'
 
 
 #data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
-#data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
-data_dir <<- '~/Documents/phd/st/data/geomx/batch12/' # batch1 and 2
+data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
+#data_dir <<- '~/Documents/phd/st/data/geomx/batch12/' # batch1 and 2
 
 #output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
-#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
+output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
+#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
 
 # input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
@@ -80,8 +80,8 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 # 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
 # and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
 #anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
-#anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
-anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch12.xlsx') #batch1 and 2
+anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
+#anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch12.xlsx') #batch1 and 2
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name in metadata
@@ -89,7 +89,7 @@ scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_d
 
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-                              'ct_markers.csv')
+                              'cxcr6_cxcl16_signatures.csv')
 
 
 # set up metadata variables names -----------------------------------------
@@ -177,12 +177,13 @@ run_unless_exists('Deconvolution', deconv_logs_path,
 
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
+pathway_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
-ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells", 
-                     "Macrophages", "DCs", "Endothelial cells")
+# ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells", 
+#                      "Macrophages", "DCs", "Endothelial cells")
+ct_of_interest <<- c("Macrophages")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
@@ -213,23 +214,21 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-dge_inp_data_type <<- c('all') # within c('all', 'bp')
+dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
 #ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells", "DCs")
-ct_of_interest <<- c("Macrophages", "Tcells", "DCs")
+ct_of_interest <<- c("Macrophages")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
 # DGE parameters
-comparison_type <<- 'within' 
+comparison_type <<- 'between' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-#main_var_name <<- 'Annotation_cell' # main variable to make comparison between
-main_var_name <<- "full_signal_tumor_CXCR6_CXCL16_label"
-#main_var_name <<- 'CXCR6_CXCL16dc_deconv_sum_label_stroma'
+main_var_name <<- 'NACT_status' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -248,7 +247,3 @@ dge_logs_path <<- file.path(output_dir, 'dge', dge_name, 'dge_logs.txt')
 
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
-
-
-geomx_norm_batch_eff_rm_path <<- '~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell/dge/geomx_labels_for_cornell.RDS'
-
