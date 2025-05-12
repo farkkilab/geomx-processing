@@ -15,8 +15,11 @@ batch_vars <- c(primary_batch_var, secondary_batch_var, other_vars_tech,
 # normalisation used for batch effect correction calculation
 norm_type <- 'deseq2_vst' # best to use vst data, eventually deseq2_norm
 
+
+calculate_pvca <- FALSE
 # PVCA threshold
 pct_threshold <- 0.6 
+
 
 # make dirs and set additional vars ---------------------------------------
 
@@ -59,9 +62,12 @@ if(!norm_is_log){
 
 # check initial batch effect with PVCA ------------------------------------
 
-pvcaObj_ini <- pvcaBatchAssess(exprset_deseq2_norm, batch_factors_names, pct_threshold) 
+if(calculate_pvca){
+  pvcaObj_ini <- pvcaBatchAssess(exprset_deseq2_norm, batch_factors_names, pct_threshold) 
+  
+  plot_pvca(pvcaObj_ini, 'before_correction_deseq2_norm', file.path(output_dir, 'batch_correction'))
+}
 
-plot_pvca(pvcaObj_ini, 'before_correction_deseq2_norm', file.path(output_dir, 'batch_correction'))
 
 # remove batch effect with limma ------------------------------------------
 
@@ -114,14 +120,16 @@ exprset_after_harmony <- ExpressionSet(assayData=harmony_res,
                                      featureData = featureData)
 
 
-pvcaObj_limma <- pvcaBatchAssess(exprset_after_limma, batch_factors_names, pct_threshold) 
-pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
-
-plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', primary_batch_var, secondary_batch_var,
-                                '_cov_', covname), file.path(output_dir, 'batch_correction'))
-
-plot_pvca(pvcaObj_harmony, paste0('after_correction_harmony_', primary_batch_var, secondary_batch_var), 
-          file.path(output_dir, 'batch_correction'))
+if(calculate_pvca){
+  pvcaObj_limma <- pvcaBatchAssess(exprset_after_limma, batch_factors_names, pct_threshold) 
+  pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
+  
+  plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', primary_batch_var, secondary_batch_var,
+                                  '_cov_', covname), file.path(output_dir, 'batch_correction'))
+  
+  plot_pvca(pvcaObj_harmony, paste0('after_correction_harmony_', primary_batch_var, secondary_batch_var), 
+            file.path(output_dir, 'batch_correction'))
+}
 
 # add limma and harmony res to umap object --------------------------------
 
