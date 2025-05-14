@@ -230,11 +230,17 @@ ct_of_interest <<- c("Macrophages", "Tcells")
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
+# path to custom metadata with additional groups used for DGE
+# must contain 'dcc_filename' column to merge with geomx_obj metadata
+# if more column names are identical to the existing ones, columns from the custom dt will be used
+# if not needed, set to NULL
+custom_metadt_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'b12_dcc_clinical_data.csv')
+
 # DGE parameters
-comparison_type <<- 'within' 
+comparison_type <<- 'between' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'Segment' # main variable to make comparison between
+main_var_name <<- 'HRP_status' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -242,7 +248,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c()
+dge_categories <<- c('Segment', 'NACT_status')
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

@@ -52,6 +52,16 @@ deconv_bp_path <- ifelse(grepl('harmony', norm_type),
 
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 
+# merge geomx metadata with custom metadata
+if(!is.null(custom_metadt_path)){
+  custom_metadt <- fread(custom_metadt_path)
+  if('dcc_filename' %in% colnames(custom_metadt)){
+    pData(geomx_obj) <- left_join(pData(geomx_obj), custom_metadt, by = 'dcc_filename', suffix = c("_orig", ""))
+  } else{
+    stop('custom_metadt have to contain "dcc_filename" column to be merged with metadata')
+  }
+}
+
 low_complex_rmv <- ifelse(file.exists(scrna_ref_cleaned_path), TRUE, FALSE)
 norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type))
 
