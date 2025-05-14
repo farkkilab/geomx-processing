@@ -16,6 +16,8 @@ batch_vars <- c(primary_batch_var, secondary_batch_var, other_vars_tech,
 norm_type <- 'deseq2_vst' # best to use vst data, eventually deseq2_norm
 
 
+# whether or not compute pvca - it takes awful amount of time 
+# and is needed only 1nce in a given batch
 calculate_pvca <- FALSE
 # PVCA threshold
 pct_threshold <- 0.6 

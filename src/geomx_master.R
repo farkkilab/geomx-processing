@@ -53,35 +53,42 @@ library(progeny, quietly =T)
 
 # TODO --------------------------------------------------------------------
 
-# TODO all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
+
 # TODO simplify logs by putting all console info from source() to logs
-batch <<- 'batch1' # just for running qc for batch1 with kept high NTC samples
+
+#all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
+batch <<- 'batch12' # just for running qc for batch1 with kept high NTC samples
 
 
 # define variables and paths ----------------------------------------------
 
 proj_dir <<- '~/Documents/phd/st'
 
+# anno file have to contain sheet named 'Sheet1' and following column names:
+# 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
+# and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
 
-#data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
-data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
-#data_dir <<- '~/Documents/phd/st/data/geomx/batch12/' # batch1 and 2
-
-#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
-#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
+if(batch == 'batch1'){
+  data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
+} else if(batch == 'batch2'){
+  data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
+} else if(batch == 'batch12'){
+  data_dir <<- '~/Documents/phd/st/data/geomx/batch12/' # batch1 and 2
+  # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1205-no-counts-shift2') # batch12
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch12.xlsx') #batch1 and 2
+} else{
+  stop('wrong batch nr')
+}
 
 # input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
                 full.names = TRUE, recursive = TRUE)
 pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
-
-# anno file have to contain sheet named 'Sheet1' and following column names:
-# 'Sample_ID', 'Slide_Name',  'Aoi', 'Roi' and 'Panel'
-# and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
-#anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
-anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
-#anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch12.xlsx') #batch1 and 2
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name in metadata
@@ -89,7 +96,7 @@ scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_d
 
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-                              'cxcr6_cxcl16_signatures.csv')
+                              'ct_markers.csv')
 
 
 # set up metadata variables names -----------------------------------------
@@ -177,13 +184,12 @@ run_unless_exists('Deconvolution', deconv_logs_path,
 
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-pathway_inp_data_type <<- c('bp') # within c('all', 'bp')
+pathway_inp_data_type <<- c('all','bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
-# ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells", 
-#                      "Macrophages", "DCs", "Endothelial cells")
-ct_of_interest <<- c("Macrophages")
+ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells",
+                     "Macrophages", "DCs", "Endothelial cells")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
@@ -214,21 +220,21 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
-dge_inp_data_type <<- c('bp') # within c('all', 'bp')
+dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
 #ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells", "DCs")
-ct_of_interest <<- c("Macrophages")
+ct_of_interest <<- c("Macrophages", "Tcells")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
 # DGE parameters
-comparison_type <<- 'between' 
+comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'NACT_status' # main variable to make comparison between
+main_var_name <<- 'Segment' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -236,7 +242,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('Segment')
+dge_categories <<- c()
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

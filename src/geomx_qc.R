@@ -97,9 +97,9 @@ plot_sankey(count_segments, imp_vars, main_roi_label,
 
 
 # set and plot basic qc parameters ----------------------------------------
-# Shift 0 counts to one -needed for  Q3 norm (but not 100% sure why)
-#TODO examinate
-geomx_obj <- shiftCountsOne(geomx_obj, useDALogic = TRUE)
+# Shift 0 counts to one - needed for  NegGeoMean
+#TODO examinate !! shifting all by 1 and only 0s gives different results
+geomx_obj <- shiftCountsOne(geomx_obj, useDALogic = FALSE)
 
 qc_params <-
   list(minSegmentReads = 1000, # Minimum number of reads (1000)
@@ -368,6 +368,18 @@ sum(fData(geomx_obj)[["pvalues"]] < 1e-3, na.rm = TRUE)
 # TODO may be done later according to 
 # https://bioconductor.org/packages/release/bioc/vignettes/GeoDiff/inst/doc/Workflow_WTA_kidney.html
 # aggreprobe needed, not sure how this will affect the previous aggregation
+
+
+
+# shifting back counts by 1 -----------------------------------------------
+# we want back the original distribution for normalisation and downstream analysis
+
+# hacking GeoMx class object 
+newassay <- new.env(parent=geomx_obj@assayData)
+newassay$exprs <- geomx_obj@assayData$exprs
+newassay$exprs <- newassay$exprs - 1
+
+geomx_obj@assayData <- newassay
 
 
 # save geomx object after QC ----------------------------------------------
