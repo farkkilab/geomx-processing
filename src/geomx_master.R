@@ -215,8 +215,6 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # TODO add limma voom - not so important
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
 
-# TODO implement adding custom metadata table which will be merged with metadt to make comparisons
-
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
@@ -234,13 +232,14 @@ ct_of_interest <<- c("Macrophages", "Tcells")
 # must contain 'dcc_filename' column to merge with geomx_obj metadata
 # if more column names are identical to the existing ones, columns from the custom dt will be used
 # if not needed, set to NULL
-custom_metadt_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'b12_dcc_clinical_data.csv')
+#custom_metadt_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'b12_dcc_clinical_data.csv')
+custom_metadt_path <<- NULL
 
 # DGE parameters
-comparison_type <<- 'between' 
+comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'HRP_status' # main variable to make comparison between
+main_var_name <<- 'Segment' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -248,7 +247,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('Segment', 'NACT_status')
+dge_categories <<- c()
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 
@@ -259,3 +258,18 @@ dge_logs_path <<- file.path(output_dir, 'dge', dge_name, 'dge_logs.txt')
 
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
+
+
+################
+# GSEA on DGE
+
+signature_type <<- 'msigdb' # c('msigdb', 'custom')
+# msigdb - on all pathways from msigdb (Hallmark + CP)
+# custom - on custom signatures list specified in custom_sign_path
+
+signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(custom_sign_path)), '')
+
+# run DGE enrichment
+# TODO make a proper pipeline step
+source(file.path(proj_dir, 'geomx-processing', 'src','sidescripts', 'geomx_dge_enrichment.R'), local = TRUE)
+

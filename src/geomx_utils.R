@@ -670,9 +670,9 @@ prepare_msigdb_sign_list <- function(adjust_synonym = T, geomx_obj = NULL, hal =
   # prepare msigdb signatures list
   msigdb_df <- msigdbr(species = "Homo sapiens")
   if(hal){
-    msigdb_df <- filter(msigdb_df, gs_cat == 'H' | gs_subcat %in% db_subcat_list)
+    msigdb_df <- filter(msigdb_df, gs_collection == 'H' | gs_subcollection %in% db_subcat_list)
   } else{
-    msigdb_df <- filter(msigdb_df, gs_subcat %in% db_subcat_list)
+    msigdb_df <- filter(msigdb_df, gs_subcollection %in% db_subcat_list)
   }
   
   if(adjust_synonym){
