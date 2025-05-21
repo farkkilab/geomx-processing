@@ -28,6 +28,7 @@ library(SpatialDecon, quietly =T)
 # BiocManager::install("preprocessCore", configure.args = c(preprocessCore = "--disable-threading"), 
 # force= TRUE, update=TRUE, type = "source")
 library(preprocessCore, quietly =T)
+library(PCAtools) # NEW
 library(umap, quietly =T)
 library(Rtsne, quietly =T)
 

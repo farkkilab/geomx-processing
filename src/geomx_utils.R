@@ -318,11 +318,9 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, is_log = F
 #   assay_is_log: (logical) If the expr data is already in log scale.
 # Return value:
 #   (S4 object) The geomx object  with UMAP and t-SNE results added to metadata
-make_umap_tsne <- function(geomx, assay_name, assay_is_log = F){
-  
-  # set the seed for UMAP
-  custom_umap <- umap::umap.defaults
-  custom_umap$random_state <- 42
+
+# TODO make any mtx and any metadata as an input and add to geomx sData in the main code
+make_umap_tsne <- function(geomx, assay_name, assay_is_log = F, top_var = NULL, PCA = F, top_PCA = NULL){
   
   # log2 have to be used if the data are not in the log scale
   if(assay_is_log){
@@ -330,6 +328,25 @@ make_umap_tsne <- function(geomx, assay_name, assay_is_log = F){
   } else{
     inp_expr <- log2(assayDataElement(geomx , elt = assay_name))
   }
+  
+  # get top N variable genes
+  if(!is.null(top_var)){
+    per_gene_variance <- apply(inp_expr, 1, stats::var)
+    top_var_genes <- names(sort(per_gene_variance, decreasing = T)[1:top_var])
+    
+    inp_expr <- inp_expr[rownames(inp_expr) %in% top_var_genes, ]
+  }
+  
+  # do PCA
+  if(PCA){
+    inp_expr <- pca(inp_expr)
+    inp_expr <- t(inp_expr$rotated)
+    inp_expr <- inp_expr[1:50, ]
+  }
+
+  # set the seed for UMAP
+  custom_umap <- umap::umap.defaults
+  custom_umap$random_state <- 42
   
   # make umap
   umap_out <- umap(t(inp_expr), config = custom_umap)
