@@ -12,6 +12,9 @@ library(tibble)
 library(ComplexHeatmap)
 library(circlize)
 library(tidyverse)
+library(PCAtools)
+library(umap)
+library(Rtsne)
 
 # PROBLEM: BP predicts a lot more tumor in stromal AOIs, 
 # while sd predicts a lot more Tcells 
@@ -19,19 +22,26 @@ library(tidyverse)
 
 # careful for genes with variance 0 removed from deconvolution
 
-# TODO pfs and os with quartiles for every batch in clinical table
+# TODO gsea on canonical_markers (for scRNAseq cell typing) for deconv assesment
 
-# TODO histogram x=proportion of genes non-o y = sample count for raw + norm + batch corrected data + deconv 
+batch <- 'batch12'
 
 # SD and SD_BG are identical
 ###########################
 
 proj_dir <<- '~/Documents/phd/st'
 
-#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
-#output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1205-no-counts-shift2') # batch12
+if(batch == 'batch1'){
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
+} else if(batch == 'batch2'){
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
+} else if(batch == 'batch12'){
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1205-no-counts-shift2') # batch12
+} else{
+  stop('wrong batch nr')
+}
+
+clinical_dt_path <- file.path(proj_dir, 'geomx-processing/data/b12_dcc_clinical_data.csv')
 
 #clinical_dt <<- file.path(proj_dir, 'data/geomx/9_eyemt_patient_clinical_data.csv')
 
@@ -67,6 +77,15 @@ sample_name <<- 'Sample'
 
 other_vars_bio <<- c("Segment_geomx", "Patient", "Site") # 'PFS_months', 'PFS'
 other_vars_tech <<- c('Slide_Name', "batch_nr_sample_collection")
+
+primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
+if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
+
+important_metadt <- c(primary_batch_var, secondary_batch_var,  
+                aoi_segment_var, main_roi_label, sample_name, main_experimental_condition, 
+                other_vars_bio)
+
+important_clindt <- c('HRP_status', 'PFS_quartile_b12', 'OS_quartile_b12')
 
 # load util functions and create dirs -------------------------------------
 
@@ -151,78 +170,6 @@ ggplot(data = fdt) +
   ggtitle('gene detection rate')
 
 ggsave(file.path(output_dir, 'sanity_check', paste0('gene_detection_rate_all.png')))
-
-
-######################
-######################
-# for deconvolution
-# this doesn't make too much sense
-# bprism_res <- readRDS(deconv_raw_path)
-# 
-# gene_dt_ct_all <- lapply(ct_names, function(ct_name){
-#   print(ct_name)
-#   
-#   # mask unreliable bp results
-#   cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
-#   cell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[ct_name]] > 0.2]
-#   
-#   deconv_ct <- BayesPrism::get.exp(bp=bprism_res,
-#                                    state.or.type="type",
-#                                    cell.name=ct_name)
-#   
-#   deconv_ct_cleaned <- t(deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ])
-#   
-#   print(dim(deconv_ct_cleaned))
-#   
-#   # genes detected > 0
-#   gene_dt_0 <- as.data.frame(rowSums(replace(deconv_ct_cleaned, deconv_ct_cleaned != 0, 1)))
-#   colnames(gene_dt_0) <- 'freq'
-#   gene_dt_0$cov <- gene_dt_0$freq / ncol(deconv_ct_cleaned)
-#   colnames(gene_dt_0) <- paste0(ct_name, '_0_', colnames(gene_dt_0))
-#   
-#   ggplot(data = gene_dt_0) +
-#     geom_histogram(aes(x = get(paste0(ct_name, '_0_cov'))), bins = 100) +
-#     xlim(0, 1.1) +
-#     ylim(0, 1500) +
-#     xlab('gene detection rate') +
-#     ggtitle(paste0('gene detection rate (above 0) for ', ct_name))
-#   
-#   ggsave(file.path(output_dir, 'sanity_check', paste0('gene_detection_rate_deconv_', ct_name, '_above0.png')))
-#   
-#   # genes detected > LOQ
-#   deconv_ct_aboveloq <- lapply(colnames(deconv_ct_cleaned), function(dcc){
-#     loq <- loqdt[dcc, ]
-#     dcc_above_loq <- replace(deconv_ct_cleaned[, dcc], deconv_ct_cleaned[, dcc] < loq, 0)
-#     
-#     return(dcc_above_loq)
-#   })
-#   
-#   deconv_ct_aboveloq <- do.call(cbind, deconv_ct_aboveloq)
-#   colnames(deconv_ct_aboveloq) <- colnames(deconv_ct_cleaned)
-#   
-#   gene_dt_aboveloq <- as.data.frame(rowSums(replace(deconv_ct_aboveloq, deconv_ct_aboveloq != 0, 1)))
-#   colnames(gene_dt_aboveloq) <- 'freq'
-#   gene_dt_aboveloq$cov <- gene_dt_aboveloq$freq / ncol(deconv_ct_aboveloq)
-#   colnames(gene_dt_aboveloq) <- paste0(ct_name, '_loq_', colnames(gene_dt_aboveloq))
-#   
-#   ggplot(data = gene_dt_aboveloq) +
-#     geom_histogram(aes(x = get(paste0(ct_name, '_loq_cov'))), bins = 100) +
-#     xlim(0, 1.1) +
-#     ylim(0, 1500) +
-#     xlab('gene detection rate') +
-#     ggtitle(paste0('gene detection rate (above LOQ for AOI) for ', ct_name))
-#   
-#   ggsave(file.path(output_dir, 'sanity_check', paste0('gene_detection_rate_deconv_', ct_name, '_aboveLOQ.png')))
-#   
-#   stopifnot(identical(rownames(gene_dt_0), rownames(gene_dt_aboveloq)))
-#   
-#   gene_dt_ct <- cbind(gene_dt_0, gene_dt_aboveloq)
-#   
-#   return(gene_dt_ct)
-# })
-# 
-# gene_dt_ct_all <- do.call(cbind, gene_dt_ct_all)
-# fwrite(gene_dt_ct_all, file.path(output_dir, 'sanity_check', 'gene_coverage_deconvolution.csv'))
 
 
 # stromal/tumor markers ---------------------------------------------------
@@ -467,7 +414,94 @@ sapply(c('bp', 'sd'), function(deconv_type){
   })
 })
 
-######################333
+
+################################################
+# do UMAP on deconvoluted data
+# TODO move to deconv script
+top_var <- NULL # it doesn't matter if we take top PCA the differnc eis non=visible
+top_pca <- 50
+
+deconv_harmony <- readRDS(deconv_harmony_path)
+metadt <- sData(readRDS(geomx_norm_batch_eff_rm_path))[, c('dcc_filename', important_metadt)]
+clindt <- data.frame(fread(clinical_dt_path))
+metadt <- left_join(metadt, clindt[, c('dcc_filename', important_clindt)])
+
+# iterate through all cell types
+sapply(ct_names, function(ct_name){
+  
+  print(ct_name)
+  # get deconv df and filter metadata
+  deconv_ct <- deconv_harmony[[ct_name]]
+  metadt_ct <- metadt[metadt$dcc_filename %in% colnames(deconv_ct),]
+  
+  # iterate through all + different segments
+  seg_types <- c('all', unique(metadt[, aoi_segment_var]))
+  
+  sapply(seg_types, function(seg){
+    
+    print(seg)
+    dir.create(file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg)), showWarnings = T, recursive = T)
+    
+    if(seg != 'all'){
+      deconv_seg <- deconv_ct[, metadt_ct$dcc_filename[metadt_ct[[aoi_segment_var]] == seg]]
+      metadt_seg <- metadt_ct[metadt_ct$dcc_filename %in% colnames(deconv_seg),]
+    } else{
+      deconv_seg <- deconv_ct
+      metadt_seg <- metadt_ct
+    }
+    
+    print(dim(deconv_seg))
+    
+    # run UMAP and tSNE 
+    ###########################
+    # get top N variable genes
+    if(!is.null(top_var)){
+      per_gene_variance <- apply(deconv_seg, 1, stats::var)
+      top_var_genes <- names(sort(per_gene_variance, decreasing = T)[1:top_var])
+      
+      deconv_seg <- deconv_seg[rownames(deconv_seg) %in% top_var_genes, ]
+    }
+    
+    # do PCA
+    if(!is.null(top_pca)){
+      deconv_seg <- pca(deconv_seg)
+      deconv_seg <- t(deconv_seg$rotated)
+      deconv_seg <- deconv_seg[1:top_pca, ]
+    }
+    
+    print(dim(deconv_seg))
+    
+    # make umap
+    custom_umap <- umap::umap.defaults
+    custom_umap$random_state <- 42
+    umap_out <- umap(t(deconv_seg), config = custom_umap)
+    metadt_seg[, c("UMAP1_","UMAP2_")] <- umap_out$layout[, c(1,2)]
+    
+    # make tsne
+    set.seed(42) 
+    tsne_out <- Rtsne(t(deconv_ct), perplexity = ncol(deconv_ct)*.15)
+    metadt_seg[, c("tSNE1_","tSNE2_")] <- tsne_out$Y[, c(1,2)]
+    
+    for(method in c('UMAP', 'tSNE')){
+      for(color_var in c(important_metadt, important_clindt)){
+        print(color_var)
+
+        plot_umap_tsne(metadt_seg, method_type = method, 
+                       norm_type = "", color_var = color_var,
+                       output_name = file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg), 
+                                               paste0(ct_name, '_', method, 
+                                                      '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
+                                                      '_toppca_', ifelse(is.null(top_pca), 'NULL', as.character(top_pca)), 
+                                                      '_', color_var, '.png')),
+                       output_type = 'png')
+      }
+    }
+  })
+})
+
+
+################################################
+# this is not important
 # for sisana
 demo <- fread('/home/iganiemi/Documents/phd/st/gene-regulatory-networks/sisana/sisana/example_input/BRCA_TCGA_20_LumA_LumB_samps_5000_genes_exp.tsv')
 
@@ -483,3 +517,13 @@ colnames(meta_segment) <- NULL
 
 write_csv(meta_segment, '/home/iganiemi/Documents/phd/st/gene-regulatory-networks/sisana/sisana/geomx_input/geomx_meta_segment.csv', 
           col_names = F)
+
+
+meta <- pData(geomx_obj)
+meta <- meta[, c('dcc_filename', 'Sample')]
+
+clin <- fread('/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_patient_clinical_data.csv')
+clin <- clin[, c(1, 10:21)]
+
+meta <- left_join(meta, clin)
+fwrite(meta, '/home/iganiemi/Documents/phd/st/geomx-processing/data/b12_dcc_clinical_data.csv')
