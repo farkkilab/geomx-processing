@@ -46,7 +46,7 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # signatures and DEG results with less nr of genes will be removed
 min_sign_gene_nr <- 5
 compute_hallmark <- T # should GSEA for msigdb hallmark be computed
-msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG','GO:BP')
+msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
@@ -70,6 +70,7 @@ if(signature_type == 'msigdb'){
 
 sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
 
+print(paste0(length(sign_list), ' signatures will be used'))
 
 # load dge files ----------------------------------------------------------
 
@@ -130,10 +131,6 @@ for(dge_df_path in dge_df_list){
                           maxSize = 500,
                           nproc = 18) # for parallelisation
         
-        # padj is stochastic - different runs on the same data give slightly different results
-        gsea_res <- arrange(gsea_res, padj) %>%
-          filter(padj <= gsea_padj_thr) 
-        
         # assign independent pathways, removing redundancies/similar pathways
         collapsedPathways <- collapsePathways(gsea_res, sign_list, dge_sub_rank)
         
@@ -157,7 +154,7 @@ for(dge_df_path in dge_df_list){
   gsea_res_all <- do.call(rbind, unlist(gsea_res_all, recursive=FALSE))
   
   if(!is.null(gsea_res_all)){
-    fwrite(gsea_res_all, file.path(dge_dir_path, paste0('gsea_dge_', signature_type,
+    fwrite(gsea_res_all, file.path(dge_dir_path, 'gsea_enrichment', paste0('gsea_dge_', signature_type,
                                                         '_', signature_name, '_', dge_inp_data,
                                                         '_fc', as.character(fc_thr),'.csv')))
     
@@ -172,79 +169,91 @@ for(dge_df_path in dge_df_list){
         gsea_subset <- gsea_res_all[gsea_res_all$data_group == dt_group & gsea_res_all$Contrast == cont, ]
         gsea_subset_name <- gsub(' ', '', paste0(dt_group, '_', cont))
         
-        if(signature_type == 'msigdb'){
-          gsea_subset <- gsea_subset[gsea_subset$is_main_pathway == 'yes', ]
-        }
+        # filter to padj
+        # padj is stochastic - different runs on the same data give slightly different results
+        gsea_subset <- arrange(gsea_subset, padj) %>%
+          filter(padj <= gsea_padj_thr) 
         
-        # get leading genes for each pathway
-        paths_genes_list <- lapply(gsea_subset$leadingEdge, function(x){
-          genelist <- unlist(strsplit(x, split='|', fixed=T))
-        })
-        
-        names(paths_genes_list) <- gsea_subset$pathway
-        
-        # calculate jaccard score between each pathway leading gene set
-        path_jaccard <- lapply(paths_genes_list, function(x){
-          p1 <- lapply(paths_genes_list, function(y){
-            jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
+        if(nrow(gsea_subset) > 0){
+          if(signature_type == 'msigdb'){
+            gsea_subset <- gsea_subset[gsea_subset$is_main_pathway == 'yes', ]
+          }
+          
+          # get leading genes for each pathway
+          paths_genes_list <- lapply(gsea_subset$leadingEdge, function(x){
+            genelist <- unlist(strsplit(x, split='|', fixed=T))
           })
-          return(unlist(p1))
-        })
-        
-        path_jaccard_mtx <- do.call('cbind', path_jaccard)
-        
-        # make clustered heatmap
-        nes_anno <- sapply(colnames(path_jaccard_mtx), function(path){
-          nes <- ifelse(sign(gsea_subset$NES[gsea_subset$pathway == path]) == 1, 'pos', 'neg')
-        })
-        
-        ha = HeatmapAnnotation(
-          NES = anno_simple(nes_anno, col = c("pos" = "green", "neg" = "blue")),
-          annotation_name_side = "left")
-        
-        png(filename=file.path(dge_dir_path, paste0('hmap_',gsea_subset_name, '_', signature_type,
-                                                    '_', signature_name, '_', dge_inp_data,
-                                                    '_fc', as.character(fc_thr), '.png')), 
-            width=8, height=6,units="in",res=1000)
-        
-        condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
-                                  rect_gp = gpar(col = "white", lwd = 2), column_title = gsea_subset_name,
-                                  cluster_columns = T, cluster_rows= T, col = brewer.pal(5, "YlOrRd"),
-                                  show_heatmap_legend = F, top_annotation = ha,
-                                  row_names_gp = gpar(fontsize = 6),
-                                  column_names_gp = gpar(fontsize = 6))
-        
-        draw(condition_heat)
-        dev.off()
-        
-        #heatmap(path_jaccard_mtx)
-        
-        # clustering with hclust
-        path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
-        #plot(path_hclust, hang = -1, cex = 0.4)
-        
-        for(cutnr in jaccard_hclust_cuts){
-          # cut the hclust tree at given point
-          path_hclust_cut <- cutree(path_hclust, h = cutnr)
           
-          # add subset name to cluster name
-          path_hclust_cut <- paste0(gsea_subset_name, '_', as.character(path_hclust_cut))
+          names(paths_genes_list) <- gsea_subset$pathway
           
-          # merge with gsea result
-          gsea_subset[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
+          # calculate jaccard score between each pathway leading gene set
+          path_jaccard <- lapply(paths_genes_list, function(x){
+            p1 <- lapply(paths_genes_list, function(y){
+              jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
+            })
+            return(unlist(p1))
+          })
           
+          path_jaccard_mtx <- do.call('cbind', path_jaccard)
+          
+          # make clustered heatmap
+          nes_anno <- sapply(colnames(path_jaccard_mtx), function(path){
+            nes <- ifelse(sign(gsea_subset$NES[gsea_subset$pathway == path]) == 1, 'pos', 'neg')
+          })
+          
+          ha = HeatmapAnnotation(
+            NES = anno_simple(nes_anno, col = c("pos" = "green", "neg" = "blue")),
+            annotation_name_side = "left")
+          
+          png(filename=file.path(dge_dir_path, 'gsea_enrichment', paste0('hmap_',gsea_subset_name, '_', signature_type,
+                                                                         '_', signature_name, '_', dge_inp_data,
+                                                                         '_fc', as.character(fc_thr), '.png')), 
+              width=8, height=6,units="in",res=1000)
+          
+          condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
+                                    rect_gp = gpar(col = "white", lwd = 2), column_title = gsea_subset_name,
+                                    cluster_columns = T, cluster_rows= T, col = brewer.pal(5, "YlOrRd"),
+                                    show_heatmap_legend = F, top_annotation = ha,
+                                    row_names_gp = gpar(fontsize = 6),
+                                    column_names_gp = gpar(fontsize = 6))
+          
+          draw(condition_heat)
+          dev.off()
+          
+          #heatmap(path_jaccard_mtx)
+          
+          # clustering with hclust
+          path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
+          #plot(path_hclust, hang = -1, cex = 0.4)
+          
+          for(cutnr in jaccard_hclust_cuts){
+            # cut the hclust tree at given point
+            path_hclust_cut <- cutree(path_hclust, h = cutnr)
+            
+            # add subset name to cluster name
+            path_hclust_cut <- paste0(gsea_subset_name, '_', as.character(path_hclust_cut))
+            
+            # merge with gsea result
+            gsea_subset[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
+            
+          }
+          
+          return(gsea_subset)
+        } else{
+          return()
         }
-        
-        return(gsea_subset)
-        
       })
     })
     
     gsea_res_clust_all <- do.call(rbind, unlist(gsea_res_clust_all, recursive=FALSE))
     
-    fwrite(gsea_res_clust_all, file.path(dge_dir_path, paste0('gsea_dge_clust_', signature_type,
+    
+    if(!is.null(gsea_res_clust_all)){
+    fwrite(gsea_res_clust_all, file.path(dge_dir_path, 'gsea_enrichment', paste0('gsea_dge_clust_', signature_type,
                                                               '_', signature_name, '_', dge_inp_data,
                                                               '_fc', as.character(fc_thr), '.csv')))
+    }
+    
   } else{
     print('no GSEA enrichment for this DEG list')
   }
