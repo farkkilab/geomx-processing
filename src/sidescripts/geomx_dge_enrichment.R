@@ -31,7 +31,7 @@ library(RColorBrewer)
 ################
 ################
 # select thr
-fc_thr <- 1
+fc_thr <- 0.5
 pval_thr <- 0.05 # for DEG genes
 gsea_padj_thr <- 0.01 # for GSEA results
 
@@ -158,15 +158,12 @@ for(dge_df_path in dge_df_list){
   
   if(!is.null(gsea_res_all)){
     fwrite(gsea_res_all, file.path(dge_dir_path, paste0('gsea_dge_', signature_type,
-                                                        '_', signature_name, '_', dge_inp_data, '.csv')))
+                                                        '_', signature_name, '_', dge_inp_data,
+                                                        '_fc', as.character(fc_thr),'.csv')))
     
     
     # cluster gsea signatures by jaccard idx ----------------------------------
     # clustering based on jaccard idx - nr of common elements in a set / union of sets
-    
-    # TODO loop through data group and contrasts
-    dt_group <- unique(gsea_res_all$data_group)[1]
-    cont <- unique(gsea_res_all$Contrast)[1]
     
     gsea_res_clust_all <- lapply(unique(gsea_res_all$Contrast), function(cont){
       lapply(unique(gsea_res_all$data_group), function(dt_group){
@@ -206,7 +203,8 @@ for(dge_df_path in dge_df_list){
           annotation_name_side = "left")
         
         png(filename=file.path(dge_dir_path, paste0('hmap_',gsea_subset_name, '_', signature_type,
-                                                    '_', signature_name, '_', dge_inp_data, '.png')), 
+                                                    '_', signature_name, '_', dge_inp_data,
+                                                    '_fc', as.character(fc_thr), '.png')), 
             width=8, height=6,units="in",res=1000)
         
         condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
@@ -233,9 +231,8 @@ for(dge_df_path in dge_df_list){
           path_hclust_cut <- paste0(gsea_subset_name, '_', as.character(path_hclust_cut))
           
           # merge with gsea result
-          if(identical(gsea_subset$pathway, names(path_hclust_cut))){
-            gsea_subset[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
-          }
+          gsea_subset[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
+          
         }
         
         return(gsea_subset)
@@ -246,7 +243,8 @@ for(dge_df_path in dge_df_list){
     gsea_res_clust_all <- do.call(rbind, unlist(gsea_res_clust_all, recursive=FALSE))
     
     fwrite(gsea_res_clust_all, file.path(dge_dir_path, paste0('gsea_dge_clust_', signature_type,
-                                                              '_', signature_name, '_', dge_inp_data, '.csv')))
+                                                              '_', signature_name, '_', dge_inp_data,
+                                                              '_fc', as.character(fc_thr), '.csv')))
   } else{
     print('no GSEA enrichment for this DEG list')
   }
