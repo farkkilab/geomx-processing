@@ -101,7 +101,7 @@ harmony_res <- t(HarmonyMatrix(expr_norm_log,
 
 # additional scaling and PCA before harmony -------------------------------
 # https://htmlpreview.github.io/?https://github.com/immunogenomics/harmony/blob/master/doc/detailedWalkthrough.html
-# TODO not so clear how to use it later - so far we'll stay with just norm-log data
+# TODO for now we want to keep all genes, not PCA
 # may be important in the future for clustering etc
 # expr_norm_log_scaled <- scale(expr_norm_log)
 # expr_norm_log_scaled_pca <- prcomp(t(expr_norm_log_scaled))
@@ -158,25 +158,56 @@ plot_expr_distribution(geomx_obj@assayData$harmony_batch_corr, 'harmony_batch_co
 
 # make UMAP and visualise batch-corrected results -------------------------
 # TODO run separately for tumor/stroma (incl umap calculation)
+# divide for segment and do dimentionality reduction for all
 
-geomx_obj <- make_umap_tsne(geomx_obj, 'limma_batch_corr', assay_is_log = T, top_var = top_var, top_PCA = top_pca)
-geomx_obj <- make_umap_tsne(geomx_obj, 'harmony_batch_corr', assay_is_log = T, top_var = top_var, top_PCA = top_pca)
+# make separate geomx obj for all + each segment
+seg_types <- unique(sData(geomx_obj)[, aoi_segment_var])
 
-# generate umap and tsne plots and color by variables
-for(corr_type in c('limma_batch_corr', 'harmony_batch_corr')){
-  for(method in c('UMAP', 'tSNE')){
-    for(color_var in batch_vars_filt){
-      print(color_var)
-      
-      plot_umap_tsne(pData(geomx_obj), method_type = method, 
-                     norm_type = corr_type, color_var = color_var,
-                     output_name = file.path(output_dir, 'batch_correction', 
-                                             paste0(method, '_', corr_type, '_', color_var, 
-                                                    '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
-                                                    '_toppca_', ifelse(is.null(top_var), 'NULL', as.character(top_pca)), '.pdf')))
+geomx_obj_seg_list <- lapply(seg_types, function(seg){
+  dir.create(file.path(output_dir, 'batch_correction', seg), showWarnings = T, recursive = T)
+  geomx_obj_seg <- geomx_obj[, geomx_obj@phenoData@data[[aoi_segment_var]] == seg]
+  
+  return(geomx_obj_seg)
+})
+
+names(geomx_obj_seg_list) <- seg_types
+geomx_list <- c(all = geomx_obj, geomx_obj_seg_list)
+dir.create(file.path(output_dir, 'batch_correction', 'all'), showWarnings = T, recursive = T)
+
+# iterate through all objects 
+geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
+  geomx <- geomx_list[[n]]
+  
+  # run UMAP and tSNE on limma and harmony batch effect correction
+  geomx <- make_umap_tsne(geomx, 'limma_batch_corr', assay_is_log = T, top_var = top_var, top_PCA = top_pca)
+  geomx <- make_umap_tsne(geomx, 'harmony_batch_corr', assay_is_log = T, top_var = top_var, top_PCA = top_pca)
+  
+  # generate umap and tsne plots and color by variables
+  for(corr_type in c('limma_batch_corr', 'harmony_batch_corr')){
+    for(method in c('UMAP', 'tSNE')){
+      for(color_var in batch_vars_filt){
+        print(color_var)
+        
+        plot_umap_tsne(pData(geomx), method_type = method, 
+                       norm_type = corr_type, color_var = color_var,
+                       output_name = file.path(output_dir, 'batch_correction', names(geomx_list)[n], 
+                                               paste0(method, '_', corr_type, '_', color_var, 
+                                                      '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
+                                                      '_toppca_', ifelse(is.null(top_var), 'NULL', as.character(top_pca)), '.pdf')))
+      }
     }
   }
-}
+  
+  return(geomx)
+})
+
+# update objects - only keep whole geomx object
+geomx_obj <- geomx_list_dim_red[[1]]
+
+rm(geomx_list)
+rm(geomx_list_dim_red)
+
+
 
 # save geomx_obj with batch eff correction --------------------------------
 
