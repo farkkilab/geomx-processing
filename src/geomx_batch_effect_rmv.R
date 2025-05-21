@@ -22,6 +22,9 @@ calculate_pvca <- FALSE
 # PVCA threshold
 pct_threshold <- 0.6 
 
+# pre-umap filtering params (if no filtering set to NULL)
+top_var <- 2000 # filter to top variable genes
+top_pca <- 100 # do PCA and filter to top components
 
 # make dirs and set additional vars ---------------------------------------
 
@@ -156,18 +159,21 @@ plot_expr_distribution(geomx_obj@assayData$harmony_batch_corr, 'harmony_batch_co
 # make UMAP and visualise batch-corrected results -------------------------
 # TODO run separately for tumor/stroma (incl umap calculation)
 
-geomx_obj <- make_umap_tsne(geomx_obj, 'limma_batch_corr', assay_is_log = T)
-geomx_obj <- make_umap_tsne(geomx_obj, 'harmony_batch_corr', assay_is_log = T)
+geomx_obj <- make_umap_tsne(geomx_obj, 'limma_batch_corr', assay_is_log = T, top_var = top_var, top_PCA = top_pca)
+geomx_obj <- make_umap_tsne(geomx_obj, 'harmony_batch_corr', assay_is_log = T, top_var = top_var, top_PCA = top_pca)
 
 # generate umap and tsne plots and color by variables
 for(corr_type in c('limma_batch_corr', 'harmony_batch_corr')){
   for(method in c('UMAP', 'tSNE')){
     for(color_var in batch_vars_filt){
       print(color_var)
+      
       plot_umap_tsne(pData(geomx_obj), method_type = method, 
                      norm_type = corr_type, color_var = color_var,
                      output_name = file.path(output_dir, 'batch_correction', 
-                                             paste0(method, '_', corr_type, '_', color_var, '.pdf')))
+                                             paste0(method, '_', corr_type, '_', color_var, 
+                                                    '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
+                                                    '_toppca_', ifelse(is.null(top_var), 'NULL', as.character(top_pca)), '.pdf')))
     }
   }
 }
