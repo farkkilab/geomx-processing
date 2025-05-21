@@ -341,7 +341,7 @@ make_umap_tsne <- function(geomx, assay_name, assay_is_log = F, top_var = NULL, 
   if(!is.null(top_var)){
     inp_expr <- pca(inp_expr)
     inp_expr <- t(inp_expr$rotated)
-    inp_expr <- inp_expr[1:50, ]
+    inp_expr <- inp_expr[1:top_PCA, ]
   }
 
   # set the seed for UMAP
@@ -380,7 +380,7 @@ make_umap_tsne <- function(geomx, assay_name, assay_is_log = F, top_var = NULL, 
 #   None. The plot is saved to output_name.
 plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'), 
                            norm_type, color_var, shape_var = 'Segment',
-                           output_name){
+                           output_name, output_type = 'pdf'){
   
   pheno_data[[color_var]] <- as.character(pheno_data[[color_var]])
   
@@ -395,7 +395,7 @@ plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'),
     scale_shape_discrete(name = shape_var) + 
     theme_bw()
   
-  ggsave(output_name, width = 2000, height = 1500, unit='px', device='pdf')
+  ggsave(output_name, width = 2000, height = 1500, unit='px', device=output_type)
 }
 
 ############################################################
@@ -682,7 +682,7 @@ adjust_synonym_genes <- function(geomx_gene_names, gene_vector){
 # Return value:
 #   (list) list of vectors with pathway signatures with adjusted genes.
 prepare_msigdb_sign_list <- function(adjust_synonym = T, geomx_obj = NULL, hal = T, 
-                                      db_subcat_list = c('CP:BIOCARTA', 'CP:KEGG', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')){
+                                      db_subcat_list = c('CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')){
   
   # prepare msigdb signatures list
   msigdb_df <- msigdbr(species = "Homo sapiens")

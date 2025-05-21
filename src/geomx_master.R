@@ -195,7 +195,7 @@ ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells",
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
-signature_type <<- 'custom' # c('msigdb', 'custom')
+signature_type <<- 'msigdb' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
 # custom - on custom signatures list specified in custom_sign_path
 

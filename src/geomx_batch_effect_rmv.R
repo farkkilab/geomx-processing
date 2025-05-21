@@ -157,7 +157,7 @@ plot_expr_distribution(geomx_obj@assayData$harmony_batch_corr, 'harmony_batch_co
                                         '_cov_', covname, '.png')), is_log = T)
 
 # make UMAP and visualise batch-corrected results -------------------------
-# TODO run separately for tumor/stroma (incl umap calculation)
+# TODO simplify code (as in sanity_check)
 # divide for segment and do dimentionality reduction for all
 
 # make separate geomx obj for all + each segment
