@@ -4,7 +4,6 @@
 
 # recommended usage for scRNAseq reference dataset is raw counts
 # although not log transofrmation of both sc and bulk is also ok
-#TODO normalise scRNAseq with deseq2norm and compare to raw
 
 # define variables --------------------------------------------------------
 
@@ -189,7 +188,7 @@ prism_obj <- new.prism(
 )
 
 # run bayesprism
-bprism_res <- run.prism(prism = prism_obj, n.cores = detectCores() -2)
+bprism_res <- run.prism(prism = prism_obj, n.cores = detectCores()-2)
 
 # save res
 saveRDS(bprism_res, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
@@ -242,12 +241,13 @@ deconv_ct_list <- lapply(ct_names, function(ct_name){
     # do vst normalisation
     deconv_ct_cleaned_vst <- varianceStabilizingTransformation(round(t(deconv_ct_cleaned)))
 
+    # TODO may be needed on the downstream analysis steps
     # remove genes with 0 variance across whole dataset (artifact from deconv + vst)
-    per_gene_variance <- apply(deconv_ct_cleaned_vst, 1, var)
-    
-    genes_var0 <- names(per_gene_variance)[which(per_gene_variance == 0)]
-
-    deconv_ct_cleaned_vst <- deconv_ct_cleaned_vst[!(rownames(deconv_ct_cleaned_vst) %in% genes_var0),]
+    # per_gene_variance <- apply(deconv_ct_cleaned_vst, 1, var)
+    # 
+    # genes_var0 <- names(per_gene_variance)[which(per_gene_variance == 0)]
+    # 
+    # deconv_ct_cleaned_vst <- deconv_ct_cleaned_vst[!(rownames(deconv_ct_cleaned_vst) %in% genes_var0),]
 
     
     plot_expr_distribution(deconv_ct_cleaned_vst, paste0(ct_name, '_vst'), 
@@ -369,15 +369,20 @@ geomx_stat <- plot.bulk.outlier(
                         paste0('sd_res_', scrna_anno)) #specify pdf.prefix if need to output to pdf
 )
 
+
 geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
 geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% rownames(geomx_stat_to_rm)),  ]
 
+# subset to protein coding genes (neg probe have to be added for bg modelling)
+geomx_pc <-  colnames(select.gene.type(t(geomx_filtered@assayData$exprs), gene.type = "protein_coding"))
+geomx_filtered_pc <- geomx_filtered[rownames(geomx_filtered) %in% c(geomx_pc, "NegProbe-WTX"),  ]
 
-featureType(geomx_obj) <- "Target"
-sampleNames(geomx_obj) <- sData(geomx_obj)[['dcc_filename']]
+featureType(geomx_filtered_pc) <- "Target"
+sampleNames(geomx_filtered_pc) <- sData(geomx_filtered_pc)[['dcc_filename']]
 
-featureType(geomx_filtered) <- "Target"
-sampleNames(geomx_filtered) <- sData(geomx_filtered)[['dcc_filename']]
+dim(geomx_obj)
+dim(geomx_filtered)
+dim(geomx_filtered_pc)
 
 # prepare cell profile matrix from reference scRNAseq
 
@@ -391,50 +396,32 @@ custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_obj@assays$RNA_filt_pc@da
                                        cellAnnots = scrna_anno_dt,  # cell annotations with cell type and cell name as columns
                                        cellTypeCol = "cell_type",  # column containing cell type
                                        cellNameCol = "cell_name",           # column containing cell ID/name
-                                       matrixName = "oc_scrnaseq_ref_cell_type_filt_pc", # name of final profile matrix
+                                       matrixName = "oc_scrnaseq_ref_cell_type_filt_pc_norm", # name of final profile matrix
                                        outDir = output_dir,                    # path to desired output directory, set to NULL if matrix should not be written
-                                       normalize = FALSE,                # Should data be normalized?
+                                       normalize = TRUE,                # Should data be normalized?
                                        minCellNum = ct_nr_thr,                   # minimum number of cells of one type needed to create profile, exclusive
                                        minGenes = 10,                    # minimum number of genes expressed in a cell, exclusive
                                        scalingFactor = 1,                # what should all values be multiplied by for final matrix
                                        discardCellTypes = TRUE)          # should cell types be filtered for types like mitotic, doublet, low quality, unknown, etc.
 
 # run extended SpatialDecon with custom oc mtx ----------------------------
-
-# TODO code repetition - rmv after checking if bg or no-bg is better 
 # TODO run with nuclei_counts when it will be counted reliably from cycif 
 
-sd_res_custom <- runspatialdecon(object = geomx_filtered,
+# run spatial decon with bg estimated genes
+# estimate bcg for every segment based on neg probes (under the hood)
+patient_nr <- length(unique(sData(geomx_filtered_pc)$Patient))
+
+sd_res_custom <- runspatialdecon(object = geomx_filtered_pc,
                                     norm_elt = norm_type,                # normalized data
                                     raw_elt = "exprs",                    
                                     X = custom_oc_mtx,                            
                                     #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
                                     #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
-                                    n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
-
-# run spatial decon with bg estimated genes
-# estimate bcg for every segment based on neg probes 
-# TODO re-check if >1 module
-negativeProbefData <- subset(fData(geomx_filtered), CodeClass == "Negative")
-geomx_bg <- derive_GeoMx_background(norm = geomx_filtered@assayData[[norm_type]],
-                                    probepool = fData(geomx_filtered)$Module,
-                                    negnames = negativeProbefData$TargetName)
-
-sd_res_custom_bg <- spatialdecon(norm = geomx_filtered@assayData[[norm_type]],                # normalized data
-                                 bg = geomx_bg, # expected background counts for every data point in norm
-                                 raw = geomx_filtered@assayData$exprs,                      
-                                 X = custom_oc_mtx,                            
-                                 #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
-                                 #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
-                                 n_tumor_clusters = 5)               # how many distinct tumor profiles to append to safeTME
-
+                                    n_tumor_clusters = patient_nr)               # how many distinct tumor profiles to append to safeTME
 
 
 saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                                        paste0('sd_res_', scrna_anno, '_geomxfilt.RDS')))
-
-saveRDS(sd_res_custom_bg, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                                        paste0('sd_res_bg_', scrna_anno, '_geomxfilt.RDS')))
+                                        paste0('sd_res_', scrna_anno, '_geomxfiltpc.RDS')))
 
 
 # extract and save ct fractions 
@@ -444,14 +431,7 @@ ct_frac_st <- left_join(ct_frac_st, sData(geomx_obj)[, meta_names],
 
 fwrite(ct_frac_st, file.path(output_dir,'deconvolution', 'spatial_decon', 
                              paste0('sd_res_', scrna_anno, 
-                                    '_geomxfilt_ct_fraction.csv')))
-
-ct_frac_st_bg <- rownames_to_column(data.frame(t(sd_res_custom_bg$prop_of_all)), 'dcc_filename')
-ct_frac_st_bg <- left_join(ct_frac_st_bg, sData(geomx_obj)[, meta_names],
-                        by = 'dcc_filename')
-
-fwrite(ct_frac_st_bg, file.path(output_dir,'deconvolution', 'spatial_decon', 
-                                paste0('sd_res_bg_', scrna_anno, '_geomxfilt_ct_fraction.csv')))
+                                    '_geomxfiltpc_ct_fraction.csv')))
 
 # write logs --------------------------------------------------------------
 

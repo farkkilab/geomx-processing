@@ -171,6 +171,11 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 
 # conditionally run deconvolution -----------------------------------------
 
+cov_design <- NULL
+
+primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
+if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
+
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
 
