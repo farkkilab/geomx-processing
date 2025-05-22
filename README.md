@@ -6,39 +6,41 @@ pipeline for pre-processing and basic analysis of geomx data
 This pipeline starts with (almost) raw geomx dsp data - DCC files (obtained from fastq and typically delivered by sequencing centre) and performs the following pre-processing and analysis steps:
 
 1. QC
+    * shifting counts by 1 to calculate negative geometric means properly
     * filtering AOIs based on basic QC parameters (nr of aligned reads, hight negative control counts)
     * filtering AOIs based on negative probes modelling
-    * filtering probes based on geometric mean and grubbs test
+    * filtering probes based on negative probes geometric mean and grubbs test
     * filtering segments based on LOQ (limit of quantification)
-    * calculating gene detection rate  
+    * calculating gene detection rate
+    * shifting counts back by 1
 3. Normalisation
     * quantile (Q3) normalisation
     * Deseq2 normalisation
     * vst (variance stabilising transformation) on deseq2 normalised data
-    * UMAP and t-SNE projections on all types of normalisation
+    * UMAP and t-SNE projections on scaled vst data
 4. Batch effect correction
     * PVCA variance assessment on deseq2 normalised data to find variables responsible for batch effect
-    * batch effect correction with limma
-    * batch effect correction with harmony
+    * batch effect correction on vst transformed gene expression mtx with limma
+    * batch effect correction on vst transformed gene expression mtx with harmony
     * PVCA on batch-effect corrected data to assess the correction results
-    * UMAP and t-SNE od batch-effect corrected data
+    * UMAP and t-SNE on batch-effect corrected data
 
 5. Deconvolution
    * preparing reference scRNAseq dataset (incl removing of low complexity genes)
-   * computing cell fractions and ct-specific expression profiles with BayesPrism
+   * computing cell fractions and ct-specific expression profiles with BayesPrism (raw geomx and scRNAseq gene expression mtx as an input)
    * post-processing of ct-specific expression profiles
        * removing non-reliable predictions
-       * vst
        * removing genes with variance = 0 (the same value across all AOIs - artifact of BP + vst)
+       * vst transformation
        * harmony and limma batch effect correction
-   * computing cell fractions with SpatialDecon
+   * computing cell fractions with SpatialDecon (q3 normalised geomx gene expression data as an input)
    
 6. Pathway analysis (on full and/or deconvoluted signal)
    *  removing low complexity genes
-   *  calculating ssGSEA/GSVA for signatures from selected categories of msigdb database
+   *  calculating ssGSEA/GSVA for signatures from selected categories of msigdb database or custom signature list
    *  calculating PROGENY scores (!! currently disabled due to incompatibility issues)
 9. differential gene expression (on full and/or deconvoluted signal)
-    * calculating differentially expressed genes between specified group of AOIs
+    * calculating differentially expressed genes between specified group of AOIs either within or between slides
 
 
 ## Requirements
