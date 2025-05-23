@@ -32,8 +32,8 @@ library(RColorBrewer)
 ################
 # select thr
 fc_thr <- 0.5
-pval_thr <- 0.05 # for DEG genes
-gsea_padj_thr <- 0.01 # for GSEA results
+#pval_thr <- 0.05 # for DEG genes
+gsea_padj_thr <- 0.05 # for GSEA results
 
 # jaccard idx hclust cuts 
 # hlust dendrogram height cut for clustering pathways by jaccard idx
@@ -46,7 +46,8 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # signatures and DEG results with less nr of genes will be removed
 min_sign_gene_nr <- 5
 compute_hallmark <- T # should GSEA for msigdb hallmark be computed
-msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
+#msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
+msigdb_subcat <- c('GO:BP')
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
@@ -83,68 +84,54 @@ for(dge_df_path in dge_df_list){
   dge_inp_data <- gsub(paste0( '_',dge_name, '.csv'), '', basename(dge_df_path))
   print(paste0('##### ', dge_inp_data, ' #####'))
   
-  # filter DGE results ------------------------------------------------------
+  # read DGE results --------------------------------------------------------
   
   dge_df <- fread(dge_df_path)
-  
-  # filter to significant
-  dge_df_sig <- filter(dge_df, FDR <= pval_thr & (Estimate >= fc_thr | Estimate <= -fc_thr))
-  dge_df_sig$data_group <- ifelse(is.na(dge_df_sig$data_group), 'onegroup', dge_df_sig$data_group)
-  
-  # needed for ORA
-  #dge_df_sig <- left_join(dge_df_sig, gene_entrez_universe, by = c('Gene' = 'external_gene_name'))
-  
+  dge_df$data_group <- ifelse(is.na(dge_df$data_group), 'onegroup', dge_df$data_group) # add to avoid bugs
   
   # GSEA with fgsea ---------------------------------------------------------
   
-  gsea_res_all <- lapply(unique(dge_df_sig$Contrast), function(cont){
-    lapply(unique(dge_df_sig$data_group), function(dt_group){
+  gsea_res_all <- lapply(unique(dge_df$Contrast), function(cont){
+    lapply(unique(dge_df$data_group), function(dt_group){
       
       # subset to data and contrast group
-      dge_sub <- dge_df_sig[dge_df_sig$data_group == dt_group & dge_df_sig$Contrast == cont, ]
+      dge_sub <- dge_df[dge_df$data_group == dt_group & dge_df$Contrast == cont, ]
       
-      # continue if > min_sign_gene_nr genes
-      if(nrow(dge_sub) >= min_sign_gene_nr){
-        
-        # different from DGE calculation cause fdr was for all segments and contrasts. this is appropriate one
-        dge_sub$FDR_adj <- p.adjust(dge_sub$`Pr(>|t|)`, method = "fdr") 
-        dge_sub$rank_p_fcval <- dge_sub$Estimate*(-log10(dge_sub$`Pr(>|t|)`))
-        
-        # sort by ranking by fc and pval (because fdr has many ties)
-        dge_sub_rank <- dge_sub$rank_p_fcval
-        names(dge_sub_rank) <- dge_sub$Gene
-        dge_sub_rank <- sort(dge_sub_rank, decreasing = T)
-        
-        # fix infinite ranks if needed
-        # Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
-        max_ranking <- max(dge_sub_rank[is.finite(dge_sub_rank)])
-        min_ranking <- min(dge_sub_rank[is.finite(dge_sub_rank)])
-        dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank > max_ranking, max_ranking * 10)
-        dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank < min_ranking, min_ranking * 10)
-        dge_sub_rank <- sort(dge_sub_rank, decreasing = TRUE) # sort genes by ranking
-        
-        # do gsea on ranked dge gene list
-        gsea_res <- fgsea(pathways = sign_list, # List of gene sets to check
-                          stats = dge_sub_rank,
-                          scoreType = 'std', # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
-                          minSize = 10,
-                          maxSize = 500,
-                          nproc = 18) # for parallelisation
-        
-        # assign independent pathways, removing redundancies/similar pathways
-        collapsedPathways <- collapsePathways(gsea_res, sign_list, dge_sub_rank)
-        
-        gsea_res$is_main_pathway <- ifelse(gsea_res$pathway %in% collapsedPathways$mainPathways, 'yes', 'no')
-        
-        gsea_res$data_group <- dt_group
-        gsea_res$Contrast <- cont
-        
-        if(nrow(gsea_res) > 0){
-          return(gsea_res)
-        } else{
-          return()
-        }
-
+      # different from DGE calculation cause fdr was for all segments and contrasts. this is appropriate one
+      dge_sub$FDR_adj <- p.adjust(dge_sub$`Pr(>|t|)`, method = "fdr") # not needed for now
+      dge_sub$rank_p_fcval <- dge_sub$Estimate*(-log10(dge_sub$`Pr(>|t|)`))
+      
+      # sort by ranking by fc and pval (because fdr has many ties)
+      dge_sub_rank <- dge_sub$rank_p_fcval
+      names(dge_sub_rank) <- dge_sub$Gene
+      dge_sub_rank <- sort(dge_sub_rank, decreasing = T)
+      
+      # fix infinite ranks if needed
+      # Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+      max_ranking <- max(dge_sub_rank[is.finite(dge_sub_rank)])
+      min_ranking <- min(dge_sub_rank[is.finite(dge_sub_rank)])
+      dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank > max_ranking, max_ranking * 10)
+      dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank < min_ranking, min_ranking * 10)
+      dge_sub_rank <- sort(dge_sub_rank, decreasing = TRUE) # sort genes by ranking
+      
+      # do gsea on ranked dge gene list
+      gsea_res <- fgsea(pathways = sign_list, # List of gene sets to check
+                        stats = dge_sub_rank,
+                        scoreType = 'std', # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
+                        minSize = 10,
+                        maxSize = 500,
+                        nproc = 18) # for parallelisation
+      
+      # assign independent pathways, removing redundancies/similar pathways
+      collapsedPathways <- collapsePathways(gsea_res, sign_list, dge_sub_rank)
+      
+      gsea_res$is_main_pathway <- ifelse(gsea_res$pathway %in% collapsedPathways$mainPathways, 'yes', 'no')
+      
+      gsea_res$data_group <- dt_group
+      gsea_res$Contrast <- cont
+      
+      if(nrow(gsea_res) > 0){
+        return(gsea_res)
       } else{
         return()
       }
@@ -156,7 +143,7 @@ for(dge_df_path in dge_df_list){
   if(!is.null(gsea_res_all)){
     fwrite(gsea_res_all, file.path(dge_dir_path, 'gsea_enrichment', paste0('gsea_dge_', signature_type,
                                                         '_', signature_name, '_', dge_inp_data,
-                                                        '_fc', as.character(fc_thr),'.csv')))
+                                                        '_fc', as.character(fc_thr),'_nofiltering.csv')))
     
     
     # cluster gsea signatures by jaccard idx ----------------------------------
@@ -207,7 +194,7 @@ for(dge_df_path in dge_df_list){
           
           png(filename=file.path(dge_dir_path, 'gsea_enrichment', paste0('hmap_',gsea_subset_name, '_', signature_type,
                                                                          '_', signature_name, '_', dge_inp_data,
-                                                                         '_fc', as.character(fc_thr), '.png')), 
+                                                                         '_fc', as.character(fc_thr), '_nofiltering.png')), 
               width=8, height=6,units="in",res=1000)
           
           condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
@@ -251,7 +238,7 @@ for(dge_df_path in dge_df_list){
     if(!is.null(gsea_res_clust_all)){
     fwrite(gsea_res_clust_all, file.path(dge_dir_path, 'gsea_enrichment', paste0('gsea_dge_clust_', signature_type,
                                                               '_', signature_name, '_', dge_inp_data,
-                                                              '_fc', as.character(fc_thr), '.csv')))
+                                                              '_fc', as.character(fc_thr), '_nofiltering.csv')))
     }
     
   } else{
