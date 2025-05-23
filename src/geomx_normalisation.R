@@ -66,15 +66,15 @@ geomx_obj@assayData <- newassay
 
 # plot effects of normalisation -------------------------------------------
 
-for(norm_type in c('exprs', 'q3_norm', 'deseq2_norm', 'deseq2_vst', 'deseq2_vst_scaled')){
+for(norm_type in c('exprs', 'q3_norm', 'deseq2_norm', 'deseq2_vst', 'deseq2_vst_scaled')) {
   plt_title <- ifelse(norm_type == 'exprs', 'raw_counts', norm_type)
   islog <- ifelse(norm_type %in% c('deseq2_vst', 'deseq2_vst_scaled'), T, F)
 
-  plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = norm_type),
-                   plt_title, file.path(output_dir, 'qc', paste0('norm_', plt_title, '.png')),
-                   is_log = islog)
-  
-  
+  # plot_norm_effect(assayDataElement(geomx_obj[,1:10], elt = norm_type),
+  #                  plt_title, file.path(output_dir, 'qc', paste0('norm_', plt_title, '.png')),
+  #                  is_log = islog)
+
+
   # plots with xlim = 0.99 percentile to rmv long tail
   plot_expr_distribution(geomx_obj@assayData[[norm_type]], plt_title, 
                          file.path(output_dir, 'qc', paste0('expr_hist_', plt_title, '.png')),

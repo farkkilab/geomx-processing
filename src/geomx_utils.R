@@ -288,13 +288,13 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, is_log = F
   
   expr_df <- as.data.frame(as.vector(expr_data))
   colnames(expr_df) <- 'expr'
-  
-  minval <- ifelse(min(expr_df$expr) < 0, as.numeric(quantile(expr_df$expr, probs = 0.01)), 0)
+
+  minval <- ifelse(min(expr_df$expr) < 0, min(expr_df$expr), 0)
   
   ggplot(data = expr_df) +
     geom_histogram(aes(x = expr), bins = 100) +
     xlim(minval, as.numeric(quantile(expr_df$expr, probs = 0.99))) +
-    ggtitle(paste0(norm_name, ' [.01 to .99 percentile]'))
+    ggtitle(paste0(norm_name, ' [.99 percentile]'))
   
   ggsave(output_name)
   
@@ -304,7 +304,7 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, is_log = F
     ggplot(data = expr_df) +
       geom_histogram(aes(x = expr_log2), bins = 100) +
       xlim(0, as.numeric(quantile(expr_df$expr_log2, probs = 0.99)))+
-      ggtitle(paste0('log2 ', norm_name, ' [0 to .99 percentile]'))
+      ggtitle(paste0('log2 ', norm_name, ' [.99 percentile]'))
     
     ggsave(paste0(file_path_sans_ext(output_name), '_log2.', file_ext(output_name)))
 

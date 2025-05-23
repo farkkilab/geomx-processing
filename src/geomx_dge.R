@@ -89,6 +89,7 @@ if('bp' %in% dge_inp_data_type){
   }
   
   # artificially add missing AOIs to prevent issues with geomx object
+  # TODO better to avoid it and fix within geomx object 
   deconv_ct_list_padded <- lapply(deconv_ct_list, function(expr){
 
     if(!identical(colnames(expr), colnames(geomx_obj@assayData[[norm_type]]))){
