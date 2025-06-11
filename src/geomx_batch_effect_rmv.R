@@ -24,7 +24,7 @@ pct_threshold <- 0.6
 
 # pre-umap filtering params (if no filtering set to NULL)
 top_var <- 2000 # filter to top variable genes
-top_pca <- 100 # do PCA and filter to top components
+top_pca <- 50 # do PCA and filter to top components
 
 # make dirs and set additional vars ---------------------------------------
 

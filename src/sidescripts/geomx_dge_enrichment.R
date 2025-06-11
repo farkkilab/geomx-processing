@@ -47,9 +47,12 @@ adj_synonym <- T # whether or not adjust synonyms genes
 min_sign_gene_nr <- 5
 compute_hallmark <- T # should GSEA for msigdb hallmark be computed
 #msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
-msigdb_subcat <- c('GO:BP')
+msigdb_subcat <- c('GO:BP', 'CP:KEGG_MEDICUS')
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
+
+dge_dir_path <- file.path(output_dir, 'dge', dge_name)
+dir.create(file.path(dge_dir_path, "gsea_enrichment"))
 
 # prepare signatures list -------------------------------------------------
 
@@ -75,7 +78,6 @@ print(paste0(length(sign_list), ' signatures will be used'))
 
 # load dge files ----------------------------------------------------------
 
-dge_dir_path <- file.path(output_dir, 'dge', dge_name)
 dge_df_list <- list.files(dge_dir_path, pattern = paste0(dge_name, '.csv'), full.names = T)
 
 # loop through all dge results

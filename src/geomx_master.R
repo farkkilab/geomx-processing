@@ -56,9 +56,10 @@ library(progeny, quietly =T)
 
 
 # TODO simplify logs by putting all console info from source() to logs
+# TODO move loading libraries to each script separately
 
 #all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
-batch <<- 'batch12' # just for running qc for batch1 with kept high NTC samples
+batch <<- 'batch2' # just for running qc for batch1 with kept high NTC samples
 
 
 # define variables and paths ----------------------------------------------
@@ -253,7 +254,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c()
+dge_categories <<- c('NACT_status')
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

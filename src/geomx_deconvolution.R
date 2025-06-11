@@ -5,6 +5,8 @@
 # recommended usage for scRNAseq reference dataset is raw counts
 # although not log transofrmation of both sc and bulk is also ok
 
+# TODO don't add NA samples for missing ones in deconv
+
 # define variables --------------------------------------------------------
 
 norm_type <- 'q3_norm' # quantile is best for sd. cannot be in the log scale! (bp works on raw counts)
