@@ -14,6 +14,7 @@ library(DESeq2)
 library(msigdbr)
 library(biomaRt)
 library(parallel)
+library(ComplexHeatmap)
 
 outp_dir <- '~/Documents/phd/st/gene-regulatory-networks/sisana/sisana/geomx_output_deseq2_harmony'
 
@@ -54,6 +55,7 @@ dir.create(file.path(outp_dir, 'clustering'), recursive = T, showWarnings = F)
 
 # iterate through all, cluster paths and make plots -----------------------
 
+# TODO without 'iga gsea'
 for(gsea_dir_path in gsea_dirs){
   
   print(gsea_dir_path)
@@ -62,74 +64,15 @@ for(gsea_dir_path in gsea_dirs){
   gsea_res_path <- file.path(gsea_dir_path, 'gseapy.gene_set.prerank.report.csv')
   gsea_res <- fread(gsea_res_path)
   
+  # filter to significant results
   gsea_sign <- gsea_res[gsea_res$`FDR q-val` <= fdr_thr, ]
   gsea_sign <- gsea_sign[gsea_sign$`FWER p-val` <= fwer_thr]
   
   if(nrow(gsea_sign) > 0){
-    # collapse to main pathways -----------------------------------------------
-    # have to be hacked from fgsea
-    # collapsedPathways <- collapsePathways(gsea_res, sign_list, dge_sub_rank)
-    # gsea_res$is_main_pathway <- ifelse(gsea_res$pathway %in% collapsedPathways$mainPathways, 'yes', 'no')
     
-    
-    # cluster pathways based on jaccard idx -----------------------------------
-    
-    paths_genes_list <- lapply(gsea_sign$Lead_genes, function(x){
-      genelist <- unlist(strsplit(x, split=';', fixed=T))
-    })
-    
-    names(paths_genes_list) <- gsea_sign$Term
-    
-    # calculate jaccard score between each pathway leading gene set
-    path_jaccard <- lapply(paths_genes_list, function(x){
-      p1 <- lapply(paths_genes_list, function(y){
-        jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
-      })
-      return(unlist(p1))
-    })
-    
-    path_jaccard_mtx <- do.call('cbind', path_jaccard)
-    
-    # clustering with hclust
-    path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
-    #plot(path_hclust, hang = -1, cex = 0.4)
-    
-    for(cutnr in jaccard_hclust_cuts){
-      # cut the hclust tree at given point
-      path_hclust_cut <- cutree(path_hclust, h = cutnr)
-      
-      # merge with gsea result
-      if(identical(gsea_sign$Term, names(path_hclust_cut))){
-        gsea_sign[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
-      }
-    }
-    
-    
-    heatmap(path_jaccard_mtx)
-    #######
-    # make clustered heatmap
-    nes_anno <- sapply(colnames(path_jaccard_mtx), function(path){
-      nes <- ifelse(sign(gsea_sign$NES[gsea_sign$Term == path]) == 1, 'pos', 'neg')
-    })
-    
-    ha = HeatmapAnnotation(
-      NES = anno_simple(nes_anno, col = c("pos" = "green", "neg" = "blue")),
-      annotation_name_side = "left")
-    
-    png(filename=file.path(gsea_dir_path, paste0('hmap_fdr', as.character(fdr_thr), '_fwer',as.character(fwer_thr), '.png')), 
-        width=8, height=6,units="in",res=1000)
-    
-    condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
-                              rect_gp = gpar(col = "white", lwd = 2), column_title = 'tumor vs stroma',
-                              cluster_columns = T, cluster_rows= T, col = brewer.pal(5, "YlOrRd"),
-                              show_heatmap_legend = F, top_annotation = ha,
-                              row_names_gp = gpar(fontsize = 6),
-                              column_names_gp = gpar(fontsize = 6))
-    
-    draw(condition_heat)
-    dev.off()
-    #######
-    
+    # cluster pathways by jaccard idx and make heatmap
+    hmap_outpath <- file.path(gsea_dir_path, paste0('hmap_fdr', as.character(fdr_thr), '_fwer',as.character(fwer_thr), '.png'))
+    gsea_clust <- cluster_gsea_enrichment(gsea_sign, 'Lead_genes', 'Term', hmap_outpath = hmap_outpath, hmap_title = 'stroma vs tumor')
     
     # get one path per cluster ------------------------------------------------
     
@@ -231,10 +174,6 @@ diff_ind <- fread(ind_mean_diff_path)
 # TODO iterate by expr + indegrees
 gene_diff_df <- diff_expr
 
-diff_colname <- 'difference_of_means_(tumor-stroma)'
-pval_colname <- 'mw_pvalue'
-gene_colname <- 'Target'
-
 #'CP:KEGG_MEDICUS'
 compute_hallmark <- T
 msigdb_subcat <- c('GO:BP')
@@ -243,7 +182,9 @@ min_sign_gene_nr <- 10
 outp_gsea_dir <- file.path(outp_dir, 'gsea', 'gsea_iga_expression_gobp')
 dir.create(outp_gsea_dir)
 
-#############3####
+hmap_outpath <- file.path(outp_gsea_dir, paste0('hmap_fdr', as.character(fdr_thr), '.png'))
+
+#############################
 # make signatures
 sign_list <- prepare_msigdb_sign_list(adjust_synonym = T, geomx_obj = geomx_obj, hal = compute_hallmark, 
                                       db_subcat_list = msigdb_subcat)
@@ -251,8 +192,43 @@ sign_list <- prepare_msigdb_sign_list(adjust_synonym = T, geomx_obj = geomx_obj,
 sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
 
 ##############
+# rank and do gsea enrichment
+gsea_res <- rank_genes_and_do_gsea_enrichment(gene_diff_df, 'difference_of_means_(tumor-stroma)',
+                                              'mw_pvalue', 'Target', sign_list, gsea_scoretype = 'std')
 
-gsea_res <- rank_genes_and_do_gsea_enrichment(gene_diff_df, diff_colname, pval_colname, gene_colname, sign_list, gsea_scoretype = 'std')
+# filter to significant results and main pathways
+gsea_sign <- gsea_res[gsea_res$padj <= fdr_thr, ]
+gsea_sign <- gsea_sign[gsea_sign$is_main_pathway == 'yes', ]
+
+# cluster pathways by jaccard idx and make heatmap
+gsea_clust <- cluster_gsea_enrichment(gsea_sign, 'leadingEdge', 'pathway', hmap_outpath = hmap_outpath, hmap_title = 'stroma vs tumor')
+
+
+# get one path per cluster ------------------------------------------------
+
+cut_colname <- paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))
+
+length(unique(gsea_sign$path_cluster_cut_05))
+length(unique(gsea_sign$path_cluster_cut_1))
+length(unique(gsea_sign$path_cluster_cut_12))
+length(unique(gsea_sign$path_cluster_cut_15))
+
+
+for(sign in c('pos', 'neg')){
+  s <- ifelse(sign == 'pos', 1, -1)
+  
+  gsea_main <- gsea_sign[sign(gsea_sign$NES) == s, ]
+  gsea_main <- arrange(gsea_main, NES)
+  
+  # keep 1st pathway from cluster
+  gsea_main <- gsea_main[!(duplicated(gsea_main[[cut_colname]])), ]
+  
+  if(nrow(gsea_main) > 0){
+    fwrite(gsea_main, file.path(gsea_dir_path, paste0('gsea_clustered_fdr', as.character(fdr_thr), '_fwer',as.character(fwer_thr), '_',
+                                                      sign, '_', cut_colname, '.csv')))
+  }
+}
+
 
 
 ##############################################################################

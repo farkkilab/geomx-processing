@@ -914,6 +914,74 @@ rank_genes_and_do_gsea_enrichment <- function(gene_diff_df, diff_colname, pval_c
   return(gsea_res)
 }
 
+#####################################################3
+# clustering gsea enrichment results by jaccard idx (+ heatmap)
+
+cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname, jaccard_hclust_cuts = c(0.5, 1, 1.2, 1.5), lead_genes_split = ';', 
+                                    nes_colname = 'NES', hmap_outpath = NULL, hmap_title = NULL){
+  # cluster pathways based on jaccard idx -----------------------------------
+  
+  paths_genes_list2 <- lapply(gsea_sign[[lead_genes_colname]], function(x){
+    genelist <- unlist(strsplit(x, split=lead_genes_split, fixed=T)) # TODO wtf it looks like any split works
+  })
+  
+  names(paths_genes_list) <- gsea_sign[[path_colname]]
+  
+  # calculate jaccard score between each pathway leading gene set
+  path_jaccard <- lapply(paths_genes_list, function(x){
+    p1 <- lapply(paths_genes_list, function(y){
+      jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
+    })
+    return(unlist(p1))
+  })
+  
+  path_jaccard_mtx <- do.call('cbind', path_jaccard)
+  # heatmap(path_jaccard_mtx)
+  
+  # clustering with hclust
+  path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
+  #plot(path_hclust, hang = -1, cex = 0.4)
+  
+  # making clustered pathway heatmap
+  if(!is.null(hmap_outpath)){
+    make_clustered_gsea_hmap(gsea_sign, path_jaccard_mtx, path_colname, nes_colname, hmap_outpath, hmap_title)
+  }
+  
+  for(cutnr in jaccard_hclust_cuts){
+    # cut the hclust tree at given point
+    path_hclust_cut <- cutree(path_hclust, h = cutnr)
+    
+    # merge with gsea result
+    if(identical(gsea_sign[[path_colname]], names(path_hclust_cut))){
+      gsea_sign[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
+    }
+  }
+  return(gsea_sign)
+}
+
+make_clustered_gsea_hmap <- function(gsea_sign, path_jaccard_mtx, path_colname, nes_colname, hmap_outpath, hmap_title){
+  # make clustered heatmap
+  nes_anno <- sapply(colnames(path_jaccard_mtx), function(path){
+    nes <- ifelse(sign(gsea_sign[[nes_colname]][gsea_sign[[path_colname]] == path]) == 1, 'pos', 'neg')
+  })
+  
+  ha = HeatmapAnnotation(
+    NES = anno_simple(nes_anno, col = c("pos" = "green", "neg" = "blue")),
+    annotation_name_side = "left")
+  
+  png(filename=hmap_outpath, width=8, height=6,units="in",res=1000)
+  
+  condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
+                            rect_gp = gpar(col = "white", lwd = 2), column_title = hmap_title,
+                            cluster_columns = T, cluster_rows= T, col = brewer.pal(5, "YlOrRd"),
+                            show_heatmap_legend = F, top_annotation = ha,
+                            row_names_gp = gpar(fontsize = 6),
+                            column_names_gp = gpar(fontsize = 6))
+  
+  draw(condition_heat)
+  dev.off()
+}
+
 ########################################333
 # mdified function from GeoMx package with trycatch to skip errors while lmm cannot be computed
 # TODO better to unwrap it all and rewrite nicer

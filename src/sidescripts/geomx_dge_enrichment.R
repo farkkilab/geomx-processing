@@ -100,6 +100,7 @@ for(dge_df_path in dge_df_list){
       dge_sub <- dge_df[dge_df$data_group == dt_group & dge_df$Contrast == cont, ]
       
       # rank by log2fc * -log10(pval)
+      # TODO check if collapsepathways would work with custom signatures
       gsea_res <- rank_genes_and_do_gsea_enrichment(dge_sub, 'Estimate', 'Pr(>|t|)', 'Gene', sign_list)
       
       gsea_res$data_group <- dt_group
@@ -124,7 +125,6 @@ for(dge_df_path in dge_df_list){
     # cluster gsea signatures by jaccard idx ----------------------------------
     # clustering based on jaccard idx - nr of common elements in a set / union of sets
     
-    # TODO put into separate functions
     gsea_res_clust_all <- lapply(unique(gsea_res_all$Contrast), function(cont){
       lapply(unique(gsea_res_all$data_group), function(dt_group){
         
@@ -142,66 +142,15 @@ for(dge_df_path in dge_df_list){
             gsea_subset <- gsea_subset[gsea_subset$is_main_pathway == 'yes', ]
           }
           
-          # get leading genes for each pathway
-          paths_genes_list <- lapply(gsea_subset$leadingEdge, function(x){
-            genelist <- unlist(strsplit(x, split='|', fixed=T))
-          })
+          hmap_outpath <- file.path(dge_dir_path, 'gsea_enrichment', paste0('hmap_',gsea_subset_name, '_', signature_type,
+                                                                            '_', signature_name, '_', dge_inp_data,
+                                                                            '_fc', as.character(fc_thr), '.png'))
+          # cluster pathways by jaccard idx and make heatmap
+          gsea_clust <- cluster_gsea_enrichment(gsea_subset, 'leadingEdge', 'pathway', 
+                                                hmap_outpath = hmap_outpath, hmap_title = gsea_subset_name, 
+                                                lead_genes_split = '|')
           
-          names(paths_genes_list) <- gsea_subset$pathway
-          
-          # calculate jaccard score between each pathway leading gene set
-          path_jaccard <- lapply(paths_genes_list, function(x){
-            p1 <- lapply(paths_genes_list, function(y){
-              jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
-            })
-            return(unlist(p1))
-          })
-          
-          path_jaccard_mtx <- do.call('cbind', path_jaccard)
-          
-          # make clustered heatmap
-          nes_anno <- sapply(colnames(path_jaccard_mtx), function(path){
-            nes <- ifelse(sign(gsea_subset$NES[gsea_subset$pathway == path]) == 1, 'pos', 'neg')
-          })
-          
-          ha = HeatmapAnnotation(
-            NES = anno_simple(nes_anno, col = c("pos" = "green", "neg" = "blue")),
-            annotation_name_side = "left")
-          
-          png(filename=file.path(dge_dir_path, 'gsea_enrichment', paste0('hmap_',gsea_subset_name, '_', signature_type,
-                                                                         '_', signature_name, '_', dge_inp_data,
-                                                                         '_fc', as.character(fc_thr), '_nofiltering.png')), 
-              width=8, height=6,units="in",res=1000)
-          
-          condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
-                                    rect_gp = gpar(col = "white", lwd = 2), column_title = gsea_subset_name,
-                                    cluster_columns = T, cluster_rows= T, col = brewer.pal(5, "YlOrRd"),
-                                    show_heatmap_legend = F, top_annotation = ha,
-                                    row_names_gp = gpar(fontsize = 6),
-                                    column_names_gp = gpar(fontsize = 6))
-          
-          draw(condition_heat)
-          dev.off()
-          
-          #heatmap(path_jaccard_mtx)
-          
-          # clustering with hclust
-          path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
-          #plot(path_hclust, hang = -1, cex = 0.4)
-          
-          for(cutnr in jaccard_hclust_cuts){
-            # cut the hclust tree at given point
-            path_hclust_cut <- cutree(path_hclust, h = cutnr)
-            
-            # add subset name to cluster name
-            path_hclust_cut <- paste0(gsea_subset_name, '_', as.character(path_hclust_cut))
-            
-            # merge with gsea result
-            gsea_subset[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
-            
-          }
-          
-          return(gsea_subset)
+          return(gsea_clust)
         } else{
           return()
         }
@@ -214,7 +163,7 @@ for(dge_df_path in dge_df_list){
     if(!is.null(gsea_res_clust_all)){
     fwrite(gsea_res_clust_all, file.path(dge_dir_path, 'gsea_enrichment', paste0('gsea_dge_clust_', signature_type,
                                                               '_', signature_name, '_', dge_inp_data,
-                                                              '_fc', as.character(fc_thr), '_nofiltering.csv')))
+                                                              '_fc', as.character(fc_thr), '.csv')))
     }
     
   } else{
