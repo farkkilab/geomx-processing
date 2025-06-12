@@ -921,7 +921,7 @@ cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname,
                                     nes_colname = 'NES', hmap_outpath = NULL, hmap_title = NULL){
   # cluster pathways based on jaccard idx -----------------------------------
   
-  paths_genes_list2 <- lapply(gsea_sign[[lead_genes_colname]], function(x){
+  paths_genes_list <- lapply(gsea_sign[[lead_genes_colname]], function(x){
     genelist <- unlist(strsplit(x, split=lead_genes_split, fixed=T)) # TODO wtf it looks like any split works
   })
   
@@ -981,6 +981,34 @@ make_clustered_gsea_hmap <- function(gsea_sign, path_jaccard_mtx, path_colname, 
   draw(condition_heat)
   dev.off()
 }
+
+################################################
+# choose best pathway from jaccard clustering
+
+best_pathway_clust <- function(gsea_clust, clust_colname, nes_colname = 'NES'){
+  
+  gsea_main_all <- lapply(c('pos', 'neg'), function(sign){
+    if(sign == 'pos'){
+      gsea_main <- gsea_clust[sign(gsea_clust[[nes_colname]]) == 1, ]
+      gsea_main <- arrange(gsea_main, desc(get(nes_colname)))
+    } else{
+      gsea_main <- gsea_clust[sign(gsea_clust[[nes_colname]]) == -1, ]
+      gsea_main <- arrange(gsea_main, get(nes_colname))
+    }
+    
+    # keep 1st pathway from cluster
+    gsea_main <- gsea_main[!(duplicated(gsea_main[[clust_colname]])), ]
+    
+    return(gsea_main)
+  })
+  
+  gsea_main_all <- do.call(rbind, gsea_main_all)
+  
+  if(nrow(gsea_main_all) > 0){
+    return(gsea_main_all)
+  }
+}
+
 
 ########################################333
 # mdified function from GeoMx package with trycatch to skip errors while lmm cannot be computed
