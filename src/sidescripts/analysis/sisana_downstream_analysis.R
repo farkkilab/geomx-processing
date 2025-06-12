@@ -11,31 +11,36 @@ library(GeomxTools)
 library(preprocessCore)
 library(PCAtools)
 library(DESeq2)
+library(msigdbr)
+library(biomaRt)
+library(parallel)
 
-outp_dir <- '~/Documents/phd/st/gene-regulatory-networks/sisana/sisana/geomx_output'
-
-dge_path <- '~/Documents/phd/st/geomx-processing/results/batch12-1205-no-counts-shift2/dge/dge_within_slide_Segment_bin_FALSE__/dge_all_dge_within_slide_Segment_bin_FALSE__.csv'
-gsea_dge_dir_path <- '~/Documents/phd/st/geomx-processing/results/batch12-1205-no-counts-shift2/dge/dge_within_slide_Segment_bin_FALSE__/gsea_enrichment/hallmark_gobp'
-gsea_dge_path <- file.path(gsea_dge_dir_path, 'gsea_dge_clust_msigdb__dge_deconv_Tcells_fc0.5_nofiltering.csv')
+outp_dir <- '~/Documents/phd/st/gene-regulatory-networks/sisana/sisana/geomx_output_deseq2_harmony'
 
 geomx_obj_path <- '~/Documents/phd/st/geomx-processing/results/batch12-1205-no-counts-shift2/geomx_qc_norm_batch_eff_rm.RDS'
 
+#####
+# for checking gse enrichment on my dge
+dge_path <- '~/Documents/phd/st/geomx-processing/results/batch12-1205-no-counts-shift2/dge/dge_within_slide_Segment_bin_FALSE__/dge_all_dge_within_slide_Segment_bin_FALSE__.csv'
+gsea_dge_dir_path <- '~/Documents/phd/st/geomx-processing/results/batch12-1205-no-counts-shift2/dge/dge_within_slide_Segment_bin_FALSE__/gsea_enrichment/hallmark_gobp'
+gsea_dge_path <- file.path(gsea_dge_dir_path, 'gsea_dge_clust_msigdb__dge_all_fc0.5_nofiltering.csv')
+
 dge_path <- '~/Documents/phd/st/geomx-processing/results/batch12-1205-no-counts-shift2/dge/dge_within_slide_Segment_bin_FALSE__/dge_all_dge_within_slide_Segment_bin_FALSE__.csv'
 #######
-# TODO iterate through all 
-gsea_dir_path <- file.path(outp_dir, 'gsea', 'gsea_indegree_kegg')
 
-gsea_res_path <- file.path(gsea_dir_path, 'gseapy.gene_set.prerank.report.csv')
+expr_mean_diff_path <- file.path(outp_dir, 'compare_means', 'comparison_mw_between_stroma_tumor_expression.txt')
+ind_mean_diff_path <- file.path(outp_dir, 'compare_means', 'comparison_mw_between_stroma_tumor_indegree.txt')
+
+# indegree results
+ind_vals_path <- file.path(outp_dir, 'network', 'lioness_indegree.csv')
+
+# gsea on expr/ind diff 
+gsea_dirs <- list.dirs(file.path(outp_dir, 'gsea'), recursive = F)
 
 fdr_thr <- 0.05
 fwer_thr <- 0.01
 jaccard_hclust_cuts <- c(0.5, 1, 1.2, 1.5)
-
-expr_mean_diff_path <- file.path(outp_dir, 'compare_means', 'comparison_mw_between_stroma_tumor_expression.txt')
-ind_mean_diff_path <- file.path(outp_dir, 'compare_means', 'comparison_mw_between_stroma_tumor_indegree.txt')
-ind_vals_path <- file.path(outp_dir, 'network', 'lioness_indegree.csv')
-
-
+cutnr <- 1.2
 
 # umap_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition, sample_name, 
 #                main_batch_var, batch_var, other_vars_bio, other_vars_tech)
@@ -43,115 +48,121 @@ ind_vals_path <- file.path(outp_dir, 'network', 'lioness_indegree.csv')
 umap_vars <- c('Segment', 'NACT_status', 'Annotation_cell', 'Sample', 
                'main_batch_nr', 'batch_nr', 'Segment_geomx', 'Patient', 'Site')
 
+source(file.path('~/Documents/phd/st', 'geomx-processing', 'src', 'geomx_utils.R'))
+
 dir.create(file.path(outp_dir, 'clustering'), recursive = T, showWarnings = F)
 
+# iterate through all, cluster paths and make plots -----------------------
 
-# load results ------------------------------------------------------------
-
-gsea_res <- fread(gsea_res_path)
-
-gsea_sign <- gsea_res[gsea_res$`FDR q-val` <= fdr_thr, ]
-gsea_sign <- gsea_sign[gsea_sign$`FWER p-val` <= fwer_thr]
-
-
-# collapse to main pathways -----------------------------------------------
-# have to be hacked from fgsea
-# collapsedPathways <- collapsePathways(gsea_res, sign_list, dge_sub_rank)
-# gsea_res$is_main_pathway <- ifelse(gsea_res$pathway %in% collapsedPathways$mainPathways, 'yes', 'no')
-
-
-# cluster pathways based on jaccard idx -----------------------------------
-
-paths_genes_list <- lapply(gsea_sign$Lead_genes, function(x){
-  genelist <- unlist(strsplit(x, split=';', fixed=T))
-})
-
-names(paths_genes_list) <- gsea_sign$Term
-
-# calculate jaccard score between each pathway leading gene set
-path_jaccard <- lapply(paths_genes_list, function(x){
-  p1 <- lapply(paths_genes_list, function(y){
-    jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
-  })
-  return(unlist(p1))
-})
-
-path_jaccard_mtx <- do.call('cbind', path_jaccard)
-
-# clustering with hclust
-path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
-#plot(path_hclust, hang = -1, cex = 0.4)
-
-for(cutnr in jaccard_hclust_cuts){
-  # cut the hclust tree at given point
-  path_hclust_cut <- cutree(path_hclust, h = cutnr)
+for(gsea_dir_path in gsea_dirs){
   
-  # merge with gsea result
-  if(identical(gsea_sign$Term, names(path_hclust_cut))){
-    gsea_sign[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
+  print(gsea_dir_path)
+  # load results ------------------------------------------------------------
+  
+  gsea_res_path <- file.path(gsea_dir_path, 'gseapy.gene_set.prerank.report.csv')
+  gsea_res <- fread(gsea_res_path)
+  
+  gsea_sign <- gsea_res[gsea_res$`FDR q-val` <= fdr_thr, ]
+  gsea_sign <- gsea_sign[gsea_sign$`FWER p-val` <= fwer_thr]
+  
+  if(nrow(gsea_sign) > 0){
+    # collapse to main pathways -----------------------------------------------
+    # have to be hacked from fgsea
+    # collapsedPathways <- collapsePathways(gsea_res, sign_list, dge_sub_rank)
+    # gsea_res$is_main_pathway <- ifelse(gsea_res$pathway %in% collapsedPathways$mainPathways, 'yes', 'no')
+    
+    
+    # cluster pathways based on jaccard idx -----------------------------------
+    
+    paths_genes_list <- lapply(gsea_sign$Lead_genes, function(x){
+      genelist <- unlist(strsplit(x, split=';', fixed=T))
+    })
+    
+    names(paths_genes_list) <- gsea_sign$Term
+    
+    # calculate jaccard score between each pathway leading gene set
+    path_jaccard <- lapply(paths_genes_list, function(x){
+      p1 <- lapply(paths_genes_list, function(y){
+        jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
+      })
+      return(unlist(p1))
+    })
+    
+    path_jaccard_mtx <- do.call('cbind', path_jaccard)
+    
+    # clustering with hclust
+    path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
+    #plot(path_hclust, hang = -1, cex = 0.4)
+    
+    for(cutnr in jaccard_hclust_cuts){
+      # cut the hclust tree at given point
+      path_hclust_cut <- cutree(path_hclust, h = cutnr)
+      
+      # merge with gsea result
+      if(identical(gsea_sign$Term, names(path_hclust_cut))){
+        gsea_sign[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut
+      }
+    }
+    
+    
+    heatmap(path_jaccard_mtx)
+    #######
+    # make clustered heatmap
+    nes_anno <- sapply(colnames(path_jaccard_mtx), function(path){
+      nes <- ifelse(sign(gsea_sign$NES[gsea_sign$Term == path]) == 1, 'pos', 'neg')
+    })
+    
+    ha = HeatmapAnnotation(
+      NES = anno_simple(nes_anno, col = c("pos" = "green", "neg" = "blue")),
+      annotation_name_side = "left")
+    
+    png(filename=file.path(gsea_dir_path, paste0('hmap_fdr', as.character(fdr_thr), '_fwer',as.character(fwer_thr), '.png')), 
+        width=8, height=6,units="in",res=1000)
+    
+    condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
+                              rect_gp = gpar(col = "white", lwd = 2), column_title = 'tumor vs stroma',
+                              cluster_columns = T, cluster_rows= T, col = brewer.pal(5, "YlOrRd"),
+                              show_heatmap_legend = F, top_annotation = ha,
+                              row_names_gp = gpar(fontsize = 6),
+                              column_names_gp = gpar(fontsize = 6))
+    
+    draw(condition_heat)
+    dev.off()
+    #######
+    
+    
+    # get one path per cluster ------------------------------------------------
+    
+    cut_colname <- paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))
+    
+    length(unique(gsea_sign$path_cluster_cut_05))
+    length(unique(gsea_sign$path_cluster_cut_1))
+    length(unique(gsea_sign$path_cluster_cut_12))
+    length(unique(gsea_sign$path_cluster_cut_15))
+    
+    
+    for(sign in c('pos', 'neg')){
+      s <- ifelse(sign == 'pos', 1, -1)
+      
+      gsea_main <- gsea_sign[sign(gsea_sign$NES) == s, ]
+      gsea_main <- arrange(gsea_main, NES)
+      
+      # keep 1st pathway from cluster
+      gsea_main <- gsea_main[!(duplicated(gsea_main[[cut_colname]])), ]
+      
+      if(nrow(gsea_main) > 0){
+        fwrite(gsea_main, file.path(gsea_dir_path, paste0('gsea_clustered_fdr', as.character(fdr_thr), '_fwer',as.character(fwer_thr), '_',
+                                                          sign, '_', cut_colname, '.csv')))
+      }
+    }
   }
 }
 
 
-heatmap(path_jaccard_mtx)
-#######
-# make clustered heatmap
-nes_anno <- sapply(colnames(path_jaccard_mtx), function(path){
-  nes <- ifelse(sign(gsea_sign$NES[gsea_sign$Term == path]) == 1, 'pos', 'neg')
-})
-
-ha = HeatmapAnnotation(
-  NES = anno_simple(nes_anno, col = c("pos" = "green", "neg" = "blue")),
-  annotation_name_side = "left")
-
-png(filename=file.path(gsea_dir_path, paste0('hmap_fdr', as.character(fdr_thr), '_fwer',as.character(fwer_thr), '.png')), 
-    width=8, height=6,units="in",res=1000)
-
-condition_heat <- Heatmap(as.matrix(path_jaccard_mtx), border="white",
-                          rect_gp = gpar(col = "white", lwd = 2), column_title = 'tumor vs stroma',
-                          cluster_columns = T, cluster_rows= T, col = brewer.pal(5, "YlOrRd"),
-                          show_heatmap_legend = F, top_annotation = ha,
-                          row_names_gp = gpar(fontsize = 6),
-                          column_names_gp = gpar(fontsize = 6))
-
-draw(condition_heat)
-dev.off()
-#######
-
-
-# get one path per cluster ------------------------------------------------
-
-cutnr <- 1.2
-cut_colname <- paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))
-
-length(unique(gsea_sign$path_cluster_cut_05))
-length(unique(gsea_sign$path_cluster_cut_1))
-length(unique(gsea_sign$path_cluster_cut_12))
-length(unique(gsea_sign$path_cluster_cut_15))
-
-
-for(sign in c('pos', 'neg')){
-  s <- ifelse(sign == 'pos', 1, -1)
-
-  gsea_main <- gsea_sign[sign(gsea_sign$NES) == s, ]
-  gsea_main <- arrange(gsea_main, NES)
-  
-  # keep 1st pathway from cluster
-  gsea_main <- gsea_main[!(duplicated(gsea_main[[cut_colname]])), ]
-  
-  if(nrow(gsea_main) > 0){
-    fwrite(gsea_main, file.path(gsea_dir_path, paste0('gsea_clustered_fdr', as.character(fdr_thr), '_fwer',as.character(fwer_thr), '_',
-                                                      sign, '_', cut_colname, '.csv')))
-  }
-
-}
-
-
-##################
+####################################################3
+####################################################
 
 # check gsea from DGE
-
-cutnr <- 1.2
 cut_colname <- paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))
 
 
@@ -175,19 +186,11 @@ for(sign in c('pos', 'neg')){
   
 }
 
-# for now only neg bcs there were only neg found from indegrees
-gsea_dge_neg <- gsea_dge[sign(gsea_dge$NES) == -1, ]
-gsea_dge_neg <- arrange(gsea_dge_neg, NES)
-
-# keep 1st pathway from cluster
-gsea_dge_main <- gsea_dge_neg[!(duplicated(gsea_dge_neg[[cut_colname]])), ]
-
-
-gsea_dge_genes_list <- lapply(gsea_dge_neg$leadingEdge, function(x){
+gsea_dge_genes_list <- lapply(gsea_dge$leadingEdge, function(x){
   genelist <- unlist(strsplit(x, split='|', fixed=T))
 })
 
-names(gsea_dge_genes_list) <- gsea_dge_neg$pathway
+names(gsea_dge_genes_list) <- gsea_dge$pathway
 
 ######################
 # compare on the gene lvl for all leading edge genes
@@ -217,56 +220,97 @@ length(intersect(diff_expr_sign$Target[(nrow(diff_expr_sign)-100): nrow(diff_exp
                  dge_sign$Gene[(nrow(dge_sign)-100): nrow(dge_sign)])) # 97/100 from overexpr stroma
 
 
+#############################################################################
+#############################################################################
+# running ind/expr through my gsea enrichment
 
+geomx_obj <- readRDS(geomx_obj_path)
+diff_expr <- fread(expr_mean_diff_path)
+diff_ind <- fread(ind_mean_diff_path)
+
+# TODO iterate by expr + indegrees
+gene_diff_df <- diff_expr
+
+diff_colname <- 'difference_of_means_(tumor-stroma)'
+pval_colname <- 'mw_pvalue'
+gene_colname <- 'Target'
+
+#'CP:KEGG_MEDICUS'
+compute_hallmark <- T
+msigdb_subcat <- c('GO:BP')
+min_sign_gene_nr <- 10
+
+outp_gsea_dir <- file.path(outp_dir, 'gsea', 'gsea_iga_expression_gobp')
+dir.create(outp_gsea_dir)
+
+#############3####
+# make signatures
+sign_list <- prepare_msigdb_sign_list(adjust_synonym = T, geomx_obj = geomx_obj, hal = compute_hallmark, 
+                                      db_subcat_list = msigdb_subcat)
+
+sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
+
+##############
+
+gsea_res <- rank_genes_and_do_gsea_enrichment(gene_diff_df, diff_colname, pval_colname, gene_colname, sign_list, gsea_scoretype = 'std')
+
+
+##############################################################################
+##############################################################################
+##############################################################################
 # networks indegree heatmap and clustering --------------------------------
+
 top_var <- 1000
 
-metadata <- sData(readRDS(geomx_obj_path))
-metadata$dcc_filename <- gsub('\\-', '\\.', metadata$dcc_filename)
-
-ind_vals <- fread(ind_vals_path)
-ind_vals <- as.matrix(column_to_rownames(ind_vals, 'Target'))
-
-# for expression (comments dcc names change)
-#ind_vals <- readRDS(geomx_obj_path)@assayData$harmony_batch_corr
-
-identical(metadata$dcc_filename, colnames(ind_vals))
-
-per_gene_variance <- apply(ind_vals, 1, stats::var)
-top_var_ind <- names(sort(per_gene_variance, decreasing = T)[1:top_var])
-
-ind_vals_var <- ind_vals[rownames(ind_vals) %in% top_var_ind, ]
-
-ind_vals_var_zscore <- scale(ind_vals_var) # by column
-
-# do the heatmap
-#######
-# make clustered heatmap
-segment_anno <- sapply(colnames(ind_vals_var_zscore), function(s){
-  seg <- metadata$Segment[metadata$dcc_filename == s]
-})
-
-patient_anno <- sapply(colnames(ind_vals_var_zscore), function(s){
-  seg <- metadata$Patient[metadata$dcc_filename == s]
-})
-
-ha = HeatmapAnnotation(
-  segment = anno_simple(segment_anno, col = c("stroma" = "green", "tumor" = "blue")),
-  patient = anno_simple(patient_anno),
-  annotation_name_side = "left")
-
-
-png(filename=file.path(outp_dir, paste0('hmap_expr_clustered', '_topvar', as.character(top_var), '.png')), 
-    width=8, height=6,units="in",res=2000)
-
-ind_heat <- Heatmap(ind_vals_var_zscore, cluster_columns = T, cluster_rows= T,
-              show_row_names = FALSE, show_column_names = FALSE, show_row_dend = FALSE,
-              top_annotation = ha)
-
-
-draw(ind_heat)
-dev.off()
-#######
+for(res_type in c('expr', 'ind')){
+  metadata <- sData(readRDS(geomx_obj_path))
+  
+  if(res_type == 'expr'){
+    ind_vals <- readRDS(geomx_obj_path)@assayData$harmony_batch_corr
+  } else if(res_type == 'ind'){
+    metadata$dcc_filename <- gsub('\\-', '\\.', metadata$dcc_filename) # change names to match indegrees
+    
+    ind_vals <- fread(ind_vals_path)
+    ind_vals <- as.matrix(column_to_rownames(ind_vals, 'Target'))
+  }
+  
+  identical(metadata$dcc_filename, colnames(ind_vals))
+  
+  per_gene_variance <- apply(ind_vals, 1, stats::var)
+  top_var_ind <- names(sort(per_gene_variance, decreasing = T)[1:top_var])
+  
+  ind_vals_var <- ind_vals[rownames(ind_vals) %in% top_var_ind, ]
+  
+  ind_vals_var_zscore <- scale(ind_vals_var) # by column
+  
+  # do the heatmap
+  #######
+  # make clustered heatmap
+  segment_anno <- sapply(colnames(ind_vals_var_zscore), function(s){
+    seg <- metadata$Segment[metadata$dcc_filename == s]
+  })
+  
+  patient_anno <- sapply(colnames(ind_vals_var_zscore), function(s){
+    seg <- metadata$Patient[metadata$dcc_filename == s]
+  })
+  
+  ha = HeatmapAnnotation(
+    segment = anno_simple(segment_anno, col = c("stroma" = "green", "tumor" = "blue")),
+    patient = anno_simple(patient_anno),
+    annotation_name_side = "left")
+  
+  
+  png(filename=file.path(outp_dir, paste0('hmap_', res_type, '_clustered', '_topvar', as.character(top_var), '.png')), 
+      width=8, height=6,units="in",res=2000)
+  
+  ind_heat <- Heatmap(ind_vals_var_zscore, cluster_columns = T, cluster_rows= T,
+                      show_row_names = FALSE, show_column_names = FALSE, show_row_dend = FALSE,
+                      top_annotation = ha)
+  
+  
+  draw(ind_heat)
+  dev.off()
+}
 
 
 # networks UMAP -----------------------------------------------------------

@@ -876,6 +876,44 @@ rm_too_small_groups <- function(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin
   }
 }
 
+
+###############################################################
+# ranking genes eg from DGE and performing dge enrichment analysis
+# ranking: diff_measure (eg log2FC) * -log10(pval)
+# gsea_scoretype c('std', 'pos', 'neg) # std - both pos and neg scores
+rank_genes_and_do_gsea_enrichment <- function(gene_diff_df, diff_colname, pval_colname, gene_colname, sign_list, gsea_scoretype = 'std'){
+  
+  # rank by log2fc (or other measure of differences) * -log10(pval)
+  gene_diff_df$rank_p_fcval <- gene_diff_df[[diff_colname]]*(-log10(gene_diff_df[[pval_colname]]))
+  
+  # sort by ranking by fc and pval (because fdr has many ties)
+  gene_rank <- gene_diff_df$rank_p_fcval
+  names(gene_rank) <- gene_diff_df[[gene_colname]]
+  gene_rank <- sort(gene_rank, decreasing = T)
+  
+  # fix infinite ranks if needed
+  # Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
+  max_ranking <- max(gene_rank[is.finite(gene_rank)])
+  min_ranking <- min(gene_rank[is.finite(gene_rank)])
+  gene_rank <- replace(gene_rank, gene_rank > max_ranking, max_ranking * 10)
+  gene_rank <- replace(gene_rank, gene_rank < min_ranking, min_ranking * 10)
+  gene_rank <- sort(gene_rank, decreasing = TRUE) # sort genes by ranking
+  
+  # do gsea on ranked dge gene list
+  gsea_res <- fgsea(pathways = sign_list, # List of gene sets to check
+                    stats = gene_rank,
+                    scoreType = gsea_scoretype, # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
+                    minSize = min_sign_gene_nr,
+                    maxSize = 500,
+                    nproc = detectCores()-2) # for parallelisation
+  
+  # assign independent pathways, removing redundancies/similar pathways
+  collapsedPathways <- collapsePathways(gsea_res, sign_list, gene_rank)
+  gsea_res$is_main_pathway <- ifelse(gsea_res$pathway %in% collapsedPathways$mainPathways, 'yes', 'no')
+  
+  return(gsea_res)
+}
+
 ########################################333
 # mdified function from GeoMx package with trycatch to skip errors while lmm cannot be computed
 # TODO better to unwrap it all and rewrite nicer
@@ -1021,4 +1059,5 @@ mixedModelDE2 <- function (object, elt = "exprs", modelFormula = NULL, groupVar 
   }
   return(mixedOut)
 }
+
 

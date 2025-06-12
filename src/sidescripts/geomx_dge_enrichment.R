@@ -44,7 +44,7 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # if there are issues, turn it off
 
 # signatures and DEG results with less nr of genes will be removed
-min_sign_gene_nr <- 5
+min_sign_gene_nr <- 10
 compute_hallmark <- T # should GSEA for msigdb hallmark be computed
 #msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
 msigdb_subcat <- c('GO:BP', 'CP:KEGG_MEDICUS')
@@ -99,35 +99,8 @@ for(dge_df_path in dge_df_list){
       # subset to data and contrast group
       dge_sub <- dge_df[dge_df$data_group == dt_group & dge_df$Contrast == cont, ]
       
-      # different from DGE calculation cause fdr was for all segments and contrasts. this is appropriate one
-      dge_sub$FDR_adj <- p.adjust(dge_sub$`Pr(>|t|)`, method = "fdr") # not needed for now
-      dge_sub$rank_p_fcval <- dge_sub$Estimate*(-log10(dge_sub$`Pr(>|t|)`))
-      
-      # sort by ranking by fc and pval (because fdr has many ties)
-      dge_sub_rank <- dge_sub$rank_p_fcval
-      names(dge_sub_rank) <- dge_sub$Gene
-      dge_sub_rank <- sort(dge_sub_rank, decreasing = T)
-      
-      # fix infinite ranks if needed
-      # Some genes have such low p values that the signed pval is +- inf, we need to change it to the maximum * constant to avoid problems with fgsea
-      max_ranking <- max(dge_sub_rank[is.finite(dge_sub_rank)])
-      min_ranking <- min(dge_sub_rank[is.finite(dge_sub_rank)])
-      dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank > max_ranking, max_ranking * 10)
-      dge_sub_rank <- replace(dge_sub_rank, dge_sub_rank < min_ranking, min_ranking * 10)
-      dge_sub_rank <- sort(dge_sub_rank, decreasing = TRUE) # sort genes by ranking
-      
-      # do gsea on ranked dge gene list
-      gsea_res <- fgsea(pathways = sign_list, # List of gene sets to check
-                        stats = dge_sub_rank,
-                        scoreType = 'std', # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos', 'neg'
-                        minSize = 10,
-                        maxSize = 500,
-                        nproc = 18) # for parallelisation
-      
-      # assign independent pathways, removing redundancies/similar pathways
-      collapsedPathways <- collapsePathways(gsea_res, sign_list, dge_sub_rank)
-      
-      gsea_res$is_main_pathway <- ifelse(gsea_res$pathway %in% collapsedPathways$mainPathways, 'yes', 'no')
+      # rank by log2fc * -log10(pval)
+      gsea_res <- rank_genes_and_do_gsea_enrichment(dge_sub, 'Estimate', 'Pr(>|t|)', 'Gene', sign_list)
       
       gsea_res$data_group <- dt_group
       gsea_res$Contrast <- cont
@@ -151,6 +124,7 @@ for(dge_df_path in dge_df_list){
     # cluster gsea signatures by jaccard idx ----------------------------------
     # clustering based on jaccard idx - nr of common elements in a set / union of sets
     
+    # TODO put into separate functions
     gsea_res_clust_all <- lapply(unique(gsea_res_all$Contrast), function(cont){
       lapply(unique(gsea_res_all$data_group), function(dt_group){
         
