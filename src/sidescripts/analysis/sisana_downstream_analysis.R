@@ -39,6 +39,8 @@ ind_vals_path <- file.path(outp_dir, 'network', 'lioness_indegree.csv')
 # gsea on expr/ind diff 
 gsea_dirs <- list.dirs(file.path(outp_dir, 'gsea'), recursive = F)
 
+gsea_clust_df_path <- file.path(outp_dir, 'gsea_from_geomx', 'gsea_indegrees_gobp', 'gsea_sign_fdr0.05_clust.csv')
+
 fdr_thr <- 0.05
 fwer_thr <- 0.01
 jaccard_hclust_cuts <- c(0.5, 1, 1.2, 1.5)
@@ -169,6 +171,30 @@ for(clust_cutnr in jaccard_hclust_cuts){
   fwrite(gsea_best, file.path(outp_dir,'gsea', paste0('gsea_from_dge_sign_fdr', as.character(fdr_thr),  '_clust_best_cut_', as.character(clust_cutnr), '_kegg.csv')))
   
 }
+
+
+######################################
+#######################################
+# choosing interesting gene set for edges exploration
+
+gsea_clust_df <- fread(gsea_clust_df_path)
+clust_cutnr <- 1.2 #1.2 - clust 6, # 1.5 clust 4
+clust_name <- 6
+lead_genes_colname <- 'leadingEdge'
+lead_genes_split <- '|'
+
+clust_colname <- paste0('path_cluster_cut_', gsub('\\.', '', as.character(clust_cutnr)))
+
+sort(table(gsea_clust_df[[clust_colname]]))
+length(unique(gsea_clust_df[[clust_colname]]))
+
+path_clust <- gsea_clust_df[gsea_clust_df[[clust_colname]] == clust_name, ]
+
+pathclust_genes <- lapply(path_clust[[lead_genes_colname]], function(x){
+  genelist <- unlist(strsplit(x, split=lead_genes_split, fixed=T)) # TODO wtf it looks like any split works
+})
+
+pathclust_genes <- unique(unlist(pathclust_genes))
 
 ##############################################################################
 ##############################################################################
