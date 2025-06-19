@@ -14,16 +14,18 @@ filter_expr_deseq2_norm_log = function(metadt_all,expr_deseq2_norm_log,nact_stat
                     )
   
   
-  if (length(nact_status) != 0) {
-    meta <- meta %>% filter(NACT_status %in% nact_status)
+  if (!is.null(nact_status)) {
+    # TODO cehck the legth of the list 
+    
+    meta <- meta %>% filter(NACT_status == nact_status)
   }
 
-  if (length(segment) != 0) {
-    meta <- meta %>% filter(Segment %in% segment)
+  if (!is.null(segment)) {
+    meta <- meta %>% filter(Segment == segment)
   }
 
-  if (length(annotation) ) {
-    meta <- meta %>% filter(Annotation %in% annotation)
+  if (!is.null(annotation)) {
+    meta <- meta %>% filter(Annotation == annotation)
   }
 
 
@@ -123,11 +125,23 @@ cellchat_predict_prob <- function(metadt_all, expr_deseq2_norm_log, DE_genes = N
   
   # check min number of cells else stop the execution
   
+  
+  # Build grouping variable names
+  group_vars <- c("labels")  # always group by labels
+  
+  if (!is.null(segment)) group_vars <- c("Segment", group_vars)
+  if (!is.null(nact_status)) group_vars <- c("NACT_status", group_vars)
+  if (!is.null(annotation)) group_vars <- c("Annotation", group_vars)
+  
+  # Now use across + all_of
   df_grouped_samples <- meta %>%
-    group_by(Segment, NACT_status, Annotation, labels) %>%
+    group_by(across(all_of(group_vars))) %>%
     summarise(count = n(), .groups = "drop")
   
+  
   low_count_labels <- unique(df_grouped_samples[df_grouped_samples$count < min_cells,]$labels)
+  
+  # cell type abundance plot
   
   plot = cell_type_abundance_plot(metadt_all,min_cells)
   
