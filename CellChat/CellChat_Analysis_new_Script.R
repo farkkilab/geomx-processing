@@ -20,14 +20,15 @@ output_dir <- 'C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/TestRun_N
 
 # parameters for Cellchat
 
-cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types  "Bcells","DCs"
+
+cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types 
 cell_frac_cutoff = 0.01 # 0.01 or 0.005
 min_cells = 10
-# row_variance_cutoff = NULL I did not filter based on rwo variance
+# row_variance_cutoff = NULL  # I did not filter based on row variance
 
-nact_status = NA
-segment = c("stroma","tumor") # stroma , tumor
-annotation = NA
+nact_status = c("pre") # define as C("pre","post")
+segment = c("stroma","tumor") 
+annotation = c("posCD8_negIBA1")
 
 
 
@@ -179,23 +180,7 @@ expr_deseq2_norm_log <- expr_deseq2_norm_log[, colnames(expr_deseq2_norm_log) %i
 
 
 
-
-# cell type abundance plot
-
-plot = cell_type_abundance_plot(metadt_all,min_cells)
-
-pdf(file.path(output_dir, "cell_chat_cell_type_abundance.pdf"), width = 10, height = 6)
-plot
-dev.off()
-
-# TODO
-
-# if (length(low_count_labels) > 0) {
-#   warning("The following cell types have fewer than 10 cells: ", paste(low_count_labels, collapse = ", "))
-#   stop("Stopping execution due to low cell count.check the cell type abundance plots and set the min_cells counts")
-# }
-
-# calculating the cellchat probabiities
+#############  calculating the cellchat probabiities
 
 cellchat_results <- list()
 
@@ -217,7 +202,8 @@ for (seg in segment) {
         expr_deseq2_norm_log,
         nact_status = nact,
         segment = seg,
-        annotation = ann
+        annotation = ann,
+        output_dir = output_dir
       )
 
     }
