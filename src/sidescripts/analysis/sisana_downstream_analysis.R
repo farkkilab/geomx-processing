@@ -35,11 +35,13 @@ ind_mean_diff_path <- file.path(outp_dir, 'compare_means', 'comparison_mw_betwee
 
 # indegree results
 ind_vals_path <- file.path(outp_dir, 'network', 'lioness_indegree.csv')
+out_vals_path <- file.path(outp_dir, 'network', 'lioness_outdegree.csv')
 
 # gsea on expr/ind diff 
 gsea_dirs <- list.dirs(file.path(outp_dir, 'gsea'), recursive = F)
 
 gsea_clust_df_path <- file.path(outp_dir, 'gsea_from_geomx', 'gsea_indegrees_gobp', 'gsea_sign_fdr0.05_clust.csv')
+geneset_filt_edges_path <- file.path(outp_dir, 'gsea_from_geomx', 'lioness_filtered_for_APP_genes.csv')
 
 fdr_thr <- 0.05
 fwer_thr <- 0.01
@@ -195,6 +197,97 @@ pathclust_genes <- lapply(path_clust[[lead_genes_colname]], function(x){
 })
 
 pathclust_genes <- unique(unlist(pathclust_genes))
+
+# save in txt to use in sisana extract command
+fwrite(list(pathclust_genes), file = file.path(outp_dir, 'gsea_from_geomx', 'APP_genes.txt'))
+
+#######################################################
+#######################################################
+# edges exploration
+geomx_obj_meta <- readRDS(geomx_obj_path)@phenoData@data
+geomx_obj_meta$dcc_filename <- gsub('\\-', '\\.', geomx_obj_meta$dcc_filename)
+top_edge_nr <- 100
+
+# file from sisana extract genes (using lioness.pickle and APP_genes.txt)
+geneset_edges <- fread(geneset_filt_edges_path)
+
+# move to long 
+geneset_edges_long <- melt(setDT(geneset_edges), id.vars = c('TF', 'Target'), variable.name = "dcc_filename")
+geneset_edges_long <- full_join(as.data.frame(geneset_edges_long), geomx_obj_meta[, c('dcc_filename', 'Segment')])
+geneset_edges_long$TF_Target <- paste0(geneset_edges_long$TF, '_', geneset_edges_long$Target)
+
+# select top n edges per sample
+geneset_edges_long_top <- geneset_edges_long %>% 
+  arrange(desc(value)) %>% 
+  group_by(dcc_filename) %>% slice_head(n = top_edge_nr)
+
+geneset_edges_long_top_str <- geneset_edges_long_top[geneset_edges_long_top$Segment == 'stroma', ]
+geneset_edges_long_top_tum <- geneset_edges_long_top[geneset_edges_long_top$Segment == 'tumor', ]
+
+# divide by segment and back to wide for cytoscape
+geneset_edges_top_wide_str <- dcast(setDT(geneset_edges_long_top[geneset_edges_long_top$Segment == 'stroma', ]),
+                               TF+Target ~ dcc_filename,
+                               value.var = "value")
+
+geneset_edges_top_wide_tum <- dcast(setDT(geneset_edges_long_top[geneset_edges_long_top$Segment == 'tumor', ]),
+                                    TF+Target ~ dcc_filename,
+                                    value.var = "value")
+
+fwrite(geneset_edges_top_wide_str, file = file.path(outp_dir, 'gsea_from_geomx', 'lioness_APP_genes_top_100_per_sample_str.csv'))
+fwrite(geneset_edges_top_wide_tum, file = file.path(outp_dir, 'gsea_from_geomx', 'lioness_APP_genes_top_100_per_sample_tum.csv'))
+
+
+sort(table(geneset_edges_long_top_str$TF), decreasing = T)[1:50]
+sort(table(geneset_edges_long_top_tum$TF), decreasing = T)[1:50]
+
+sort(table(geneset_edges_long_top_str$Target), decreasing = T)[1:50]
+sort(table(geneset_edges_long_top_tum$Target), decreasing = T)[1:50]
+
+length(unique(geneset_edges_long_top_str$TF))
+length(unique(geneset_edges_long_top_tum$TF))
+length(intersect(geneset_edges_long_top_str$TF, geneset_edges_long_top_tum$TF))
+
+length(unique(geneset_edges_long_top$TF_Target))
+length(intersect(geneset_edges_long_top_str$TF_Target, geneset_edges_long_top_tum$TF_Target))
+
+####################
+# that makes more sense I think
+# sum edges by TF and gene per stroma and tumor separately
+
+# for all 
+geneset_edges_long_tfsum <- geneset_edges_long %>%
+  group_by(Segment, TF) %>%
+  summarise(TF_sum_segm = sum(value))
+
+geneset_edges_long_targetsum <- geneset_edges_long %>%
+  group_by(Segment, Target) %>%
+  summarise(Target_sum_segm = sum(value))
+
+# for top per sample
+geneset_edges_long_top_tfsum <- geneset_edges_long_top %>%
+  group_by(Segment, TF) %>%
+  summarise(TF_sum_segm = sum(value))
+
+geneset_edges_long_top_targetsum <- geneset_edges_long_top %>%
+  group_by(Segment, Target) %>%
+  summarise(Target_sum_segm = sum(value))
+
+
+sort(geneset_edges_long_tfsum$TF_sum_segm[geneset_edges_long_tfsum$Segment == 'stroma'], decreasing = T)[1:50]
+sort(geneset_edges_long_tfsum$TF_sum_segm[geneset_edges_long_tfsum$Segment == 'tumor'], decreasing = T)[1:50]
+
+
+# top 100 edges per gene (sum by all samples together, tum/str separately)
+geneset_edges_long_edgesum <- geneset_edges_long_top %>%
+  group_by(Segment, TF_Target) %>%
+  summarise(TF_Target_sum_segm = sum(value)) %>%
+  mutate(Target = gsub('.*_', '', TF_Target))
+
+
+geneset_edges_long_top_edges_per_gene <- geneset_edges_long_edgesum %>%
+  arrange(desc(TF_Target_sum_segm)) %>% 
+  group_by(Segment, Target) %>%
+  slice_head(n = top_edge_nr)
 
 ##############################################################################
 ##############################################################################
