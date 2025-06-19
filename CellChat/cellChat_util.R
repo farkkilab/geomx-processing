@@ -14,16 +14,16 @@ filter_expr_deseq2_norm_log = function(metadt_all,expr_deseq2_norm_log,nact_stat
                     )
   
   
-  if (!is.null(nact_status)) {
-    meta <- meta %>% filter(NACT_status == nact_status)
+  if (length(nact_status) != 0) {
+    meta <- meta %>% filter(NACT_status %in% nact_status)
   }
 
-  if (!is.null(segment)) {
-    meta <- meta %>% filter(Segment == segment)
+  if (length(segment) != 0) {
+    meta <- meta %>% filter(Segment %in% segment)
   }
 
-  if (!is.null(annotation)) {
-    meta <- meta %>% filter(Annotation == annotation)
+  if (length(annotation) ) {
+    meta <- meta %>% filter(Annotation %in% annotation)
   }
 
 
@@ -52,16 +52,17 @@ filter_expr_deseq2_norm_log = function(metadt_all,expr_deseq2_norm_log,nact_stat
 # cell type abundance plot 
 
 
-cell_type_abundance_plot = function(meta, min_cells){
+cell_type_abundance_plot = function(metadt_all, min_cells){
   
-  
-  meta = data.frame(samples = metadt_all$Sample, 
-                    NACT_status = metadt_all$NACT_status, 
-                    Patient = metadt_all$Patient, 
-                    Segment = metadt_all$Segment , 
-                    Annotation = metadt_all$Annotation_cell, 
+
+  meta = data.frame(samples = metadt_all$Sample,
+                    NACT_status = metadt_all$NACT_status,
+                    Patient = metadt_all$Patient,
+                    Segment = metadt_all$Segment ,
+                    Annotation = metadt_all$Annotation_cell,
                     row.names = rownames(metadt_all))
-  
+
+  cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
   meta = data.frame(labels = cell_types, meta)
   
   df_grouped_samples <- meta %>%
@@ -74,7 +75,7 @@ cell_type_abundance_plot = function(meta, min_cells){
       geom_bar(stat = "identity", position = "dodge") +
       facet_grid(facet_formula) +
       theme_minimal() +
-      geom_hline(yintercept = 10, linetype = "solid", color = "black") +
+      geom_hline(yintercept = min_cells, linetype = "solid", color = "black") +
       theme(
         axis.text.x = element_text(angle = 45, hjust = 1),
         strip.text.y = element_text(angle = 0)
@@ -93,16 +94,21 @@ cell_type_abundance_plot = function(meta, min_cells){
   )
   
   
-  #low_count_labels <- unique(df_grouped_samples[df_grouped_samples$count < min_cells,]$labels)
+  
+  return(list(
+    plot_combined = plot_combined,
+    df_grouped_samples = df_grouped_samples
 
-  return(plot_combined)
+  ))
+  
+
   
 }
 
 
 # cellChat probability prediction function
 
-cellchat_predict_prob <- function(metadt_all,expr_deseq2_norm_log,nact_status,segment,annotation){
+cellchat_predict_prob <- function(metadt_all, expr_deseq2_norm_log, DE_genes = NULL, DEG_info = NULL, nact_status, segment, annotation, thresh_fc = 0, thresh_p = 0.05, min_cells = 10, output_dir){
   
   expr_deseq2_norm_log_filtered_list <- filter_expr_deseq2_norm_log(
     metadt_all,
@@ -114,7 +120,30 @@ cellchat_predict_prob <- function(metadt_all,expr_deseq2_norm_log,nact_status,se
   
   expr_deseq2_norm_log_filtered = expr_deseq2_norm_log_filtered_list$expr_deseq2_norm_log_filtered
   meta = expr_deseq2_norm_log_filtered_list$meta_filtered
-  ### CellChat Analysis
+  
+  # check min number of cells else stop the execution
+  
+  df_grouped_samples <- meta %>%
+    group_by(Segment, NACT_status, Annotation, labels) %>%
+    summarise(count = n(), .groups = "drop")
+  
+  low_count_labels <- unique(df_grouped_samples[df_grouped_samples$count < min_cells,]$labels)
+  
+  plot = cell_type_abundance_plot(metadt_all,min_cells)
+  
+  pdf(file.path(output_dir, "cell_type_abundance.pdf"), width = 10, height = 6)
+  print(plot$plot_combined)
+  dev.off()
+  
+  
+  if (length(low_count_labels) > 0) {
+    
+    warning("The following cell types have fewer than 10 cells: ", paste(low_count_labels, collapse = ", "))
+    stop("Stopping execution due to low cell count.check the cell type abundance plots and set the min_cells counts")
+  }
+  
+  
+  ##########    CellChat Analysis
   
   
   # create cellChat object
@@ -134,9 +163,27 @@ cellchat_predict_prob <- function(metadt_all,expr_deseq2_norm_log,nact_status,se
   # Preprocessing the expression data for cell-cell communication analysis
   # Identify over-expressed signaling genes associated with each cell group
   
+  # TODO check future::plan("multisession", workers = 4) 
   
-  future::plan("multisession", workers = 4) # do parallel
-  cellchat_obj <- identifyOverExpressedGenes(cellchat_obj) # thresh.fc = 0, thresh.p = 0.05 fold chage and pvalue: Can use other thresholds
+ 
+  
+  if (is.null(DE_genes)) {
+    
+    # TODO check both DE_genes and DEG_info does not exsist else error !
+    
+    cellchat_obj <- identifyOverExpressedGenes(cellchat_obj, thresh.fc = thresh_fc, thresh.p = thresh_p) # default thresholds thresh.fc = 0, thresh.p = 0.05
+  } 
+  
+  else {
+    
+    # TODO check both DE_genes and DEG_info exsist else error !
+    
+    # to provide DEGs externally
+    cellchat_obj@var.features[["features"]] = DE_genes
+    cellchat_obj@var.features[[paste0("features", ".info")]] = DEG_info
+  }
+  
+  
   cellchat_obj <- identifyOverExpressedInteractions(cellchat_obj)
   
   
@@ -154,6 +201,7 @@ cellchat_predict_prob <- function(metadt_all,expr_deseq2_norm_log,nact_status,se
   
   
   return(list(
+    cell_type_abundance_plot = plot,
     cellchat_obj = cellchat_obj,
     df.net = df.net
   ))
