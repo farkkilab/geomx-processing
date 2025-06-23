@@ -2,6 +2,108 @@
 
 # CellChat Preprocessing
 
+# extract and combine expression data and meta data (Used by both CellChat and MultiNicheNet)
+
+extract_and_combine_expression_data <- function(cell_types, bprism_res, ct_names, geomx_obj){
+  
+  
+  
+  deconv_ct_list <- setNames(lapply(ct_names, function(ct_name) {
+    cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
+    
+    # Mask cell fractions if CV > 0.2
+    cell_to_rm <- rownames(cell_frac_cv)[cell_frac_cv[[ct_name]] > 0.2]
+    
+    deconv_ct <- BayesPrism::get.exp(bp = bprism_res,
+                                     state.or.type = "type",
+                                     cell.name = ct_name)
+    
+    # Filter out cells with high CV
+    deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
+    
+    return(deconv_ct)
+  }), ct_names)
+  
+  
+  # combine expression data
+  
+  deconv_ct_list_int <- lapply(names(deconv_ct_list), function(ct_name){
+    mat <- deconv_ct_list[[ct_name]]
+    rownames(mat) <- gsub('\\.dcc', paste0('_', ct_name), rownames(mat))
+    
+    mat <- apply(mat, c(1, 2), function(x) {(as.integer(x))})
+    
+    return(mat)
+  })
+  
+  names(deconv_ct_list_int) <- names(deconv_ct_list)
+  deconv_ct_list_int_all <- do.call(rbind, deconv_ct_list_int)
+  
+  # Meta Data
+  
+  deconv_metadt_list <- lapply(names(deconv_ct_list_int), function(ct_name){
+    meta_data = sData(geomx_obj)
+    
+    new_meta <- data.frame(meta_data[,c(2,5,6,7,24,25,28)])
+    
+    new_meta$dcc_filename = gsub('\\.dcc', paste0('_', ct_name), new_meta$dcc_filename)
+    mat = deconv_ct_list_int[[ct_name]]
+    
+    matched_entries = new_meta[new_meta$dcc_filename %in% rownames(mat), ]
+    rownames(matched_entries) = matched_entries$dcc_filename  
+    
+    return(matched_entries)
+  })
+  
+  metadt_all <- do.call(rbind, deconv_metadt_list)
+  
+  return(list( 
+    
+    deconv_ct_list_int_all = deconv_ct_list_int_all,
+    metadt_all = metadt_all
+    
+  ))
+  
+}
+
+
+# function to filter based on cell fraction (Used by both CellChat and MultiNicheNet)
+
+
+filter_based_on_cell_fraction <- function(ct_names, cell_frac_cutoff, cell_fractions_df, expr){
+  
+  formatted_ct_names <- gsub(" ", ".", ct_names) #because the cell fraction dataframe colnames are different: dot instead of space
+  
+  filtered_sample_list <- setNames(lapply(formatted_ct_names, function(ct_name) {
+    
+    # Filter out cells less than the cell_frac_cutoff
+    if(!is.null(cell_frac_cutoff)){
+      
+      cells_greater_than_cutoff <- cell_fractions_df[cell_fractions_df[, ct_name] >= cell_frac_cutoff,]$dcc_filename
+      
+      cells_greater_than_cutoff <- gsub('\\.dcc', paste0('_', ct_name), cells_greater_than_cutoff)
+      
+      return(cells_greater_than_cutoff)
+      
+    }
+    
+    return(NULL)
+    
+  }), ct_names) 
+  
+  # Get a unique list of filtered samples
+  filtered_samples <- unlist(filtered_sample_list)
+  # Subset the expression matrix
+  expr <- expr[, colnames(expr) %in% filtered_samples]
+  
+  
+  return(expr)
+  
+}
+
+
+
+# filter expression data based on NACT_status, segment and Annotations
 
 filter_expr_deseq2_norm_log = function(metadt_all,expr_deseq2_norm_log,nact_status,segment,annotation){
   
