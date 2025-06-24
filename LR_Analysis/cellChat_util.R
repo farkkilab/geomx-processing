@@ -4,9 +4,10 @@
 
 # extract and combine expression data and meta data (Used by both CellChat and MultiNicheNet)
 
-extract_and_combine_expression_data <- function(cell_types, bprism_res, ct_names, geomx_obj){
-  
-  
+
+
+
+extract_and_combine_expression_data <- function(bprism_res, ct_names, geomx_obj, aoi_id, sample_name, aoi_segment_var, main_experimental_condition, grouping_var_col_ids){
   
   deconv_ct_list <- setNames(lapply(ct_names, function(ct_name) {
     cell_frac_cv <- as.data.frame(bprism_res@posterior.theta_f@theta.cv)
@@ -21,9 +22,10 @@ extract_and_combine_expression_data <- function(cell_types, bprism_res, ct_names
     # Filter out cells with high CV
     deconv_ct <- deconv_ct[!(rownames(deconv_ct) %in% cell_to_rm), ]
     
+    
+    
     return(deconv_ct)
   }), ct_names)
-  
   
   # combine expression data
   
@@ -40,38 +42,42 @@ extract_and_combine_expression_data <- function(cell_types, bprism_res, ct_names
   deconv_ct_list_int_all <- do.call(rbind, deconv_ct_list_int)
   
   # Meta Data
-  
+
   deconv_metadt_list <- lapply(names(deconv_ct_list_int), function(ct_name){
+
     meta_data = sData(geomx_obj)
     
-    new_meta <- data.frame(meta_data[,c(2,5,6,7,24,25,28)])
+    # TODO here I am selecting only few of the selected columns  
     
-    new_meta$dcc_filename = gsub('\\.dcc', paste0('_', ct_name), new_meta$dcc_filename)
+    
+    meta_data = meta_data %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
+    # meta_data = data.frame(meta_data[,c(2,5,6,7,24,25,28)])
+
+    meta_data$dcc_filename = gsub('\\.dcc', paste0('_', ct_name), meta_data$dcc_filename)
     mat = deconv_ct_list_int[[ct_name]]
-    
-    matched_entries = new_meta[new_meta$dcc_filename %in% rownames(mat), ]
-    rownames(matched_entries) = matched_entries$dcc_filename  
-    
+
+    matched_entries = meta_data[meta_data$dcc_filename %in% rownames(mat), ]
+    rownames(matched_entries) = matched_entries$dcc_filename
+
     return(matched_entries)
   })
-  
+
   metadt_all <- do.call(rbind, deconv_metadt_list)
-  
-  return(list( 
-    
+
+  return(list(
     deconv_ct_list_int_all = deconv_ct_list_int_all,
     metadt_all = metadt_all
-    
-  ))
+    ))
   
 }
 
 
-# function to filter based on cell fraction (Used by both CellChat and MultiNicheNet)
 
+# function to filter based on cell fraction (Used by both CellChat and MultiNicheNet)
 
 filter_based_on_cell_fraction <- function(ct_names, cell_frac_cutoff, cell_fractions_df, expr){
   
+  # TODO check this formatted_ct_names
   formatted_ct_names <- gsub(" ", ".", ct_names) #because the cell fraction dataframe colnames are different: dot instead of space
   
   filtered_sample_list <- setNames(lapply(formatted_ct_names, function(ct_name) {
@@ -105,36 +111,46 @@ filter_based_on_cell_fraction <- function(ct_names, cell_frac_cutoff, cell_fract
 
 # filter expression data based on NACT_status, segment and Annotations
 
-filter_expr_deseq2_norm_log = function(metadt_all,expr_deseq2_norm_log,nact_status,segment,annotation){
+filter_expr_deseq2_norm_log = function(metadt_all, expr_deseq2_norm_log, grouping_var_col_ids, group){
   
-  meta = data.frame(samples = metadt_all$Sample, 
-                    NACT_status = metadt_all$NACT_status, 
-                    Patient = metadt_all$Patient, 
-                    Segment = metadt_all$Segment , 
-                    Annotation = metadt_all$Annotation_cell, 
-                    row.names = rownames(metadt_all)
-                    )
+
+  groups <- strsplit(group, "-")[[1]]
+  print(groups)
   
-  
-  if (!is.null(nact_status)) {
-    # TODO cehck the legth of the list 
+  if(length(grouping_var_col_ids) != length(groups)){
     
-    meta <- meta %>% filter(NACT_status == nact_status)
+    warning("grouping_var_col_ids and comparison groups are not matching")
+    stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
+
   }
-
-  if (!is.null(segment)) {
-    meta <- meta %>% filter(Segment == segment)
+  
+  
+  
+  # Build and evaluate filter conditions dynamically and the factor
+  meta <- metadt_all %>%
+    filter(
+      !!!map2(
+        grouping_var_col_ids, groups,
+        ~ expr(!!sym(.x) == !!.y)
+      )
+    ) 
+  
+  if (nrow(meta) == 0) {
+    
+    warning("grouping_var_col_ids and comparison groups are not matching")
+    stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
   }
-
-  if (!is.null(annotation)) {
-    meta <- meta %>% filter(Annotation == annotation)
-  }
-
-
+  
+  
+  meta <- meta %>%
+    mutate(
+      across(all_of(grouping_var_col_ids), as.factor)
+    )
+  
+  
   
   cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
   meta = data.frame(labels = cell_types, meta)
-  meta$samples <- as.factor(meta$samples)
   meta$labels <- as.factor(meta$labels)
   meta_filter = rownames(meta) %in% colnames(expr_deseq2_norm_log)
   meta = meta[meta_filter,]
@@ -151,119 +167,91 @@ filter_expr_deseq2_norm_log = function(metadt_all,expr_deseq2_norm_log,nact_stat
 
 
 
-
-
 # cell type abundance plot 
 
 
-cell_type_abundance_plot = function(metadt_all, min_cells){
+cell_type_abundance_plot = function(metadt_all, min_cells, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, output_dir){
   
-
-  meta = data.frame(samples = metadt_all$Sample,
-                    NACT_status = metadt_all$NACT_status,
-                    Patient = metadt_all$Patient,
-                    Segment = metadt_all$Segment ,
-                    Annotation = metadt_all$Annotation_cell,
-                    row.names = rownames(metadt_all))
-
-  cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
-  meta = data.frame(labels = cell_types, meta)
+ 
+  cell_types <- sapply(strsplit(rownames(metadt_all), "_"), function(x) x[2])
+  meta = data.frame(labels = cell_types, metadt_all)
+  meta$labels <- as.factor(meta$labels)
   
+  group_vars <- c("labels",grouping_var_col_ids)  # always group by labels
   df_grouped_samples <- meta %>%
-    group_by(Segment, NACT_status, Annotation, labels) %>%
+    group_by(!!!syms(group_vars)) %>%
     summarise(count = n(), .groups = "drop")
   
-  # Define a custom ggplot function to avoid repetition
-  create_bar_plot <- function(data, x, facet_formula) {
-    ggplot(data, aes_string(x = x, y = "count", fill = "labels")) +
-    # TODO check ggplot(data, aes(x = .data[[var1]], y = .data[[var2]])) + geom_point()  
+  
+  make_plot <- function(x_var, facet_var) {
+    ggplot(df_grouped_samples, aes(x = .data[[x_var]], y = count, fill = labels)) +
       geom_bar(stat = "identity", position = "dodge") +
-      facet_grid(facet_formula) +
+      facet_grid(as.formula(paste(". ~", facet_var))) +
       theme_minimal() +
       geom_hline(yintercept = min_cells, linetype = "solid", color = "black") +
       theme(
         axis.text.x = element_text(angle = 45, hjust = 1),
         strip.text.y = element_text(angle = 0)
       )
+      # + ggtitle(paste("X:", x_var, "| Facet:", facet_var))
   }
   
-  # Create individual plots
-  p1 <- create_bar_plot(df_grouped_samples, "Annotation", ". ~ Segment")
-  p2 <- create_bar_plot(df_grouped_samples, "Annotation", ". ~ NACT_status")
-  p3 <- create_bar_plot(df_grouped_samples, "NACT_status", ". ~ Segment")
+  col_names = unique(c(aoi_segment_var, main_experimental_condition, aoi_segment_var))
   
-  plot_combined = patchwork::wrap_plots(
-    p1,p2,p3,
-    nrow = 2, guides = "collect",
-    widths = c(6,6)
-  )
+  combinations <- combn(col_names, 2, simplify = FALSE)
+  list_of_plots <- map(combinations, ~ make_plot(.x[1], .x[2]))
+  plot_combined = wrap_plots(list_of_plots, guides = "collect")
   
-  
-  
-  return(list(
-    plot_combined = plot_combined,
-    df_grouped_samples = df_grouped_samples
-
-  ))
+  pdf(file.path(output_dir, "cell_type_abundance.pdf"), width = 10, height = 6)
+  print(plot_combined)
+  dev.off()
   
 
-  
 }
+
 
 
 # cellChat probability prediction function
 
-cellchat_predict_prob <- function(metadt_all, expr_deseq2_norm_log, DE_genes = NULL, DEG_info = NULL, nact_status, segment, annotation, thresh_fc = 0, thresh_p = 0.05, min_cells = 10, output_dir){
+cellchat_predict_prob <- function(metadt_all, expr_deseq2_norm_log, DE_genes = NULL, DEG_info = NULL, sample_name, grouping_var_col_ids, group, thresh_fc = 0, thresh_p = 0.05, min_cells = 10, output_dir){
   
-  
-  parts <- c(nact_status, segment, annotation)
-  parts_non_NA <- parts[!sapply(parts, is.na)]
-  file_name = paste(parts_non_NA, collapse = "_")
+
   
   expr_deseq2_norm_log_filtered_list <- filter_expr_deseq2_norm_log(
     metadt_all,
     expr_deseq2_norm_log,
-    nact_status,
-    segment,
-    annotation 
+    grouping_var_col_ids,
+    group
   )
   
   expr_deseq2_norm_log_filtered = expr_deseq2_norm_log_filtered_list$expr_deseq2_norm_log_filtered
   meta = expr_deseq2_norm_log_filtered_list$meta_filtered
+  meta$samples = meta[,sample_name] # for cellChat
+  meta$samples <- as.factor(meta$samples)
   
   # check min number of cells else stop the execution
+  # # Build grouping variable names
+  group_vars <- c("labels",grouping_var_col_ids)  # always group by labels
   
   
-  # Build grouping variable names
-  group_vars <- c("labels")  # always group by labels
-  
-  if (!is.null(segment)) group_vars <- c("Segment", group_vars)
-  if (!is.null(nact_status)) group_vars <- c("NACT_status", group_vars)
-  if (!is.null(annotation)) group_vars <- c("Annotation", group_vars)
-  
-  # Now use across + all_of
   df_grouped_samples <- meta %>%
-    group_by(across(all_of(group_vars))) %>%
+    group_by(!!!syms(group_vars)) %>%
     summarise(count = n(), .groups = "drop")
   
-  
+
+
   low_count_labels <- unique(df_grouped_samples[df_grouped_samples$count < min_cells,]$labels)
-  
-  # cell type abundance plot
-  
-  plot = cell_type_abundance_plot(metadt_all,min_cells)
-  
-  pdf(file.path(output_dir, "cell_type_abundance.pdf"), width = 10, height = 6)
-  print(plot$plot_combined)
-  dev.off()
-  
-  
+ 
+  # TODO cell type abundance plot
+  # cell_type_abundance_plot(metadt_all, min_cells, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, output_dir)
+
+
   if (length(low_count_labels) > 0) {
-    
+
     warning("The following cell types have fewer than 10 cells: ", paste(low_count_labels, collapse = ", "))
     stop("Stopping execution due to low cell count.check the cell type abundance plots and set the min_cells counts")
   }
-  
+
   
   ##########    CellChat Analysis
   
@@ -294,9 +282,7 @@ cellchat_predict_prob <- function(metadt_all, expr_deseq2_norm_log, DE_genes = N
     # TODO check both DE_genes and DEG_info does not exsist else error !
     
     cellchat_obj <- identifyOverExpressedGenes(cellchat_obj, thresh.fc = thresh_fc, thresh.p = thresh_p) # default thresholds thresh.fc = 0, thresh.p = 0.05
-  } 
-  
-  else {
+  } else {
     
     # TODO check both DE_genes and DEG_info exsist else error !
     
@@ -330,3 +316,12 @@ cellchat_predict_prob <- function(metadt_all, expr_deseq2_norm_log, DE_genes = N
   
   
 }
+
+
+
+
+
+
+
+
+      
