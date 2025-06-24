@@ -15,7 +15,7 @@ qval_threshold = 0.01 # filter significant LR pairs
 # load data
 
 
-geomx_obj <- readRDS(paste0(data_dir,'/geomx_qc_norm_batch_eff_rm.RDS'))
+
 count_geomx = data.frame(geomx_obj@assayData$exprs) # count data
 #count_geomx  = data.frame(geomx_obj@assayData$q3_norm) # q3 normalized data
 
@@ -34,89 +34,71 @@ if (!dir.exists(paste0(output_dir,output_folder_name))) {
 }
 
 
-parts <- c(nact_status, segment, annotation)
-parts_non_NA <- parts[!sapply(parts, is.na)]
-
 
 # Run BulkSignalR predictions
 
 
-if (length(parts_non_NA) == 0) {
+BulkSignaR_Output <- list()
+
+if (combined_Data == TRUE){
+  print("combined data")
   
-  nact_status = NULL
-  segment = NULL
-  annotation = NULL
+  output_name = paste(comparison, collapse = "-combined-")
   
-  # Filteration
+  meta_data_all = sData(geomx_obj)
+  meta_data_all = meta_data_all %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
   
-  count_geomx_filtered <- Filter_for_BulkSignaR_LR_prediction(geomx_obj, 
-                                                              nact_status, 
-                                                              segment, 
-                                                              annotation, 
-                                                              paired_only, 
-                                                              count_geomx)
+  count_geomx_list = list(count_geomx = count_geomx,
+                          meta_data = meta_data_all)
   
-  BulkSignaR_Output = BulkSignaR_LR_prediction(count_geomx_filtered$count_geomx,
-                                               count_geomx_filtered$meta_data,
-                                               normalize_needed, 
-                                               normalize_method, 
-                                               UQ_pc, 
-                                               output_dir , 
-                                               nact_status, 
-                                               segment, 
-                                               annotation, 
-                                               qval_threshold
-                                               )
-  
-  saveRDS(BulkSignaR_Output, file = paste0(output_dir,'/BulkSignalR_combined_output.RDS'))
-  
-  
-} else {
-  
-  BulkSignaR_Output <- list()
-  
-  for (seg in segment) {
-    
-    if (is.na(seg)){seg = NULL}
-    
-    for (nact in nact_status) {
-      
-      if (is.na(nact)){nact = NULL}
-      
-      for (ann in annotation) {
-        
-        if (is.na(ann)){ann = NULL}
-        
-        key <- paste0(seg, "_", nact, "_", ann)
-        
-        count_geomx_filtered <- Filter_for_BulkSignaR_LR_prediction(geomx_obj, 
-                                                                    nact, 
-                                                                    seg, 
-                                                                    ann, 
-                                                                    paired_only, 
-                                                                    count_geomx)
-        
-        BulkSignaR_Output[[key]] = BulkSignaR_LR_prediction(count_geomx_filtered$count_geomx,
-                                                            count_geomx_filtered$meta_data,
-                                                            normalize_needed, 
-                                                            normalize_method, 
-                                                            UQ_pc, 
-                                                            output_dir , 
-                                                            nact_status = nact, 
-                                                            segment = seg, 
-                                                            annotation = ann, 
-                                                            qval_threshold
-                                                            )
-        
-        file_name = paste(parts_non_NA, collapse = "_")
-        saveRDS(BulkSignaR_Output, file = paste0(output_dir,'/BulkSignalR_',file_name,'_output.RDS'))
-        
-        
-      }
-    }
-  }
+  BulkSignaR_Output[[output_name]] = BulkSignaR_LR_prediction(count_geomx_list,
+                                                              normalize_needed, 
+                                                              normalize_method, 
+                                                              UQ_pc, 
+                                                              output_dir, 
+                                                              qval_threshold,
+                                                              group = NULL
+                                                              ) 
   
 }
+  
+for (group in comparison) {
+  
+  print(group)
+        
+  count_geomx_filtered_list <- Filter_for_BulkSignaR_LR_prediction(geomx_obj, 
+                                                                aoi_id, 
+                                                                sample_name, 
+                                                                aoi_segment_var, 
+                                                                main_experimental_condition, 
+                                                                grouping_var_col_ids, 
+                                                                paired_only = FALSE, 
+                                                                count_geomx,
+                                                                group)
+        
+  BulkSignaR_Output[[group]] = BulkSignaR_LR_prediction(count_geomx_filtered_list,
+                                                          normalize_needed, 
+                                                          normalize_method, 
+                                                          UQ_pc, output_dir, 
+                                                          qval_threshold,
+                                                          group)
+      
+      
+}
+  
+BulkSignaR_Output_list = list(
+  
+  BulkSignaR_Output = BulkSignaR_Output,
+  count_geomx_filtered = count_geomx_filtered_list$count_geomx,
+  meta_data_filtered = count_geomx_filtered_list$meta_data
+  
+)
+  
+file_name = paste(comparison, collapse = "_")
+saveRDS(BulkSignaR_Output_list, file = paste0(output_dir,'/BulkSignalR_',file_name,'_output.RDS'))
+  
+
+
 
 
 
