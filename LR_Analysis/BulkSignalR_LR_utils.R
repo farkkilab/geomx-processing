@@ -13,6 +13,117 @@ run_unless_exists <- function(step_name, expected_output, script){
 
 
 
+
+# fuction to filter data for BulkSignalR prediction
+
+Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, paired_only = FALSE, count_geomx,group){
+  
+    meta_data = sData(geomx_obj)
+    meta_data = meta_data %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
+    
+    groups <- strsplit(group, "-")[[1]]
+    print(groups)
+    
+    if(length(grouping_var_col_ids) != length(groups)){
+      
+      warning("grouping_var_col_ids and comparison groups are not matching")
+      stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
+      
+    }
+    
+    
+    
+    # Build and evaluate filter conditions dynamically and the factor
+    meta_data <- meta_data %>%
+      filter(
+        !!!map2(
+          grouping_var_col_ids, groups,
+          ~ expr(!!sym(.x) == !!.y)
+        )
+      ) 
+    
+    if (nrow(meta_data) == 0) {
+      
+      warning("grouping_var_col_ids and comparison groups are not matching")
+      stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
+    }
+    
+    
+    meta_data <- meta_data %>%
+      mutate(
+        across(all_of(grouping_var_col_ids), as.factor)
+      )
+    
+    
+
+  
+  
+  meta_data[,aoi_id] = gsub('-', '.', meta_data[,aoi_id])
+  col_ids = colnames(count_geomx)  %in% meta_data$dcc_filename
+  count_geomx = count_geomx[,col_ids]
+  
+  return(list(count_geomx = count_geomx,
+              meta_data = meta_data
+              ))
+  
+}
+
+
+# function to run BulkSignaR LR prediction 
+
+BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normalize_method, UQ_pc, output_dir, qval_threshold, group){
+  
+
+  
+  if(is.null(group)){
+    plot_name = "combined"
+  } else{
+    plot_name = group
+
+  }
+  
+  count_geomx = count_geomx_list$count_geomx
+  meta_data = count_geomx_list$meta_data
+  
+  ### Analysis : written according to the BulkSignalR Vignette
+  # browseVignettes("BulkSignalR")
+  
+  # step 01 : Prepare Dataset
+  
+  bsrdm <- prepareDataset(counts = count_geomx, normalize = normalize_needed , method = normalize_method, UQ.pc = UQ_pc, log.transformed = FALSE, min.count = 10, prop = 0.1) 
+  
+  # step 02 : learnParameters
+
+  set.seed(123)
+  bsrdm <- learnParameters(bsrdm, 
+                           plot.folder = file.path(output_dir), filename = paste0("geomxUQ_",plot_name), verbose = TRUE)
+  
+  # step 03 : Building a BSRInference object
+  
+  bsrinf <- initialInference(bsrdm)
+  LRinter.dataframe <- LRinter(bsrinf)
+  LRinter.dataframe <- LRinter.dataframe[order(LRinter.dataframe$qval <= qval_threshold),]
+  
+  # reducing to best pathways before calculating signature scores
+  
+  bsrinf.redBP    <- reduceToBestPathway(bsrinf) 
+  LRinter_pairs_best_pws = LRinter(bsrinf.redBP)
+  
+  
+  return(list(
+    bsrdm = bsrdm,
+    bsrinf = bsrinf,
+    bsrinf_redBP = bsrinf.redBP,
+    LRinter_dataframe = LRinter.dataframe,
+    LRinter_pairs_best_pws = LRinter_pairs_best_pws,
+    count_geomx = count_geomx,
+    meta_data = meta_data
+    ))
+
+}
+
+
+
 # functions for plotting in BulkSignalr
 
 
@@ -62,7 +173,7 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_thr
   # step 4 : Building a BSRSignature object
   
   bsrsig.redBP <- getLRGeneSignatures(bsrinf_redBP, qval.thres = qval_threshold)
-
+  
   scoresLR <- scoreLRGeneSignatures(bsrdm, bsrsig.redBP,
                                     name.by.pathway=FALSE)
   
@@ -120,115 +231,22 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_thr
   col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
   
   heatmap <- pheatmap(scoresLR, 
-           annotation_row = row_annot,
-           annotation_col = col_annot,
-           annotation_colors = ann_colors,
-           fontsize_col = 11,
-           cellheight = 13,
-           fontsize_row = 11,
-           color = col_fun, 
-           main = paste0("Ligand receptor signatures per samples"),
-           name = "signature score",
-           labels_col = rep("", ncol(scoresLR)))
+                      annotation_row = row_annot,
+                      annotation_col = col_annot,
+                      annotation_colors = ann_colors,
+                      fontsize_col = 11,
+                      cellheight = 13,
+                      fontsize_row = 11,
+                      color = col_fun, 
+                      main = paste0("Ligand receptor signatures per samples"),
+                      name = "signature score",
+                      labels_col = rep("", ncol(scoresLR)))
   
   
   return(heatmap)
   
   
 }
-
-# fuction to filter data for BulkSignalR prediction
-
-Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, nact_status, segment, annotation, paired_only = FALSE, count_geomx){
-  
-  
-  # Filtering data based on nact_status, segment and annotation
-  
-  meta_data = sData(geomx_obj)
-  meta_data = data.frame(meta_data[,c(2,5,6,7,24,25,28)])
-  meta_data$dcc_filename <- gsub('-', '.', meta_data$dcc_filename)
-  
-  if (!is.null(nact_status)) {
-    meta_data <- meta_data %>% filter(NACT_status == nact_status)
-  }
-  
-  if (!is.null(segment)) {
-    meta_data <- meta_data %>% filter(Segment == segment)
-  }
-  
-  if (!is.null(annotation)) {
-    meta_data <- meta_data %>% filter(Annotation == annotation)
-  }
-  
-  
-  if (paired_only == TRUE) { # check !!
-    
-    paired_samples <- meta_data %>%
-      group_by(Patient) %>%
-      filter(all(c("pre", "post") %in% NACT_status)) %>%
-      summarise() %>%
-      pull(Patient)
-    
-    meta_data = meta_data %>% filter(Patient %in% paired_samples)
-    
-  }
-  
-  col_ids = colnames(count_geomx)  %in% meta_data$dcc_filename
-  count_geomx = count_geomx[,col_ids]
-  
-  return(list(count_geomx = count_geomx,
-              meta_data = meta_data
-              ))
-  
-}
-
-
-# function to run BulkSignaR LR prediction 
-
-BulkSignaR_LR_prediction <- function(count_geomx,meta_data_filtered,normalize_needed, normalize_method, UQ_pc, output_dir , nact_status, segment, annotation, qval_threshold){
-  
-  parts <- c(nact_status, segment, annotation)
-  parts_non_NA <- parts[!sapply(parts, is.na)]
-  file_name = paste(parts_non_NA, collapse = "_")
-  
-  ### Analysis : written according to the BulkSignalR Vignette
-  # browseVignettes("BulkSignalR")
-  
-  # step 01 : Prepare Dataset
-  
-  bsrdm <- prepareDataset(counts = count_geomx, normalize = normalize_needed , method = normalize_method, UQ.pc = UQ_pc, log.transformed = FALSE, min.count = 10, prop = 0.1) 
-  
-  # step 02 : learnParameters
-  
-  set.seed(123)
-  bsrdm <- learnParameters(bsrdm, 
-                           plot.folder = file.path(output_dir), filename = paste0("geomxUQ_",file_name), verbose = TRUE)
-  
-  # step 03 : Building a BSRInference object
-  
-  bsrinf <- initialInference(bsrdm)
-  LRinter.dataframe <- LRinter(bsrinf)
-  LRinter.dataframe <- LRinter.dataframe[order(LRinter.dataframe$qval <= qval_threshold),]
-  
-  # reducing to best pathways before calculating signature scores
-  
-  bsrinf.redBP    <- reduceToBestPathway(bsrinf) 
-  LRinter_pairs_best_pws = LRinter(bsrinf.redBP)
-  
-  
-  return(list(
-    bsrdm = bsrdm,
-    bsrinf = bsrinf,
-    bsrinf_redBP = bsrinf.redBP,
-    LRinter_dataframe = LRinter.dataframe,
-    LRinter_pairs_best_pws = LRinter_pairs_best_pws,
-    meta_data_filtered = meta_data_filtered
-    ))
-
-}
-
-
-
 
 
 
