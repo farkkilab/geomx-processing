@@ -41,10 +41,17 @@ output_dir <<- file.path(proj_dir, 'results', 'Batch01')
 
 # load data ----------------------------------------------
 
+# path to Geomx object 
+# path to BayesPrism Object 
+# path to cell fractions from BayesPrism
+# path to NicheNet modal
+# path to NicheNet lr network
 
-geomx_obj = readRDS(paste0(data_dir,"/geomx_qc_norm_batch_eff_rm.RDS"))
-bprism_res = readRDS(paste0(data_dir,"/bp_res_mid_lvl_ct.RDS"))
-cell_fractions_df = read.csv(paste0(data_dir,"/bp_res_mid_lvl_ct_ct_fraction.csv"))
+geomx_obj = readRDS(paste0(data_dir,"/geomx_qc_norm_batch_eff_rm.RDS")) # Geomx Object
+bprism_res = readRDS(paste0(data_dir,"/bp_res_mid_lvl_ct.RDS")) # BayesPrism Object
+cell_fractions_df = read.csv(paste0(data_dir,"/bp_res_mid_lvl_ct_ct_fraction.csv")) # cell fractions from BayesPrism
+ligand_target_matrix = readRDS(paste0(data_dir,"/Nichenet_Model/ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal
+lr_network_all = readRDS(paste0(data_dir,"/Nichenet_Model/lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network
 
 
 # set up metadata variables names -----------------------------------------
@@ -52,12 +59,17 @@ aoi_id <- 'dcc_filename'
 sample_name <- 'Sample'
 aoi_segment_var <- "Segment"
 main_experimental_condition <- 'NACT_status' # eg 'NACT_status', but NULL for demo data
-grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("NACT_status","Segment")
+other_vars_bio <<- c("Patient", "Site")
+other_vars_tech <<- c('Slide_Name')
+
 
 
 # params  -----------------------------------------
 
+grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("NACT_status","Segment")
 comparison <- c("stroma","tumor") # order of the group should matches with the order of the column names eg: c("pre-stroma","pre-tumor")
+
+# TODO define above as a tibble
 
 # parameters for BulkSignalR
 combined_Data = TRUE # To run for combined data as well
@@ -69,7 +81,17 @@ cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types :
 
 # parameters for MultiNicheNet
 
+celltype_id = "labels" 
+cell_idents = c("Tcells","Macrophages")
 
+group_id =  "Segment" 
+batches = NA
+covariates =  "Sample" #  "Patient" if paired
+# Set contrasts
+contrasts_oi <- c("'stroma-tumor','tumor-stroma'")
+# Create a contrast table
+contrast_tbl <- tibble(contrast = c("stroma-tumor","tumor-stroma"), 
+                       group = c("stroma", "tumor"))
 
 
 # load util functions and create dirs -------------------------------------
