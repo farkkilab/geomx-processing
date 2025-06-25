@@ -27,6 +27,8 @@ if (!dir.exists(paste0(output_dir,output_folder_name))) {
 
 
 
+
+
 #  Extracting expression data and meta data of the desired cell types and combining 
 
 if (is.null(cell_types)) { # If the cell types are not defined take all the cell types in the prism object
@@ -47,9 +49,9 @@ metadt_all <- combined_expression_data$metadt_all
 
 # save files
 
-# file_name = paste(ct_names, collapse = "_")
-# saveRDS(combined_expression_data, file = paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS'))
-# 
+file_name = paste(ct_names, collapse = "_")
+saveRDS(combined_expression_data, file = paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS'))
+
 
 
 # normalization           
@@ -76,7 +78,6 @@ expr_deseq2_norm_log <- log2(deseq2_norm_counts + 1) # log transformation
 
 
 # filtering based on cell fraction 
-
 
 expr_deseq2_norm_log_cf_filtered = filter_based_on_cell_fraction(ct_names, cell_frac_cutoff, cell_fractions_df, expr_deseq2_norm_log)
 
