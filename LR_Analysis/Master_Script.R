@@ -10,6 +10,8 @@ library(CellChat, quietly =T)
 library(patchwork, quietly =T)
 library(rlang)
 library(purrr)
+library(tidyverse) # check
+library(parallel)
 
 
 # TODO check the libraries needed
@@ -36,7 +38,7 @@ proj_dir <<- 'C:/Users/Sahas/Downloads/Masters_Thesis/Project_LR_prediction'
 
 
 data_dir <- file.path(proj_dir, 'Batch01_Data') 
-output_dir <<- file.path(proj_dir, 'results', 'Batch01') 
+output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction') 
 
 
 # load data ----------------------------------------------
@@ -59,54 +61,55 @@ aoi_id <- 'dcc_filename'
 sample_name <- 'Sample'
 aoi_segment_var <- "Segment"
 main_experimental_condition <- 'NACT_status' # eg 'NACT_status', but NULL for demo data
-other_vars_bio <<- c("Patient", "Site")
-other_vars_tech <<- c('Slide_Name')
+other_vars_bio <- c("Patient", "Site")
+other_vars_tech <- c('Slide_Name')
 
 
 
 # params  -----------------------------------------
 
+# common parameters
 grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("NACT_status","Segment")
 comparison <- c("stroma","tumor") # order of the group should matches with the order of the column names eg: c("pre-stroma","pre-tumor")
 
 # TODO define above as a tibble
 
-# parameters for BulkSignalR
-combined_Data = TRUE # To run for combined data as well
-
-
-# parameters for CellChat
+# parameters for CellChat and MultiNicheNet : Single cell approaches
 cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types : ct_of_interest
 
 
-# parameters for MultiNicheNet
-
-celltype_id = "labels" 
-cell_idents = c("Tcells","Macrophages")
-
-group_id =  "Segment" 
-batches = NA
+# parameters for MultiNicheNet only
+ 
+batches = NA # this did not work
 covariates =  "Sample" #  "Patient" if paired
-# Set contrasts
-contrasts_oi <- c("'stroma-tumor','tumor-stroma'")
-# Create a contrast table
-contrast_tbl <- tibble(contrast = c("stroma-tumor","tumor-stroma"), 
-                       group = c("stroma", "tumor"))
 
 
-# load util functions and create dirs -------------------------------------
+
+# define intermediate output folders and paths  ----------------------------------------
+
+BulkSignalR_folder_name = 'BulkSignalR_outputs'
+CellChat_folder_name = 'CellChat_outputs'
+MultiNicheNet_folder_name = 'MultiNicheNet_outputs'
+
+
+geomx_BulkSignalR_path <<- file.path(output_dir,BulkSignalR_folder_name ,'BulkSignalR_combined_output.RDS')
+geomx_CellChat_path <<- file.path(output_dir, CellChat_folder_name,'CellChat_output.RDS')
+geomx_MultiNicheNet_path <<- file.path(output_dir, MultiNicheNet_folder_name,'multinichenet_output.rds')
+
+
+# create dirs -------------------------------------
+
+dir.create(file.path(output_dir, BulkSignalR_folder_name) , recursive = T, showWarnings = F)
+dir.create(file.path(output_dir, CellChat_folder_name) , recursive = T, showWarnings = F)
+dir.create(file.path(output_dir, MultiNicheNet_folder_name) , recursive = T, showWarnings = F)
+
+
+
+# load util functions  -------------------------------------
 
 source(file.path(proj_dir, 'LR_Analysis', 'BulkSignalR_LR_utils.R'))
 source(file.path(proj_dir, 'LR_Analysis', 'cellChat_util.R'))
 
-dir.create(output_dir, recursive = T, showWarnings = F)
-
-# define intermediate output paths ----------------------------------------
-
-
-geomx_BulkSignalR_path <<- file.path(output_dir,'BulkSignalR_objects' ,'BulkSignalR_combined_output.RDS')
-geomx_CellChat_path <<- file.path(output_dir, 'CellChat_objects','CellChat_output.RDS')
-geomx_MultiNicheNet_path <<- file.path(output_dir, 'MultiNicheNet_objects','multinichenet_output.rds')
 
 # conditionally run BulkSignaR Analysis  -----------------------------------------
 
@@ -126,6 +129,7 @@ run_unless_exists('CellChat LR Analysis', geomx_CellChat_path,
 
 # CellChat Visualization -----------------------------------------
 
+source(file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Visualization.R'))
 
 
 
@@ -135,5 +139,7 @@ run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
                   file.path(proj_dir, 'LR_Analysis', 'MultiNicheNet_LR_Analysis.R'))
 
 
+# MultiNicheNet Visualization -----------------------------------------
 
 
+source(file.path(proj_dir, 'LR_Analysis', 'MultiNicheNet_LR_Visualization.R'))
