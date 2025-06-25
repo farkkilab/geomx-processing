@@ -2,40 +2,23 @@
 
 
 # param
-
-
 organism = "human"
-cell_types = c("Tcells","Macrophages") 
-celltype_id = "labels" 
-cell_idents = c("Tcells","Macrophages")
-sample_id = "new_sample_ID"
-group_id =  "Segment" 
-batches = NA
-covariates =  "samples" #  "Patient" #  Change the s to S later
+
 
 min_cells = 4
 cell_frac_cutoff = 0.01 # cutoff was null in run 02 should set to 0.01
 min_sample_prop = 0.50 
 fraction_cutoff = 0.05
-logFC_threshold = 0.5 # 0.5
-p_val_threshold = 0.05 # 0.05
-p_val_adj = TRUE # TRUE 
+logFC_threshold = 0.5 
+p_val_threshold = 0.05 
+p_val_adj = TRUE  
 empirical_pval = FALSE
 ligand_activity_down = FALSE
 
 
-top_n_target = 250 #250
+top_n_target = 250 
 verbose = TRUE
 cores_system = 2
-
-
-# Set contrasts
-contrasts_oi <- c("'stroma-tumor','tumor-stroma'")
-# Create a contrast table
-contrast_tbl <- tibble(contrast = c("stroma-tumor","tumor-stroma"), 
-                       group = c("stroma", "tumor"))
-
-
 
 
 # create directory for output files
@@ -46,14 +29,15 @@ if (!dir.exists(paste0(output_dir,output_folder_name))) {
   new_dir = paste0(output_dir,output_folder_name)
   dir.create(new_dir,recursive = TRUE)
   message("Directory created")
-  output_dir = new_dir
+  new_output_dir = new_dir
 } else {
-  output_dir = paste0(output_dir,output_folder_name)
+  new_output_dir = paste0(output_dir,output_folder_name)
 }
 
 
-#  Extracting expression data of the desired cell types and combining
 
+
+#  Extracting expression data of the desired cell types and combining
 
 if (is.null(cell_types)) { # If the cell types are not defined take all the cell types in the prism object
   ct_names <- colnames(bprism_res@posterior.theta_f@theta.cv)
@@ -63,89 +47,60 @@ if (is.null(cell_types)) { # If the cell types are not defined take all the cell
 }
 
 
-# TODO check if temp exsist 
-
-temp <- extract_and_combine_expression_data(cell_types, bprism_res, ct_names)
-
-deconv_ct_list_int_all = temp$deconv_ct_list_int_all
-metadt_all = temp$metadt_all
+file_name = paste(ct_names, collapse = "_")
+combined_expression_data = paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS')
 
 
-
-################   filtering based on cell fraction #####################
-
-
-
-formatted_ct_names <- gsub(" ", ".", ct_names) #because the cell fraction dataframe colnames are different: dot instead of space
-
-filtered_sample_list <- setNames(lapply(formatted_ct_names, function(ct_name) {
+  if(!file.exists(combined_expression_data)){
   
-  # Filter out cells less than the cell_frac_cutoff
-  if(!is.null(cell_frac_cutoff)){
+    # expr_and_meta_list
     
-    cells_greater_than_cutoff <- cell_fractions_df[cell_fractions_df[, ct_name] >= cell_frac_cutoff,]$dcc_filename
+    combined_expression_data <- extract_and_combine_expression_data(bprism_res, ct_names, geomx_obj,aoi_id, sample_name, aoi_segment_var, main_experimental_condition, grouping_var_col_ids)
+    deconv_ct_list_int_all <- combined_expression_data$deconv_ct_list_int_all
+    metadt_all <- combined_expression_data$metadt_all
     
-    cells_greater_than_cutoff <- gsub('\\.dcc', paste0('_', ct_name), cells_greater_than_cutoff)
+    print(paste0(' combined expression matrix and meta data generation succeeded!'))
+    saveRDS(combined_expression_data, file = paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS'))
     
-    return(cells_greater_than_cutoff)
+  } else{
     
+    file_name = paste(ct_names, collapse = "_")
+    combined_expression_data = readRDS(paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS'))
+    deconv_ct_list_int_all <- combined_expression_data$deconv_ct_list_int_all
+    metadt_all <- combined_expression_data$metadt_all
+    
+    print(paste0(' already produce the combined expression matrix and meta data'))
   }
-  
-  return(NULL)
-  
-}), ct_names) 
 
 
 
-# Get a unique list of filtered samples
-filtered_samples <- unlist(filtered_sample_list)
+combined_group_names = unique(c(sample_name,grouping_var_col_ids))
+metadt_all$new_sample_ID <- apply(metadt_all[, combined_group_names], 1, function(x) paste0(x, collapse = "_"))
+sample_id = "new_sample_ID" 
+cell_types <- sapply(strsplit(rownames(metadt_all), "_"), function(x) x[2])
+metadt_all = data.frame(labels = cell_types, metadt_all)
+metadt_all$labels <- as.factor(metadt_all$labels)
+metadt_all <- metadt_all %>%
+  mutate(
+    across(all_of(sample_name), as.factor)
+  )
 
 
 
-# Subset the expression matrix
-deconv_ct_list_int_all <- deconv_ct_list_int_all[, colnames(deconv_ct_list_int_all) %in% filtered_samples]
+# filtering based on cell fraction 
+
 deconv_ct_list_combined = t(deconv_ct_list_int_all)
+expr_deseq2_norm_log_cf_filtered = filter_based_on_cell_fraction(ct_names, cell_frac_cutoff, cell_fractions_df, deconv_ct_list_combined)
+metadt_all <- metadt_all[rownames(metadt_all) %in% colnames(expr_deseq2_norm_log_cf_filtered),]
+expr_deseq2_norm_log_cf_filtered = expr_deseq2_norm_log_cf_filtered[,colnames(expr_deseq2_norm_log_cf_filtered) %in% rownames(metadt_all)]
 
-
-
-# TODO check Filter based on meta data
-
-
-meta = data.frame(samples = metadt_all$Sample, NACT_status = metadt_all$NACT_status, Patient = metadt_all$Patient, Segment = metadt_all$Segment , Annotation = metadt_all$Annotation_cell, row.names = rownames(metadt_all))
-meta = data.frame(meta , new_sample_ID = paste0(meta$samples,'_',meta$Segment))
-#meta = meta %>% filter(NACT_status == NACT_status_filtered_group) 
-#meta = meta %>% filter(Segment  == Segment_filtered_group)
-
-# for paired samples : should edit this code
-
-# paired_samples <- meta %>%
-#      group_by(Patient) %>%
-#      filter(all(c("pre", "post") %in% NACT_status)) %>%
-#      summarise() %>%
-#      pull(Patient)
-# #
-# meta = meta %>% filter(Patient %in% paired_samples)
-
-#################
-
-cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
-meta = data.frame(labels = cell_types, meta)
-meta$samples <- as.factor(meta$samples)
-meta$labels <- as.factor(meta$labels)
-meta_filter = rownames(meta) %in% colnames(deconv_ct_list_combined)
-meta = meta[meta_filter,]
-#meta = data.frame(meta, new_sample_id = paste0(meta$samples,"_",meta$Segment)) # have to change this depending on the group
-
-deconv_ct_list_combined_filter = colnames(deconv_ct_list_combined) %in% rownames(meta)
-deconv_ct_list_combined = deconv_ct_list_combined[,deconv_ct_list_combined_filter]
 
 
 # creating single cell experiment object
 
-
 sce <- SingleCellExperiment(
-  assays = list(counts = deconv_ct_list_combined),
-  colData = meta
+  assays = list(counts = expr_deseq2_norm_log_cf_filtered),
+  colData = metadt_all
 )
 
 
@@ -160,21 +115,11 @@ sce = sce[, SummarizedExperiment::colData(sce)[,celltype_id] %in%
 ]
 
 
-
-
-# TODO moving to utils and changing the model dir 
-
-
-dir_name = "C:/Users/Sahas/Downloads/Masters_Thesis/Ligand-receptor/NichNet/Nichenet_Model/" # replace with the url at the end
-
-options(timeout = 120)
+# TODO check options(timeout = 120)
 
 if(organism == "human"){
   
-  lr_network_all = 
-    readRDS(url(
-      "https://zenodo.org/record/10229222/files/lr_network_human_allInfo_30112033.rds"
-    )) %>% 
+  lr_network_all = lr_network_all %>% 
     mutate(
       ligand = convert_alias_to_symbols(ligand, organism = organism), 
       receptor = convert_alias_to_symbols(receptor, organism = organism))
@@ -185,7 +130,6 @@ if(organism == "human"){
   lr_network = lr_network_all %>% 
     distinct(ligand, receptor)
   
-  ligand_target_matrix = readRDS(paste0(dir_name,"ligand_target_matrix_nsga2r_final.rds"))
   
   colnames(ligand_target_matrix) = colnames(ligand_target_matrix) %>% 
     convert_alias_to_symbols(organism = organism) %>% make.names()
@@ -196,7 +140,6 @@ if(organism == "human"){
   ligand_target_matrix = ligand_target_matrix[, lr_network$ligand %>% unique()]
   
 } 
-
 
 # diagnostic plots
 
@@ -214,7 +157,7 @@ abundance_expression_info <- get_abundance_info(sce = sce,
 
 
 
-pdf(file = paste0(output_dir,"abund_plot.pdf"), width = 17, height = 10)
+pdf(file = paste0(new_output_dir,"/abund_plot.pdf"), width = 17, height = 10)
 abundance_expression_info$abund_plot_sample
 abundance_expression_info$abund_plot_group
 abundance_expression_info$abund_barplot
@@ -330,7 +273,7 @@ sender_receiver_de = multinichenetr::combine_sender_receiver_de(
 
 # plot to check the p value distribution
 
-pdf(file = paste0(output_dir,"hist_pvals.pdf"), width = 17, height = 10)
+pdf(file = paste0(new_output_dir,"/hist_pvals.pdf"), width = 17, height = 10)
 DE_info$hist_pvals
 dev.off()
 
@@ -442,5 +385,5 @@ multinichenet_output = list(
 multinichenet_output = make_lite_output(multinichenet_output)
 
 
-saveRDS(multinichenet_output, paste0(output_dir, "multinichenet_output.rds"))
+saveRDS(multinichenet_output, paste0(new_output_dir, "/multinichenet_output.rds"))
   
