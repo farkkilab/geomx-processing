@@ -10,25 +10,6 @@ cell_frac_cutoff = 0.01 # 0.01 or 0.005
 min_cells = 10 # Number of minimum cells in each cell group
 
 
-
-
-# create directory for output files
-
-output_folder_name  = "/CellChat_objects"
-
-if (!dir.exists(paste0(output_dir,output_folder_name))) {
-  new_dir = paste0(output_dir,output_folder_name)
-  dir.create(new_dir,recursive = TRUE)
-  message("Directory created")
-} else {
-  new_dir = paste0(output_dir,output_folder_name)
-}
-
-
-
-
-
-
 #  Extracting expression data and meta data of the desired cell types and combining 
 
 if (is.null(cell_types)) { # If the cell types are not defined take all the cell types in the prism object
@@ -50,7 +31,7 @@ metadt_all <- combined_expression_data$metadt_all
 # save files
 
 file_name = paste(ct_names, collapse = "_")
-saveRDS(combined_expression_data, file = paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS'))
+saveRDS(combined_expression_data, file = file.path(output_dir,paste0(file_name,'_expr_and_meta_list.RDS')))
 
 
 
@@ -104,7 +85,7 @@ for (group in comparison) {
 
 # save final LR predictions
 
-file_name = paste(comparison, collapse = "_")
+#file_name = paste(comparison, collapse = "_")
 
 cellchat_output = list(
   expr_deseq2_norm_log = expr_deseq2_norm_log,
@@ -112,7 +93,7 @@ cellchat_output = list(
   cellchat_results = cellchat_results
   )
 
-saveRDS(cellchat_output, file = paste0(new_dir,'/CellChat_',file_name,'_output.RDS'))
+saveRDS(cellchat_output, file = geomx_CellChat_path)
 
 
 
