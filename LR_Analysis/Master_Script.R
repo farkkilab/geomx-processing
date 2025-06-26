@@ -10,8 +10,14 @@ library(CellChat, quietly =T)
 library(patchwork, quietly =T)
 library(rlang)
 library(purrr)
-library(tidyverse) # check
+#library(tidyverse) # check
 library(parallel)
+
+library(pheatmap)
+library(ComplexHeatmap)
+library(circlize)
+library(stringr)
+library(scales)
 
 
 # TODO check the libraries needed
@@ -49,11 +55,13 @@ output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction')
 # path to NicheNet modal
 # path to NicheNet lr network
 
-geomx_obj = readRDS(paste0(data_dir,"/geomx_qc_norm_batch_eff_rm.RDS")) # Geomx Object
-bprism_res = readRDS(paste0(data_dir,"/bp_res_mid_lvl_ct.RDS")) # BayesPrism Object
-cell_fractions_df = read.csv(paste0(data_dir,"/bp_res_mid_lvl_ct_ct_fraction.csv")) # cell fractions from BayesPrism
-ligand_target_matrix = readRDS(paste0(data_dir,"/Nichenet_Model/ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal
-lr_network_all = readRDS(paste0(data_dir,"/Nichenet_Model/lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network
+geomx_obj = readRDS(file.path(data_dir,"geomx_qc_norm_batch_eff_rm.RDS")) # Geomx Object
+bprism_res = readRDS(file.path(data_dir,"bp_res_mid_lvl_ct.RDS")) # BayesPrism Object
+cell_fractions_df = read.csv(file.path(data_dir,"bp_res_mid_lvl_ct_ct_fraction.csv")) # cell fractions from BayesPrism
+ligand_target_matrix = readRDS(file.path(data_dir,"Nichenet_Model","ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal
+lr_network_all = readRDS(file.path(data_dir,"Nichenet_Model","lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network
+pathway <- read.csv(file.path(data_dir,"pathway_names.csv")) # pathways for plotting: A list of reactome pathways in a .csv file
+# TODO If not provided plot for all pathways : Need to adjust the size of the pdf 
 
 
 # set up metadata variables names -----------------------------------------
@@ -69,8 +77,12 @@ other_vars_tech <- c('Slide_Name')
 # params  -----------------------------------------
 
 # common parameters
-grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("NACT_status","Segment")
-comparison <- c("stroma","tumor") # order of the group should matches with the order of the column names eg: c("pre-stroma","pre-tumor")
+
+
+grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("Segment","NACT_status")
+comparison <- c("tumor","stroma") # define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre-stroma","pre-tumor") order does not matter
+
+
 
 # TODO define above as a tibble
 
@@ -92,7 +104,7 @@ CellChat_folder_name = 'CellChat_outputs'
 MultiNicheNet_folder_name = 'MultiNicheNet_outputs'
 
 
-geomx_BulkSignalR_path <<- file.path(output_dir,BulkSignalR_folder_name ,'BulkSignalR_combined_output.RDS')
+geomx_BulkSignalR_path <<- file.path(output_dir,BulkSignalR_folder_name ,'BulkSignalR_output.RDS')
 geomx_CellChat_path <<- file.path(output_dir, CellChat_folder_name,'CellChat_output.RDS')
 geomx_MultiNicheNet_path <<- file.path(output_dir, MultiNicheNet_folder_name,'multinichenet_output.rds')
 
@@ -119,7 +131,7 @@ run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
 
 # BulkSignalR Visualization -----------------------------------------
 
-
+source(file.path(proj_dir, 'LR_Analysis', 'BulkSignaR_LR_Visualization.R'))
 
 # conditionally run CellChat LR Analysis -----------------------------------------
 
