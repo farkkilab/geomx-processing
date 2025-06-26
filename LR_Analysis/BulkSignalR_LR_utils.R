@@ -21,7 +21,7 @@ Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, 
     meta_data = sData(geomx_obj)
     meta_data = meta_data %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
     
-    groups <- strsplit(group, "-")[[1]]
+    groups <- strsplit(group, "_")[[1]]
     print(groups)
     
     for (column_name in grouping_var_col_ids){
