@@ -3,7 +3,7 @@
 
 # param
 organism = "human"
-
+batches = NA # this did not work
 
 min_cells = 4
 cell_frac_cutoff = 0.01 # cutoff was null in run 02 should set to 0.01
@@ -14,28 +14,37 @@ p_val_threshold = 0.05
 p_val_adj = TRUE  
 empirical_pval = FALSE
 ligand_activity_down = FALSE
+n = 50 # Number of top n LRpairs for visualization from each group 
 
 
 top_n_target = 250 
 verbose = TRUE
-cores_system = 2
+cores_system = detectCores()-4
+
+##################
+
+cell_idents = cell_types
 
 
-# create directory for output files
+# TODO generate contrasts and contrast table from grouping_var_col_ids
 
-output_folder_name  = "/MultiNicheNet_objects"
+# TODO else create a different group_id column
 
-if (!dir.exists(paste0(output_dir,output_folder_name))) {
-  new_dir = paste0(output_dir,output_folder_name)
-  dir.create(new_dir,recursive = TRUE)
-  message("Directory created")
-  new_output_dir = new_dir
-} else {
-  new_output_dir = paste0(output_dir,output_folder_name)
-}
+# Set contrasts
+
+contrasts_oi <- paste0(
+  "'", comparison[2], "-", comparison[1], "'", ",",
+  "'", comparison[1], "-", comparison[2], "'"
+)
+# Create a contrast table
+contrast_tbl <- tibble(contrast = c(paste(comparison[1], comparison[2], sep = "-"),paste(comparison[2], comparison[1], sep = "-")), 
+                       group = c(comparison[1], comparison[2]))
 
 
+# for plots
 
+plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files')
+dir.create(plot_dir , recursive = T, showWarnings = F)
 
 #  Extracting expression data of the desired cell types and combining
 
@@ -48,10 +57,10 @@ if (is.null(cell_types)) { # If the cell types are not defined take all the cell
 
 
 file_name = paste(ct_names, collapse = "_")
-combined_expression_data = paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS')
+combined_expression_data_path = file.path(output_dir,paste0(file_name,'_expr_and_meta_list.RDS'))
 
 
-  if(!file.exists(combined_expression_data)){
+  if(!file.exists(combined_expression_data_path)){
   
     # expr_and_meta_list
     
@@ -60,32 +69,44 @@ combined_expression_data = paste0(output_dir,'/',file_name,'_expr_and_meta_list.
     metadt_all <- combined_expression_data$metadt_all
     
     print(paste0(' combined expression matrix and meta data generation succeeded!'))
-    saveRDS(combined_expression_data, file = paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS'))
+    saveRDS(combined_expression_data, file = combined_expression_data_path)
     
   } else{
     
-    file_name = paste(ct_names, collapse = "_")
-    combined_expression_data = readRDS(paste0(output_dir,'/',file_name,'_expr_and_meta_list.RDS'))
+    
+    combined_expression_data = readRDS(combined_expression_data_path)
     deconv_ct_list_int_all <- combined_expression_data$deconv_ct_list_int_all
     metadt_all <- combined_expression_data$metadt_all
     
-    print(paste0(' already produce the combined expression matrix and meta data'))
+    # print(paste0(' already produce the combined expression matrix and meta data'))
   }
 
 
 
 combined_group_names = unique(c(sample_name,grouping_var_col_ids))
 metadt_all$new_sample_ID <- apply(metadt_all[, combined_group_names], 1, function(x) paste0(x, collapse = "_"))
-sample_id = "new_sample_ID" 
-cell_types <- sapply(strsplit(rownames(metadt_all), "_"), function(x) x[2])
-metadt_all = data.frame(labels = cell_types, metadt_all)
+
+
+if(length(grouping_var_col_ids) == 1){
+  
+  group_id =  grouping_var_col_ids 
+  
+} else {
+  
+  metadt_all$new_group_ID <- apply(metadt_all[, grouping_var_col_ids], 1, function(x) paste0(x, collapse = "_"))
+  group_id = "new_group_ID"
+}
+
+
+metadt_all = data.frame(labels = sapply(strsplit(rownames(metadt_all), "_"), function(x) x[2]), metadt_all)
 metadt_all$labels <- as.factor(metadt_all$labels)
 metadt_all <- metadt_all %>%
   mutate(
     across(all_of(sample_name), as.factor)
   )
 
-
+celltype_id = "labels"
+sample_id = "new_sample_ID" 
 
 # filtering based on cell fraction 
 
@@ -151,16 +172,15 @@ abundance_expression_info <- get_abundance_info(sce = sce,
                                                 celltype_id = celltype_id, 
                                                 min_cells = min_cells, 
                                                 senders_oi = senders_oi, 
-                                                receivers_oi = receivers_oi, 
-                                                #lr_network = lr_network, 
+                                                receivers_oi = receivers_oi,
                                                 batches = batches)
 
 
 
-pdf(file = paste0(new_output_dir,"/abund_plot.pdf"), width = 17, height = 10)
-abundance_expression_info$abund_plot_sample
-abundance_expression_info$abund_plot_group
-abundance_expression_info$abund_barplot
+pdf(file.path(plot_dir,'abund_plot.pdf'), width = 17, height = 10)
+print(abundance_expression_info$abund_plot_sample)
+print(abundance_expression_info$abund_plot_group)
+print(abundance_expression_info$abund_barplot)
 dev.off()
 
 
@@ -240,24 +260,36 @@ abundance_expression_info = process_abundance_expression_info(
 
 ################ Step 04. Differential expression (DE) analysis: ####################
 
-DE_info = get_DE_info(
-  sce = sce, 
-  sample_id = sample_id, group_id = group_id, celltype_id = celltype_id, 
-  batches = batches, covariates = covariates, 
-  contrasts_oi = contrasts_oi, 
-  min_cells = min_cells, 
-  expressed_df = frq_list$expressed_df)
+# IF there are externally provided DEGS
 
-
-if(empirical_pval == TRUE){
-  DE_info_emp = get_empirical_pvals(DE_info$celltype_de$de_output_tidy)
-  celltype_de = DE_info_emp$de_output_tidy_emp %>% select(-p_val, -p_adj) %>% 
-    rename(p_val = p_emp, p_adj = p_adj_emp)
-
-} else {
-  celltype_de = DE_info$celltype_de$de_output_tidy
-
-} 
+if(external_DE_info == TRUE){
+  
+  celltype_de = celltype_de_external
+  
+  
+} else{
+  
+  DE_info = get_DE_info(
+    sce = sce, 
+    sample_id = sample_id, group_id = group_id, celltype_id = celltype_id, 
+    batches = batches, covariates = covariates, 
+    contrasts_oi = contrasts_oi, 
+    min_cells = min_cells, 
+    expressed_df = frq_list$expressed_df)
+  
+  
+  if(empirical_pval == TRUE){
+    DE_info_emp = get_empirical_pvals(DE_info$celltype_de$de_output_tidy)
+    celltype_de = DE_info_emp$de_output_tidy_emp %>% select(-p_val, -p_adj) %>% 
+      rename(p_val = p_emp, p_adj = p_adj_emp)
+    
+  } else {
+    celltype_de = DE_info$celltype_de$de_output_tidy
+    
+  }  
+  
+  
+}
 
 
 # Combine DE information for ligand-senders and receptors-receivers
@@ -273,8 +305,8 @@ sender_receiver_de = multinichenetr::combine_sender_receiver_de(
 
 # plot to check the p value distribution
 
-pdf(file = paste0(new_output_dir,"/hist_pvals.pdf"), width = 17, height = 10)
-DE_info$hist_pvals
+pdf(file.path(plot_dir,'hist_pvals.pdf'), width = 17, height = 10)
+print(DE_info$hist_pvals)
 dev.off()
 
 
@@ -287,13 +319,20 @@ geneset_assessment = contrast_tbl$contrast %>%
   ) %>% 
   bind_rows() 
 
-#saveRDS(geneset_assessment, file = paste0(output_dir,"geneset_assessment.RDS"))
+write.csv(geneset_assessment, file.path(output_dir,MultiNicheNet_folder_name,"geneset_assessment.csv"))
+
+
+if (all(geneset_assessment$n_geneset_up == 0)) {
+  stop("Execution halted: there are no up regulated genes between groups. check the geneset_assessment table saved in MultiNicheNet output folder")
+}
 
 
 ###### Step 05. Ligand activity prediction #####
 
 # Perform the ligand activity analysis and ligand-target inference
 # increase the number of scores to run the code faster
+
+# TODO celltype_de$cluster_id
 
 n.cores = min(cores_system, celltype_de$cluster_id %>% unique() %>% length()) 
 
@@ -368,6 +407,55 @@ lr_target_prior_cor = lr_target_prior_cor_inference(
 )
 
 
+# get top n LR pairs from each cell type communication combinations and save it as multiple csv files
+
+
+top_n_LR_pairs = list()
+
+for (group in comparison) {
+  for (receiver in cell_types) {
+    for (sender in cell_types) {
+      
+      print(paste0(group,"-",receiver,"-",sender))
+      prioritized_tbl_oi = get_top_n_lr_pairs(
+        prioritization_tables, 
+        n, 
+        groups_oi = group, 
+        receivers_oi = receiver,
+        senders_oi = sender)
+      
+      
+      # ligand-receptor pseudobulk product expression panel
+      sample_data = prioritization_tables$sample_prioritization_tbl %>% 
+        dplyr::filter(id %in% prioritized_tbl_oi$id) %>% 
+        dplyr::mutate(
+          sender_receiver = paste(sender, receiver, sep = " --> "), 
+          lr_interaction = paste(ligand, receptor, sep = " - ")) %>%
+        dplyr::arrange(receiver) %>% 
+        dplyr::group_by(receiver) %>%  
+        dplyr::arrange(sender, .by_group = TRUE)
+      
+      sample_data = sample_data %>% 
+        dplyr::mutate(sender_receiver = factor(
+          sender_receiver, 
+          levels = sample_data$sender_receiver %>% unique()
+        ))
+      
+      
+      
+      table_name <- paste(group, receiver, sender, sep = "_")
+      file_name <- file.path(plot_dir, paste0(table_name, "_LR_pairs.csv"))
+      write.csv(sample_data, file_name, row.names = FALSE)
+      top_n_LR_pairs[[ table_name]] <- sample_data
+      
+    }
+    
+  }
+  
+}
+
+
+
 
 
 # Save the Output
@@ -380,10 +468,11 @@ multinichenet_output = list(
   ligand_activities_targets_DEgenes = ligand_activities_targets_DEgenes,
   prioritization_tables = prioritization_tables,
   grouping_tbl = grouping_tbl,
-  lr_target_prior_cor = lr_target_prior_cor
+  lr_target_prior_cor = lr_target_prior_cor,
+  top_n_LR_pairs = top_n_LR_pairs
 ) 
 multinichenet_output = make_lite_output(multinichenet_output)
 
 
-saveRDS(multinichenet_output, paste0(new_output_dir, "/multinichenet_output.rds"))
+saveRDS(multinichenet_output, geomx_MultiNicheNet_path)
   
