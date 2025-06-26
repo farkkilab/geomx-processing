@@ -45,7 +45,7 @@ Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, 
 
 # function to run BulkSignaR LR prediction 
 
-BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normalize_method, UQ_pc, output_dir, qval_threshold, group){
+BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normalize_method, UQ_pc, output_dir, qval_threshold, group, null_model){
   
 
   
@@ -69,8 +69,24 @@ BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normali
   # step 02 : learnParameters
 
   set.seed(123)
-  bsrdm <- learnParameters(bsrdm, 
-                           plot.folder = file.path(output_dir), filename = paste0("geomxUQ_",plot_name), verbose = TRUE)
+  
+  if(is.null(null_model)){
+    bsrdm <- learnParameters(bsrdm, 
+                             plot.folder = file.path(output_dir), 
+                             filename = paste0("geomxUQ_",plot_name), 
+                             verbose = TRUE
+                             )
+  } else{
+    
+    bsrdm <- learnParameters(bsrdm,
+                             null.model = null_model,
+                             plot.folder = file.path(output_dir), 
+                             filename = paste0("geomxUQ_",plot_name), 
+                             verbose = TRUE
+                             )
+    
+    }
+  
   
   # step 03 : Building a BSRInference object
   
