@@ -22,11 +22,11 @@ library(Rtsne)
 
 # careful for genes with variance 0 removed from deconvolution
 
+# TODO split into 2 scripts - for sparsity, gdr etc and deconvolution
 # TODO gsea on canonical_markers (for scRNAseq cell typing) for deconv assesment
 
 batch <- 'batch12'
 
-# SD and SD_BG are identical
 ###########################
 
 proj_dir <<- '~/Documents/phd/st'
@@ -46,6 +46,7 @@ clinical_dt_path <- file.path(proj_dir, 'geomx-processing/data/b12_dcc_clinical_
 #clinical_dt <<- file.path(proj_dir, 'data/geomx/9_eyemt_patient_clinical_data.csv')
 
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
+#geomx_norm_batch_eff_rm_path2 <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_deseq2.RDS') # without vst
 
 ct_names <- c('Bcells', 'DCs', 'Endothelial cells', 'Fibroblasts', 'Macrophages', 'NKcells', 'Tcells', 'tumor')
 cells_immune <- c('Bcells', 'DCs', 'Macrophages', 'NKcells', 'Tcells')
@@ -56,11 +57,13 @@ ct_gsea_all_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'ssgsea_no
 
 
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_ct_fraction.csv')
-sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 'sd_res_bg_mid_lvl_ct_geomxfilt_ct_fraction.csv')
+sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 'sd_res_mid_lvl_ct_geomxfiltpc_ct_fraction.csv')
 
 deconv_raw_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct.RDS')
 deconv_harmony_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')
-deconv_limma_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_expr_mtx_cleaned_vst_limma_batch_corr_main_batch_nrbatch_nr_cov_no.RDS')
+deconv_limma_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_expr_mtx_cleaned_vst_limma_batch_corr_main_batch_nrbatch_nr_cov_.RDS')
+
+
 # set up metadata variables names -----------------------------------------
 
 aoi_id <<- 'dcc_filename'
@@ -157,19 +160,26 @@ for(coln in names(expr_list)){
 # gene coverage -----------------------------------------------------------
 
 # what is the % of samples covered by each gene?
-loqdt <- sData(geomx_obj)[, c('LOQ')]
 
 # for all data
 fdt <- fData(geomx_obj)
 
-# plot gene detection rate
+# plot gene detection rate per gene
 ggplot(data = fdt) +
   geom_histogram(aes(x = fdt$DetectionRate), bins = 100) +
-  #geom_density(aes(x = fdt$DetectionRate)) +
   xlim(0, 1) +
-  ggtitle('gene detection rate')
+  ggtitle('gene detection rate per gene')
 
-ggsave(file.path(output_dir, 'sanity_check', paste0('gene_detection_rate_all.png')))
+ggsave(file.path(output_dir, 'sanity_check', paste0('gene_detection_rate_per_gene.png')))
+
+# what is the gene coverage in each AOI?
+# plot gene detection rate per AOI
+ggplot(data = pData(geomx_obj)) +
+  geom_histogram(aes(x = GeneDetectionRate, fill = Segment), bins = 100) +
+  xlim(0, 1) +
+  ggtitle('gene detection rate per AOI')
+
+ggsave(file.path(output_dir, 'sanity_check', paste0('gene_detection_rate_per_aoi.png')))
 
 
 # stromal/tumor markers ---------------------------------------------------
@@ -243,7 +253,7 @@ sapply(1:length(cell_fraq), function(x){
       ggtitle(paste0(ct_name, ' ssgsea marker activity vs cell count')) + 
       xlab(paste0(ct_name, ' markers ssgsea score')) +
       ylab(paste0(ct_name, ' cell count')) +
-      geom_smooth(method='lm', formula= y~x) +
+      geom_smooth(method='lm', formula= y~exp(x)) +
       stat_poly_eq(use_label(c("R2", "p"))) +
       facet_wrap(~pathway, scales = "fixed", dir="v") 
     
@@ -294,15 +304,15 @@ for(ct in c(ct_names, 'stroma')){
 }
 
 # for all
-# ggplot(cell_fraq_both_long, aes(x = deconv_type, y = fraction)) + 
-#   geom_boxplot(aes(fill = deconv_type), alpha = .2) +
-#   geom_line(aes(group = dcc_filename), size = 0.2, alpha = 0.8) + 
-#   geom_point(size = 0.2) + 
-#   ggtitle('ct fractions bp vs sd') +
-#   facet_wrap(~ cell_type)
-# 
-# ggsave(file.path(output_dir, 'sanity_check', paste0('deconv_comparison_all_bp_sd.png')),
-#        width = 1500, height = 1000, unit = 'px')
+ggplot(cell_fraq_both_long, aes(x = deconv_type, y = fraction)) +
+  geom_boxplot(aes(fill = deconv_type), alpha = .2) +
+  geom_line(aes(group = dcc_filename), size = 0.2, alpha = 0.8) +
+  geom_point(size = 0.2) +
+  ggtitle('ct fractions bp vs sd') +
+  facet_wrap(~ cell_type)
+
+ggsave(file.path(output_dir, 'sanity_check', paste0('deconv_comparison_all_bp_sd.png')),
+       width = 1500, height = 1000, unit = 'px')
 
 #########################
 # make scatters bp vs sd
@@ -507,7 +517,7 @@ demo <- fread('/home/iganiemi/Documents/phd/st/gene-regulatory-networks/sisana/s
 
 geomx_harm <- data.frame(geomx_obj@assayData$harmony_batch_corr)
 geomx_harm <- rownames_to_column(geomx_harm, var = 'Target')
-write_tsv(geomx_harm, '/home/iganiemi/Documents/phd/st/gene-regulatory-networks/sisana/sisana/geomx_input/geomx_batch12_harmony_corr_expr_mtx2.tsv',
+write_tsv(geomx_harm, '/home/iganiemi/Documents/phd/st/gene-regulatory-networks/sisana/sisana/geomx_input/geomx_batch12_harmony_corr_expr_mtx.tsv',
           col_names = T)
 
 meta_segment <- sData(geomx_obj)[, c('dcc_filename', 'Segment')]
@@ -527,3 +537,46 @@ clin <- clin[, c(1, 10:21)]
 
 meta <- left_join(meta, clin)
 fwrite(meta, '/home/iganiemi/Documents/phd/st/geomx-processing/data/b12_dcc_clinical_data.csv')
+
+########################
+# deconv b1 sanity check
+
+deconv_list <- readRDS('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch1-1903/deconvolution/bayes_prism/bp_res_mid_lvl_ct.RDS')
+
+deconv_tcell <-   deconv_ct <- BayesPrism::get.exp(bp=deconv_list,
+                                                   state.or.type="type",
+                                                   cell.name='Tcells')
+
+deconv_macro <-   deconv_ct <- BayesPrism::get.exp(bp=deconv_list,
+                                                   state.or.type="type",
+                                                   cell.name='Macrophages')
+
+tcell_genes <- c('CD8A', 'CD4', 'CTLA4', 'CXCR6', 'IL16')
+macro_genes <- c('CD80', 'CD86', 'CXCL16','HLA-DQA2', 'HLA-DPB1')
+
+deconv_tcell <- deconv_tcell[, which(colnames(deconv_tcell) %in% c(tcell_genes, macro_genes))]
+colnames(deconv_tcell) <- paste0(colnames(deconv_tcell), "_tcell")
+
+deconv_macro <- deconv_macro[, which(colnames(deconv_macro) %in% c(tcell_genes, macro_genes))]
+colnames(deconv_macro) <- paste0(colnames(deconv_macro), "_macro")
+
+identical(rownames(deconv_tcell), rownames(deconv_macro))
+deconv_both <- as.data.frame(cbind(deconv_tcell, deconv_macro))
+deconv_both <- rownames_to_column(deconv_both, 'dcc')
+
+library(tibble)
+library(tidyr)
+deconv_both2 <- gather(deconv_both, gene, value, -dcc)
+
+boxpl <- ggplot(data = deconv_both2) +
+  geom_boxplot(aes(x = gene, y = value)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylim(0, 150)
+
+print(boxpl)
+
+data_combined <- left_join(data_combined, features_info, by = c('ligand'))
+data_filtered <- data_combined_df[data_combined_df$source != data_combined_df$cluster, ]
+
+
+mean(deconv_tcell$CD4)
