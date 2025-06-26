@@ -114,7 +114,7 @@ filter_based_on_cell_fraction <- function(ct_names, cell_frac_cutoff, cell_fract
 filter_expr_deseq2_norm_log = function(metadt_all, expr_deseq2_norm_log, grouping_var_col_ids, group){
   
 
-  groups <- strsplit(group, "-")[[1]]
+  groups <- strsplit(group, "_")[[1]]
   print(groups)
   
   
