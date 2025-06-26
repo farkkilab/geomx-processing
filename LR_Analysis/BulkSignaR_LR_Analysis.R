@@ -2,24 +2,24 @@
 
 # parameters for BulkSignalR
 
-# TODO : NULL model check !!
 
-null.model = NULL # c("automatic", "mixedNormal", "normal", "kernelEmpirical","empirical", "stable")
-normalize_needed = TRUE # Default "UQ", FALSE if the provided data are normalized
-paired_only = FALSE # for paired samples only TRUE
-normalize_method = "UQ" # c("UQ",TC") or user defined if the provided data are normalized. ('UQ' for upper quartile or 'TC' for total count. UQ.pc = 0.75.
-
-UQ_pc = 0.75
+# you can specify one of the null model from this list: c("mixedNormal", "normal", "kernelEmpirical","empirical", "stable")
+# or leave null to get the best fitting null model
+null_model = "mixedNormal" 
+paired_only = FALSE # TODO I haven't tried this : for paired samples only TRUE
+UQ_pc = 0.75 # Upper quantile percentage
 qval_threshold = 0.01 # filter significant LR pairs
+combined_Data = TRUE # To run for combined data as well. you should keep this TRUE if you want to generate the signature score heatmap
 
-combined_Data = TRUE # To run for combined data as well
+data_type <- "exprs"  # unnormalized expression data or normalized data, eg : "q3_norm"
+normalize_needed = TRUE # FALSE if the provided data are normalized. Default "UQ", 
+normalize_method = "UQ" # c("UQ",TC") or user defined(eg: q3_norm) if the provided data are normalized. ('UQ' for upper quartile or 'TC' for total count. UQ.pc = 0.75.
+
 
 # load data
 
 
-
-count_geomx = data.frame(geomx_obj@assayData$exprs) # count data
-#count_geomx  = data.frame(geomx_obj@assayData$q3_norm) # q3 normalized data
+count_geomx <- data.frame(geomx_obj@assayData[[data_type]])
 
 
 plot_dir = file.path(output_dir, BulkSignalR_folder_name,'plots_and_csv_files')
@@ -50,7 +50,8 @@ if (combined_Data == TRUE){
                                                               UQ_pc, 
                                                               plot_dir, 
                                                               qval_threshold,
-                                                              group = NULL
+                                                              group = NULL,
+                                                              null_model
                                                               ) 
   
 }
@@ -77,7 +78,8 @@ for (group in comparison) {
                                                           UQ_pc, 
                                                           plot_dir,
                                                           qval_threshold,
-                                                          group)
+                                                          group,
+                                                          null_model)
       
       
 }
