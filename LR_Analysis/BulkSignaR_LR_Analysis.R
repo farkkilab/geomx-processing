@@ -12,6 +12,8 @@ normalize_method = "UQ" # c("UQ",TC") or user defined if the provided data are n
 UQ_pc = 0.75
 qval_threshold = 0.01 # filter significant LR pairs
 
+combined_Data = TRUE # To run for combined data as well
+
 # load data
 
 
@@ -20,18 +22,8 @@ count_geomx = data.frame(geomx_obj@assayData$exprs) # count data
 #count_geomx  = data.frame(geomx_obj@assayData$q3_norm) # q3 normalized data
 
 
-# create directory for output files
-
-output_folder_name  = "/BulkSignalR_objects"
-
-if (!dir.exists(paste0(output_dir,output_folder_name))) {
-  new_dir = paste0(output_dir,output_folder_name)
-  dir.create(new_dir,recursive = TRUE)
-  message("Directory created")
-  output_dir = new_dir
-} else {
-  output_dir = paste0(output_dir,output_folder_name)
-}
+plot_dir = file.path(output_dir, BulkSignalR_folder_name,'plots_and_csv_files')
+dir.create(plot_dir , recursive = T, showWarnings = F)
 
 
 
@@ -43,7 +35,8 @@ BulkSignaR_Output <- list()
 if (combined_Data == TRUE){
   print("combined data")
   
-  output_name = paste(comparison, collapse = "-combined-")
+  #output_name = paste(comparison, collapse = "-combined-")
+  output_name = "combined"
   
   meta_data_all = sData(geomx_obj)
   meta_data_all = meta_data_all %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
@@ -55,12 +48,14 @@ if (combined_Data == TRUE){
                                                               normalize_needed, 
                                                               normalize_method, 
                                                               UQ_pc, 
-                                                              output_dir, 
+                                                              plot_dir, 
                                                               qval_threshold,
                                                               group = NULL
                                                               ) 
   
 }
+
+
   
 for (group in comparison) {
   
@@ -77,9 +72,10 @@ for (group in comparison) {
                                                                 group)
         
   BulkSignaR_Output[[group]] = BulkSignaR_LR_prediction(count_geomx_filtered_list,
-                                                          normalize_needed, 
-                                                          normalize_method, 
-                                                          UQ_pc, output_dir, 
+                                                          normalize_needed,
+                                                          normalize_method,
+                                                          UQ_pc, 
+                                                          plot_dir,
                                                           qval_threshold,
                                                           group)
       
@@ -94,8 +90,8 @@ BulkSignaR_Output_list = list(
   
 )
   
-file_name = paste(comparison, collapse = "_")
-saveRDS(BulkSignaR_Output_list, file = paste0(output_dir,'/BulkSignalR_',file_name,'_output.RDS'))
+
+saveRDS(BulkSignaR_Output_list, file = geomx_BulkSignalR_path)
   
 
 
