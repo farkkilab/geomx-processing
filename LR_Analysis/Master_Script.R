@@ -37,6 +37,8 @@ library(nichenetr, quietly =T)
 library(multinichenetr, quietly =T)
 library(tidyr)
 library(parallel)
+library(readr)
+library(stringr)
 
 
 # define variables and paths ----------------------------------------------
@@ -84,11 +86,9 @@ other_vars_tech <- c('Slide_Name')
 
 grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("Segment","NACT_status")
 
-# define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre-stroma","pre-tumor") order matters. 
+# define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre_stroma","pre_tumor") order matters. 
 # Can compare only two groups at a time
 comparison <- c("tumor","stroma") 
-
-# TODO replcae - with _ in cellchat and bulk
 
 
 # TODO define above as a tibble
