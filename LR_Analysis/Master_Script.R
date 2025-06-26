@@ -58,9 +58,11 @@ output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction')
 geomx_obj = readRDS(file.path(data_dir,"geomx_qc_norm_batch_eff_rm.RDS")) # Geomx Object
 bprism_res = readRDS(file.path(data_dir,"bp_res_mid_lvl_ct.RDS")) # BayesPrism Object
 cell_fractions_df = read.csv(file.path(data_dir,"bp_res_mid_lvl_ct_ct_fraction.csv")) # cell fractions from BayesPrism
-ligand_target_matrix = readRDS(file.path(data_dir,"Nichenet_Model","ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal
-lr_network_all = readRDS(file.path(data_dir,"Nichenet_Model","lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network
+ligand_target_matrix = readRDS(file.path(data_dir,"Nichenet_Model","ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal. Can be downloaded from MultiNicheNet repo
+lr_network_all = readRDS(file.path(data_dir,"Nichenet_Model","lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network. Can be downloaded from MultiNicheNet repo
 pathway <- read.csv(file.path(data_dir,"pathway_names.csv")) # pathways for plotting: A list of reactome pathways in a .csv file
+
+
 # TODO If not provided plot for all pathways : Need to adjust the size of the pdf 
 
 
@@ -80,8 +82,12 @@ other_vars_tech <- c('Slide_Name')
 
 
 grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("Segment","NACT_status")
-comparison <- c("tumor","stroma") # define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre-stroma","pre-tumor") order does not matter
 
+# define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre-stroma","pre-tumor") order matters. 
+# Can compare only two groups at a time
+comparison <- c("tumor","stroma") 
+
+# TODO replcae - with _ in cellchat and bulk
 
 
 # TODO define above as a tibble
@@ -92,9 +98,10 @@ cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types :
 
 # parameters for MultiNicheNet only
  
-batches = NA # this did not work
-covariates =  "Sample" #  "Patient" if paired
-
+# covariates for EdgeR DEGs calculated by MultiNicheNet. 
+# How to define the covariate: If the defined covaraite id not present in both groups of interest edger will not run.
+# therefore in such case leave the covariate to "NA" 
+covariates =  "Sample"
 
 
 # define intermediate output folders and paths  ----------------------------------------
@@ -146,6 +153,11 @@ source(file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Visualization.R'))
 
 
 # conditionally run MultiNicheNet LR Analysis -----------------------------------------
+
+# for multiNicheNetR if you are providing DEGS externally follow the MultiNicheNet_LR_util.R script to prepare the DEGs dataframe. 
+# Else MUltiNicheNet will not work
+external_DE_info = FALSE # if TRUE,  provide the prepared DEGs dataframe to  'celltype_de_external'. Eg: celltype_de_external = readRDS(file.path(output_dir,MultiNicheNet_folder_name,"celltype_de_combined_calculated_externally.RDS"))
+celltype_de_external = NULL 
 
 run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
                   file.path(proj_dir, 'LR_Analysis', 'MultiNicheNet_LR_Analysis.R'))
