@@ -10,7 +10,88 @@ dir.create(plot_dir , recursive = T, showWarnings = F)
 # by_default take from MultiNichenet outputs
 # TODO if prioritized_tbl_oi provided use it else use the unfiltered 
 
+## Plot functions
 
+plot_bulk_expression = function(df_plot1){
+  
+  p1 =  df_plot1 %>%
+    ggplot(aes(group, lr_interaction, color = diff_median, size = neg_log10_p_adj)) +
+    geom_point() +
+    facet_grid(sender_receiver~group, scales = "free", space = "free", switch = "y")+
+    scale_x_discrete(position = "top") +
+    theme_light() +
+    theme(
+      axis.ticks = element_blank(),
+      axis.title = element_blank(),
+      #axis.text.y = element_blank(),
+      axis.text.y = element_text(face = "bold.italic", size = 7),
+      axis.text.x = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.spacing.x = unit(0.40, "lines"),
+      panel.spacing.y = unit(0.25, "lines"),
+      strip.text.x.top = element_text(size = 8, color = "black", face = "bold", angle = 0),
+      strip.text.y.left = element_text(size = 9, color = "black", face = "bold", angle = 0),
+      strip.background = element_rect(color="darkgrey", fill="whitesmoke", size=1.5, linetype="solid")
+    ) + labs(color = "Median difference\nin scaled L-R\npseudobulk\nexpression\nproduct", size = "-log10(pval_adj)") 
+  
+  max_diff_median = abs(df_plot1$diff_median) %>% max()
+  
+  custom_scale_fill = scale_color_gradientn(
+    colours = RColorBrewer::brewer.pal(n = 7, name = "RdBu") %>% rev(),
+    values = c(0, 0.350, 0.4850, 0.5, 0.5150, 0.65, 1),  
+    limits = c(-1*max_diff_median, max_diff_median))
+  
+  p1 = p1+ custom_scale_fill + scale_size_binned_area(max_size = 4) 
+  return(p1)
+  
+  
+}
+
+# If you want the bulkexpression data use sample_data directly and change the color accordignly
+
+
+
+plot_igand_activity = function(df_plot2){
+  
+  p2 = df_plot2 %>%
+    ggplot(aes(direction_regulation , lr_interaction, fill = activity_scaled)) +
+    geom_tile(color = "whitesmoke") +
+    facet_grid(sender_receiver~group, scales = "free", space = "free") +
+    scale_x_discrete(position = "top") +
+    theme_light() +
+    theme(
+      axis.ticks = element_blank(),
+      axis.title = element_blank(),
+      #axis.text.y = element_text(face = "bold.italic", size = 9),
+      axis.text.y = element_blank(),
+      axis.text.x = element_text(size = 8,  angle = 90,hjust = 0),
+      strip.text.x.top = element_text(angle = 0),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.spacing.x = unit(0.20, "lines"),
+      panel.spacing.y = unit(0.25, "lines"),
+      strip.text.x = element_text(size = 8, color = "black", face = "bold"),
+      strip.text.y = element_blank(),
+      strip.background = element_rect(color="darkgrey", fill="whitesmoke", size=1.5, linetype="solid")
+    ) + labs(fill = "Scaled Ligand\nActivity RNA")
+  
+  max_activity = abs(df_plot2$activity_scaled) %>% max(na.rm = TRUE)
+  
+  custom_scale_fill = scale_fill_gradientn(
+    colours = c("white", RColorBrewer::brewer.pal(n = 7, name = "PuRd") %>% .[-7]),
+    values = c(0, 0.51, 0.575, 0.625, 0.675, 0.725, 1),  
+    limits = c(-1*max_activity, max_activity))
+  
+  p2 = p2 + custom_scale_fill
+  
+  
+  return(p2) 
+  
+}
+
+
+###########################################################
 
 
 for (group in comparison){
@@ -112,92 +193,6 @@ for (group in comparison){
       
       
     }}}
-
-
-
-
-
-
-
-## Plot functions
-
-plot_bulk_expression = function(df_plot1){
-  
-  p1 =  df_plot1 %>%
-    ggplot(aes(group, lr_interaction, color = diff_median, size = neg_log10_p_adj)) +
-    geom_point() +
-    facet_grid(sender_receiver~group, scales = "free", space = "free", switch = "y")+
-    scale_x_discrete(position = "top") +
-    theme_light() +
-    theme(
-      axis.ticks = element_blank(),
-      axis.title = element_blank(),
-      #axis.text.y = element_blank(),
-      axis.text.y = element_text(face = "bold.italic", size = 7),
-      axis.text.x = element_blank(),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      panel.spacing.x = unit(0.40, "lines"),
-      panel.spacing.y = unit(0.25, "lines"),
-      strip.text.x.top = element_text(size = 8, color = "black", face = "bold", angle = 0),
-      strip.text.y.left = element_text(size = 9, color = "black", face = "bold", angle = 0),
-      strip.background = element_rect(color="darkgrey", fill="whitesmoke", size=1.5, linetype="solid")
-    ) + labs(color = "Median difference\nin scaled L-R\npseudobulk\nexpression\nproduct", size = "-log10(pval_adj)") 
-  
-  max_diff_median = abs(df_plot1$diff_median) %>% max()
-  
-  custom_scale_fill = scale_color_gradientn(
-    colours = RColorBrewer::brewer.pal(n = 7, name = "RdBu") %>% rev(),
-    values = c(0, 0.350, 0.4850, 0.5, 0.5150, 0.65, 1),  
-    limits = c(-1*max_diff_median, max_diff_median))
-  
-  p1 = p1+ custom_scale_fill + scale_size_binned_area(max_size = 4) 
-  return(p1)
-  
-  
-}
-
-# If you want the bulkexpression data use sample_data directly and change the color accordignly
-
-
-
-plot_igand_activity = function(df_plot2){
-  
-  p2 = df_plot2 %>%
-    ggplot(aes(direction_regulation , lr_interaction, fill = activity_scaled)) +
-    geom_tile(color = "whitesmoke") +
-    facet_grid(sender_receiver~group, scales = "free", space = "free") +
-    scale_x_discrete(position = "top") +
-    theme_light() +
-    theme(
-      axis.ticks = element_blank(),
-      axis.title = element_blank(),
-      #axis.text.y = element_text(face = "bold.italic", size = 9),
-      axis.text.y = element_blank(),
-      axis.text.x = element_text(size = 8,  angle = 90,hjust = 0),
-      strip.text.x.top = element_text(angle = 0),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      panel.spacing.x = unit(0.20, "lines"),
-      panel.spacing.y = unit(0.25, "lines"),
-      strip.text.x = element_text(size = 8, color = "black", face = "bold"),
-      strip.text.y = element_blank(),
-      strip.background = element_rect(color="darkgrey", fill="whitesmoke", size=1.5, linetype="solid")
-    ) + labs(fill = "Scaled Ligand\nActivity RNA")
-  
-  max_activity = abs(df_plot2$activity_scaled) %>% max(na.rm = TRUE)
-  
-  custom_scale_fill = scale_fill_gradientn(
-    colours = c("white", RColorBrewer::brewer.pal(n = 7, name = "PuRd") %>% .[-7]),
-    values = c(0, 0.51, 0.575, 0.625, 0.675, 0.725, 1),  
-    limits = c(-1*max_activity, max_activity))
-  
-  p2 = p2 + custom_scale_fill
-  
-  
-  return(p2) 
-  
-}
 
 
 
