@@ -109,7 +109,7 @@ filter_based_on_cell_fraction <- function(ct_names, cell_frac_cutoff, cell_fract
 
 
 
-# filter expression data based on NACT_status, segment and Annotations
+# filter expression data based on colnames eg: NACT_status, segment and Annotations
 
 filter_expr_deseq2_norm_log = function(metadt_all, expr_deseq2_norm_log, grouping_var_col_ids, group){
   
@@ -117,36 +117,13 @@ filter_expr_deseq2_norm_log = function(metadt_all, expr_deseq2_norm_log, groupin
   groups <- strsplit(group, "-")[[1]]
   print(groups)
   
-  if(length(grouping_var_col_ids) != length(groups)){
+  
+  
+  for (column_name in grouping_var_col_ids){
     
-    warning("grouping_var_col_ids and comparison groups are not matching")
-    stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
-
-  }
-  
-  
-  
-  # Build and evaluate filter conditions dynamically and the factor
-  meta <- metadt_all %>%
-    filter(
-      !!!map2(
-        grouping_var_col_ids, groups,
-        ~ expr(!!sym(.x) == !!.y)
-      )
-    ) 
-  
-  if (nrow(meta) == 0) {
+    meta_data = meta_data %>% filter(!!sym(column_name) %in% groups)
     
-    warning("grouping_var_col_ids and comparison groups are not matching")
-    stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
   }
-  
-  
-  meta <- meta %>%
-    mutate(
-      across(all_of(grouping_var_col_ids), as.factor)
-    )
-  
   
   
   cell_types <- sapply(strsplit(rownames(meta), "_"), function(x) x[2])
