@@ -24,40 +24,14 @@ Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, 
     groups <- strsplit(group, "-")[[1]]
     print(groups)
     
-    if(length(grouping_var_col_ids) != length(groups)){
+    for (column_name in grouping_var_col_ids){
       
-      warning("grouping_var_col_ids and comparison groups are not matching")
-      stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
+      meta_data = meta_data %>% filter(!!sym(column_name) %in% groups)
       
     }
     
     
-    
-    # Build and evaluate filter conditions dynamically and the factor
-    meta_data <- meta_data %>%
-      filter(
-        !!!map2(
-          grouping_var_col_ids, groups,
-          ~ expr(!!sym(.x) == !!.y)
-        )
-      ) 
-    
-    if (nrow(meta_data) == 0) {
-      
-      warning("grouping_var_col_ids and comparison groups are not matching")
-      stop("Stopping execution .Define grouping_var_col_ids and comparison accordingly")
-    }
-    
-    
-    meta_data <- meta_data %>%
-      mutate(
-        across(all_of(grouping_var_col_ids), as.factor)
-      )
-    
-    
-
-  
-  
+   
   meta_data[,aoi_id] = gsub('-', '.', meta_data[,aoi_id])
   col_ids = colnames(count_geomx)  %in% meta_data$dcc_filename
   count_geomx = count_geomx[,col_ids]
@@ -129,7 +103,7 @@ BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normali
 
 # Creating a function to plot the heatmap
 
-plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_threshold, n){
+plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_threshold, n, heatmap_col_ann){
   
   pairs = LRinter(bsrinf_redBP)
   pairs$index <- seq_len(nrow(pairs))
@@ -138,8 +112,10 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_thr
   # TODO if selected_pairs == 0 then an error message
   
   top_n_pairs <- selected_pairs %>%
-    arrange(desc(LR.corr)) %>%
-    slice(1:n)
+    arrange(desc(LR.corr)) 
+  
+  top_n_pairs = top_n_pairs[1:n,]
+  # TODO not working %>% slice(1:n)
   
   # TODO top_n_pairs < n gives a warning
   
@@ -195,15 +171,10 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_thr
   rownames(row_annot) <- rownames(scoresLR)  # ensure they align with row_annot 
   
   
-  # deciding the column annotations
+  # column annotations
   
-  if (heatmap_col_ann == "segment") {
-    col_annot <- data.frame(SampleGroup = factor(meta_data$Segment))
-  }
-  if (heatmap_col_ann == "NACT_status") {
-    col_annot <- data.frame(SampleGroup = factor(meta_data$NACT_status))
-  }
-  
+  col_annot <- data.frame(SampleGroup = factor(meta_data[,heatmap_col_ann]))
+
   # if both 
   # col_annot <- data.frame(SampleGroup = factor(paste0(meta_data$Segment,"_",meta_data$NACT_status)))
   
