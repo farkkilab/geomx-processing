@@ -17,14 +17,14 @@ for (group in comparison){
   for (receiver in cell_types) {
     for (sender in cell_types) {
       
-      table_name <- paste(group, receiver, sender, sep = "_")
+      table_name <- paste(group, sender, receiver, sep = "_")
       
       multinichenet_output = readRDS(geomx_MultiNicheNet_path)
       top_n_LR_pairs = multinichenet_output$top_n_LR_pairs
       sample_data = top_n_LR_pairs[[table_name]]
       
       
-      keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4)
+      keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4) # TODO check
       names(keep_sender_receiver_values) = levels(sample_data$keep_sender_receiver)
       
       ######## calculate the median bulk expression for each group
@@ -37,7 +37,7 @@ for (group in comparison){
         pivot_wider(names_from = group, values_from = median_scaled_LR)
       
       
-      # Compute log2 fold change (stroma / tumor)
+      # Compute median difference (stroma - tumor)
       group_medians <- group_medians %>%
         mutate(
           diff_median = .[[comparison[1]]] - .[[comparison[2]]]
