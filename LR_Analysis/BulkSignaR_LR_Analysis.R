@@ -5,7 +5,7 @@
 
 # you can specify one of the null model from this list: c("mixedNormal", "normal", "kernelEmpirical","empirical", "stable")
 # or leave null to get the best fitting null model
-null_model = "mixedNormal" 
+null_model = NULL 
 paired_only = FALSE # TODO I haven't tried this : for paired samples only TRUE
 UQ_pc = 0.75 # Upper quantile percentage
 qval_threshold = 0.01 # filter significant LR pairs
