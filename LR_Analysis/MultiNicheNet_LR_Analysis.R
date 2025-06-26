@@ -475,4 +475,12 @@ multinichenet_output = make_lite_output(multinichenet_output)
 
 
 saveRDS(multinichenet_output, geomx_MultiNicheNet_path)
-  
+
+
+# check the warning
+
+# Warning messages:
+#   1: In get_frac_exprs(sce = sce, sample_id = sample_id, celltype_id = celltype_id,  :
+#                          There are some genes with NA/NaN fraction of expression. This is the result of the muscat function `calcExprFreqs` which will give NA/NaN when there are no cells of a particular cell type in a particular group or no cells of a cell type in one sample. As a temporary fix, we give all these genes an expression fraction of 0 in that group for that cell type
+#                        2: In DGEList.default(pb@assays@data[[celltype_oi]]) :
+#                          At least one library size is zero
