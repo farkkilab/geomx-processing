@@ -5,14 +5,14 @@
 library(BulkSignalR, quietly =T)
 library(igraph, quietly =T)
 library(dplyr, quietly =T)
+
+# TODO check the libraries needed
 library(DESeq2, quietly =T)
 library(CellChat, quietly =T)
 library(patchwork, quietly =T)
 library(rlang)
 library(purrr)
 #library(tidyverse) # check
-library(parallel)
-
 library(pheatmap)
 library(ComplexHeatmap)
 library(circlize)
@@ -20,22 +20,23 @@ library(stringr)
 library(scales)
 
 
-# TODO check the libraries needed
 
-library(Biobase, quietly =T)
-library(NanoStringNCTools, quietly =T)
-library(BiocGenerics, quietly =T)
-library(S4Vectors, quietly =T)
-library(stats4, quietly =T)
-library(GeomxTools, quietly =T)
-library(ggplot2, quietly =T)
+# To load Geomx object
+# library(GeomxTools, quietly =T)
+# library(Biobase, quietly =T)
+# library(BiocGenerics, quietly =T)
+# library(NanoStringNCTools, quietly =T)
+# library(S4Vectors, quietly =T)
+# library(stats4, quietly =T)
+# library(ggplot2, quietly =T)
 
 
 # For MultiNicheNetr
 library(SingleCellExperiment, quietly =T)
 library(nichenetr, quietly =T)
 library(multinichenetr, quietly =T)
-
+library(tidyr)
+library(parallel)
 
 
 # define variables and paths ----------------------------------------------
