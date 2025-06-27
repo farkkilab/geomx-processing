@@ -146,7 +146,7 @@ qval_threshold = 0.001 # filter significant LR pairs
 n = 50 # number of top LR pairs needed to visualize in the signature scoes heatmap
 heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
 LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
-manually_filtered_BulkSignalr_df = NULL# readRDS(file.path(output_dir,"df_combined_BulkSignalr_for_plot.RDS")) # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe as a .RDS file 
+manually_filtered_BulkSignalr_df = NULL# readRDS(file.path(output_dir,"df_combined_BulkSignalr_for_plot.RDS")) # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe  
 
 source(file.path(proj_dir, 'LR_Analysis', 'BulkSignaR_LR_Visualization.R'))
 
@@ -164,7 +164,7 @@ dir.create(plot_dir , recursive = T, showWarnings = F)
 
 # Params
 
-manually_filtered_cellchat_df = NULL # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe as a .RDS file eg: readRDS(file.path(output_dir,"df_combined_cellchat_for_plot.RDS"))
+manually_filtered_cellchat_df = NULL # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe  eg: readRDS(file.path(output_dir,"df_combined_cellchat_for_plot.RDS"))
 pval_threshold = 0.01
 prob_threshold = 0.05
 
@@ -190,7 +190,7 @@ run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
 plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files_2')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
-manually_filtered_LR_pairs_dfplot_median_bulk_expr = NULL
-manually_filtered_LR_pairs_dfplot_ligand_activity = NULL
+manually_filtered_LR_pairs_dfplot_median_bulk_expr = NULL # provide the dataframe  
+manually_filtered_LR_pairs_dfplot_ligand_activity = NULL # provide the dataframe  
 
 source(file.path(proj_dir, 'LR_Analysis', 'MultiNicheNet_LR_Visualization.R'))
