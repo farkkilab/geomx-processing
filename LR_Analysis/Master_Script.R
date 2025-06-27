@@ -73,7 +73,7 @@ aoi_segment_var <- "Segment"
 main_experimental_condition <- 'NACT_status' # eg 'NACT_status', but NULL for demo data
 other_vars_bio <- c("Patient", "Site")
 other_vars_tech <- c('Slide_Name')
-
+paired_id <- "Patient" # If you want to predict for paired samples only in BUlkSignalR: I did not check this 
 
 
 # params  -----------------------------------------
@@ -187,7 +187,7 @@ run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
 
 # for plots
 
-plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files_2')
+plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files_3')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
 manually_filtered_LR_pairs_dfplot_median_bulk_expr = NULL # provide the dataframe  
