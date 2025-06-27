@@ -1,12 +1,4 @@
 # MultiNicheNet Visualization
-
-
-# for plots
-
-plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files')
-dir.create(plot_dir , recursive = T, showWarnings = F)
-
-
 # by_default take from MultiNichenet outputs
 # TODO if prioritized_tbl_oi provided use it else use the unfiltered 
 
@@ -91,112 +83,75 @@ plot_igand_activity = function(df_plot2){
 }
 
 
-###########################################################
 
+######################################
 
-for (group in comparison){
-  for (receiver in cell_types) {
-    for (sender in cell_types) {
-      
-      table_name <- paste(group, sender, receiver, sep = "_")
-      
-      multinichenet_output = readRDS(geomx_MultiNicheNet_path)
-      top_n_LR_pairs = multinichenet_output$top_n_LR_pairs
-      sample_data = top_n_LR_pairs[[table_name]]
-      
-      
-      keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4) # TODO check
-      names(keep_sender_receiver_values) = levels(sample_data$keep_sender_receiver)
-      
-      ######## calculate the median bulk expression for each group
-      
-      # calculate the median
-      
-      group_medians <- sample_data %>%
-        group_by(group,lr_interaction) %>%
-        summarize(median_scaled_LR = median(scaled_LR_pb_prod, na.rm = TRUE), .groups = "drop") %>%
-        pivot_wider(names_from = group, values_from = median_scaled_LR)
-      
-      
-      # Compute median difference (stroma - tumor)
-      group_medians <- group_medians %>%
-        mutate(
-          diff_median = .[[comparison[1]]] - .[[comparison[2]]]
+# TODO
+
+if (!is.null(manually_filtered_LR_pairs_dfplot_median_bulk_expr) && !is.null(manually_filtered_LR_pairs_dfplot_ligand_activity) &&
+    is.data.frame(manually_filtered_LR_pairs_dfplot_median_bulk_expr) && is.data.frame(manually_filtered_LR_pairs_dfplot_ligand_activity)) {
+  
+  
+  df_plot1 = manually_filtered_LR_pairs_dfplot_median_bulk_expr
+  df_plot2 = manually_filtered_LR_pairs_dfplot_ligand_activity
+  
+  df_plot1 = df_plot1 %>% filter(lr_interaction %in% df_plot2$lr_interaction)
+  df_plot2 = df_plot2 %>% filter(lr_interaction %in% df_plot1$lr_interaction)
+  
+  p1 = plot_bulk_expression(df_plot1)
+  p2 = plot_igand_activity(df_plot2)
+  
+  
+  p = patchwork::wrap_plots(
+    p1,p2,
+    nrow = 1,guides = "collect",
+    widths = c(6,6)
+  )
+  
+  pdf(file = file.path(plot_dir,paste0("MultiNicheNet_plot_manually_filtered.pdf")), width = 17, height = 10)
+  print(p)
+  dev.off()
+  
+
+  
+} else {
+  
+  multinichenet_output = readRDS(geomx_MultiNicheNet_path)
+  top_n_LR_pairs = multinichenet_output$top_n_LR_pairs
+  
+  for (group in comparison){
+    for (receiver in cell_types) {
+      for (sender in cell_types) {
+        
+        table_name <- paste(group, sender, receiver, sep = "_")
+        sample_data = top_n_LR_pairs[[table_name]]
+        
+        
+        df_plot1 = sample_data$df_plot1
+        df_plot2 = sample_data$df_plot2
+        
+        p1 = plot_bulk_expression(df_plot1)
+        p2 = plot_igand_activity(df_plot2)
+        
+        ###########################################################################
+        
+        p = patchwork::wrap_plots(
+          p1,p2,
+          nrow = 1,guides = "collect",
+          widths = c(6,6)
         )
-      
-      # Wilcoxon test per interaction
-      wilcox_results <- sample_data %>%
-        group_by(lr_interaction) %>%
-        filter(group %in% comparison) %>%
-        summarize(
-          test = list(wilcox.test(scaled_LR_pb_prod ~ group)),
-          .groups = "drop"
-        ) %>%
-        mutate(
-          p_value = map_dbl(test, "p.value"),
-          neg_log10_p = -log10(p_value)
-        ) %>%
-        select(lr_interaction, p_value, neg_log10_p)
-      
-      
-      adj_pvals <- p.adjust(wilcox_results$p_value, method = "BH")
-      
-      # Merge with fold change data
-      final_data <- group_medians %>%
-        left_join(wilcox_results, by = "lr_interaction")
-      
-      
-      final_data$adj_p_value = adj_pvals
-      final_data$neg_log10_p_adj = -log10(adj_pvals)
-      
-      
-      sender_receiver <- paste(sender, receiver, sep = " --> ")
-      final_data$sender_receiver <- rep(sender_receiver, nrow(final_data))
-      final_data$group <- rep(paste(comparison, collapse = "-"), nrow(final_data))
-      df_plot1 = final_data
-      
-      #########################################################################
-      
-      group_data = multinichenet_output$prioritization_tables$group_prioritization_table_source  %>% 
-        dplyr::mutate(
-          sender_receiver = paste(sender, receiver, sep = " --> "), 
-          lr_interaction = paste(ligand, receptor, sep = " - "))  %>% 
-        dplyr::distinct(id, sender, receiver, sender_receiver, ligand, receptor, lr_interaction, group, activity_scaled, direction_regulation, prioritization_score) %>% 
-        dplyr::filter(id %in% sample_data$id) %>% 
-        dplyr::arrange(receiver) %>% 
-        dplyr::group_by(receiver) %>% 
-        dplyr::arrange(sender, .by_group = TRUE)
-      
-      df_plot2 = group_data %>% dplyr::mutate(
-        sender_receiver = factor(
-          sender_receiver, 
-          levels = group_data$sender_receiver %>% unique()
-        ))
-      
-      ##########################################################################
-      
-      p1 = plot_bulk_expression(df_plot1)
-      p2 = plot_igand_activity(df_plot2)
-      
-      ###########################################################################
-      
-      p = patchwork::wrap_plots(
-        p1,p2,
-        nrow = 1,guides = "collect",
-        widths = c(6,6)
-      )
-      
-      pdf(file = file.path(plot_dir,paste0("MultiNicheNet_plot_",table_name,".pdf")), width = 17, height = 10)
-      print(p)
-      dev.off()
-      
-      
-      
-    }}}
-
-
-
-
-
+        
+        pdf(file = file.path(plot_dir,paste0("MultiNicheNet_plot_",table_name,".pdf")), width = 17, height = 10)
+        print(p)
+        dev.off()
+        
+        
+        
+      }}}
+  
+  
+  
+  
+}
 
 
