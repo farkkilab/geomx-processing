@@ -6,7 +6,7 @@
 # you can specify one of the null model from this list: c("mixedNormal", "normal", "kernelEmpirical","empirical", "stable")
 # or leave null to get the best fitting null model
 null_model = NULL 
-paired_only = FALSE # TODO I haven't tried this : for paired samples only TRUE
+paired_only = FALSE # TODO I haven't tried this : for paired samples only set to TRUE
 UQ_pc = 0.75 # Upper quantile percentage
 qval_threshold = 0.01 # filter significant LR pairs
 combined_Data = TRUE # To run for combined data as well. you should keep this TRUE if you want to generate the signature score heatmap
@@ -41,6 +41,18 @@ if (combined_Data == TRUE){
   meta_data_all = sData(geomx_obj)
   meta_data_all = meta_data_all %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
   
+  
+  # TODO check this code
+  if (paired_only == TRUE){
+    
+    paired_samples = filter_paired_data(geomx_obj, main_experimental_condition, paired_id)
+    meta_data_all = meta_data_all %>% filter(!!sym(sample_name) %in% paired_samples)
+    meta_data_all[,aoi_id] = gsub('-', '.', meta_data_all[,aoi_id])
+    col_ids = colnames(count_geomx)  %in% meta_data_all[,aoi_id]
+    count_geomx = count_geomx[,col_ids]
+    
+  }
+  
   count_geomx_list = list(count_geomx = count_geomx,
                           meta_data = meta_data_all)
   
@@ -67,10 +79,11 @@ for (group in comparison) {
                                                                 sample_name, 
                                                                 aoi_segment_var, 
                                                                 main_experimental_condition, 
-                                                                grouping_var_col_ids, 
-                                                                paired_only = FALSE, 
+                                                                grouping_var_col_ids,
                                                                 count_geomx,
-                                                                group)
+                                                                group,
+                                                                paired_only,
+                                                                paired_id = NULL)
         
   BulkSignaR_Output[[group]] = BulkSignaR_LR_prediction(count_geomx_filtered_list,
                                                           normalize_needed,
