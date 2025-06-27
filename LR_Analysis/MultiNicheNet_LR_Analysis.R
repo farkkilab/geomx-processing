@@ -2,22 +2,27 @@
 
 
 # param
-organism = "human"
-batches = NA # this did not work
 
-min_cells = 4
-cell_frac_cutoff = 0.01 # cutoff was null in run 02 should set to 0.01
-min_sample_prop = 0.50 
-fraction_cutoff = 0.05
+cell_frac_cutoff = 0.01 # cutoff to filter out AOIs based on the bayesprsim cell fraction values
+
+organism = "human"
+batches = NA # TODO: gives an error when specified
+min_cells = 4 # minimum number of cells per cell type per sample.Samples that have less than min_cells cells will be excluded from the analysis for that specific cell type
+min_sample_prop = 0.50 # genes expressed if they are expressed in at least a min_sample_prop fraction of samples in the condition with the lowest number of samples
+fraction_cutoff = 0.05 # genes as expressed if they have non-zero expression values in a fraction_cutoff fraction of cells of that cell type in that sample
 logFC_threshold = 0.5 
 p_val_threshold = 0.05 
 p_val_adj = TRUE  
-empirical_pval = FALSE
-ligand_activity_down = FALSE
+empirical_pval = FALSE # TODO : this i did not check. In case p-value distributions look irregular in p-value histogram, you can estimate empirical p-values
+ligand_activity_down = FALSE # to focus specifically on upregulating ligands keep it FALSE
 n = 50 # Number of top n LRpairs for visualization from each group 
 
 
-top_n_target = 250 
+# for ligand-target inference procedure, need to select which top n of the predicted target genes will be considered (here: top 250 targets per ligand). 
+# This parameter will not affect the ligand activity predictions. 
+# It will only affect ligand-target visualizations and construction of the intercellular regulatory network during the downstream analysis.  
+top_n_target = 250
+
 verbose = TRUE
 cores_system = detectCores()-4
 
