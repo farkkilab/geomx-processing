@@ -5,30 +5,29 @@
 library(BulkSignalR, quietly =T)
 library(igraph, quietly =T)
 library(dplyr, quietly =T)
+library(scales, quietly =T)
+library(circlize, quietly =T)
+library(pheatmap, quietly =T)
+library(ComplexHeatmap, quietly =T)
 
 # TODO check the libraries needed
 library(DESeq2, quietly =T)
 library(CellChat, quietly =T)
 library(patchwork, quietly =T)
+library(ggh4x)
 library(rlang)
 library(purrr)
 #library(tidyverse) # check
-library(pheatmap)
-library(ComplexHeatmap)
-library(circlize)
 library(stringr)
-library(scales)
-
-
 
 # To load Geomx object
-# library(GeomxTools, quietly =T)
-# library(Biobase, quietly =T)
-# library(BiocGenerics, quietly =T)
-# library(NanoStringNCTools, quietly =T)
-# library(S4Vectors, quietly =T)
-# library(stats4, quietly =T)
-# library(ggplot2, quietly =T)
+library(GeomxTools, quietly =T)
+library(Biobase, quietly =T)
+library(BiocGenerics, quietly =T)
+library(NanoStringNCTools, quietly =T)
+library(S4Vectors, quietly =T)
+library(stats4, quietly =T)
+library(ggplot2, quietly =T)
 
 
 # For MultiNicheNetr
@@ -139,6 +138,19 @@ run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
 
 # BulkSignalR Visualization -----------------------------------------
 
+# for plots
+plot_dir = file.path(output_dir, BulkSignalR_folder_name,'plots_and_csv_files_2')
+dir.create(plot_dir , recursive = T, showWarnings = F)
+
+
+# Params
+
+qval_threshold = 0.001 # filter significant LR pairs
+n = 50 # number of top LR pairs needed to visualize in the signature scoes heatmap
+heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
+LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
+manually_filtered_BulkSignalr_df = NULL# readRDS(file.path(output_dir,"df_combined_BulkSignalr_for_plot.RDS")) # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe as a .RDS file 
+
 source(file.path(proj_dir, 'LR_Analysis', 'BulkSignaR_LR_Visualization.R'))
 
 # conditionally run CellChat LR Analysis -----------------------------------------
@@ -148,6 +160,14 @@ run_unless_exists('CellChat LR Analysis', geomx_CellChat_path,
 
 
 # CellChat Visualization -----------------------------------------
+
+# for plots
+plot_dir = file.path(output_dir, CellChat_folder_name,'plots_and_csv_files')
+dir.create(plot_dir , recursive = T, showWarnings = F)
+
+manually_filtered_cellchat_df = NULL # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe as a .RDS file eg: readRDS(file.path(output_dir,"df_combined_cellchat_for_plot.RDS"))
+pval_threshold = 0.01
+prob_threshold = 0.05
 
 source(file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Visualization.R'))
 
@@ -159,6 +179,7 @@ source(file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Visualization.R'))
 # Else MUltiNicheNet will not work
 external_DE_info = FALSE # if TRUE,  provide the prepared DEGs dataframe to  'celltype_de_external'. Eg: celltype_de_external = readRDS(file.path(output_dir,MultiNicheNet_folder_name,"celltype_de_combined_calculated_externally.RDS"))
 celltype_de_external = NULL 
+
 
 run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
                   file.path(proj_dir, 'LR_Analysis', 'MultiNicheNet_LR_Analysis.R'))
