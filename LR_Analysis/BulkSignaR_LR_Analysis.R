@@ -84,11 +84,32 @@ for (group in comparison) {
       
 }
   
+
+# combining all the LR predictions from both groups to a single dataframe
+
+lr_df_list = list()
+
+for (group in comparison){
+  
+  df = BulkSignaR_Output[[group]]$LRinter_pairs_best_pws
+  df$group = group
+  lr_df_list[[group]] = df
+  
+}
+
+df_combined = do.call(rbind, lr_df_list)
+df_combined$lr_interaction = paste0(df_combined$L,"-",df_combined$R)
+df_combined$qval[df_combined$qval == 0] <- 1e-70
+df_combined$neg_log10_p_adj = -log(df_combined$qval)
+rownames(df_combined) <- NULL
+
+
 BulkSignaR_Output_list = list(
   
   BulkSignaR_Output = BulkSignaR_Output,
   count_geomx_filtered = count_geomx_filtered_list$count_geomx,
-  meta_data_filtered = count_geomx_filtered_list$meta_data
+  meta_data_filtered = count_geomx_filtered_list$meta_data,
+  unfiltered_LR_df_for_plotting = df_combined
   
 )
   
