@@ -413,6 +413,7 @@ lr_target_prior_cor = lr_target_prior_cor_inference(
 
 
 # get top n LR pairs from each cell type communication combinations and save it as multiple csv files
+# theses df can be directly used for plotting or can do manually filtering and provide seperetly
 
 
 top_n_LR_pairs = list()
@@ -446,12 +447,89 @@ for (group in comparison) {
           levels = sample_data$sender_receiver %>% unique()
         ))
       
+      ################################################################
+      
+      keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4) # TODO check
+      names(keep_sender_receiver_values) = levels(sample_data$keep_sender_receiver)
+      
+      ######## calculate the median bulk expression for each group
+      
+      # calculate the median
+      
+      group_medians <- sample_data %>%
+        group_by(group,lr_interaction) %>%
+        summarize(median_scaled_LR = median(scaled_LR_pb_prod, na.rm = TRUE), .groups = "drop") %>%
+        pivot_wider(names_from = group, values_from = median_scaled_LR)
+      
+      
+      # Compute median difference (stroma - tumor)
+      group_medians <- group_medians %>%
+        mutate(
+          diff_median = .[[comparison[1]]] - .[[comparison[2]]]
+        )
+      
+      # Wilcoxon test per interaction
+      wilcox_results <- sample_data %>%
+        group_by(lr_interaction) %>%
+        filter(group %in% comparison) %>%
+        summarize(
+          test = list(wilcox.test(scaled_LR_pb_prod ~ group)),
+          .groups = "drop"
+        ) %>%
+        mutate(
+          p_value = map_dbl(test, "p.value"),
+          neg_log10_p = -log10(p_value)
+        ) %>%
+        select(lr_interaction, p_value, neg_log10_p)
+      
+      
+      adj_pvals <- p.adjust(wilcox_results$p_value, method = "BH")
+      
+      # Merge with fold change data
+      final_data <- group_medians %>%
+        left_join(wilcox_results, by = "lr_interaction")
+      
+      
+      final_data$adj_p_value = adj_pvals
+      final_data$neg_log10_p_adj = -log10(adj_pvals)
+      
+      
+      sender_receiver <- paste(sender, receiver, sep = " --> ")
+      final_data$sender_receiver <- rep(sender_receiver, nrow(final_data))
+      final_data$group <- rep(paste(comparison, collapse = "-"), nrow(final_data))
+      df_plot1 = final_data
+      
+      
+      
+      #########################################################################
+      
+      group_data = multinichenet_output$prioritization_tables$group_prioritization_table_source  %>% 
+        dplyr::mutate(
+          sender_receiver = paste(sender, receiver, sep = " --> "), 
+          lr_interaction = paste(ligand, receptor, sep = " - "))  %>% 
+        dplyr::distinct(id, sender, receiver, sender_receiver, ligand, receptor, lr_interaction, group, activity_scaled, direction_regulation, prioritization_score) %>% 
+        dplyr::filter(id %in% sample_data$id) %>% 
+        dplyr::arrange(receiver) %>% 
+        dplyr::group_by(receiver) %>% 
+        dplyr::arrange(sender, .by_group = TRUE)
+      
+      df_plot2 = group_data %>% dplyr::mutate(
+        sender_receiver = factor(
+          sender_receiver, 
+          levels = group_data$sender_receiver %>% unique()
+        ))
+      
+      
+      
+      #################################################################
       
       
       table_name <- paste(group, receiver, sender, sep = "_")
-      file_name <- file.path(plot_dir, paste0(table_name, "_LR_pairs.csv"))
-      write.csv(sample_data, file_name, row.names = FALSE)
-      top_n_LR_pairs[[ table_name]] <- sample_data
+      file_name_p1 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_median_bulk_expr.csv"))
+      write.csv(df_plot1, file_name_p1, row.names = FALSE)
+      file_name_p2 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_ligand_activity.csv"))
+      write.csv(df_plot2, file_name_p2, row.names = FALSE)
+      top_n_LR_pairs[[table_name]] <- list(df_plot1 = df_plot1, df_plot2 = df_plot2)
       
     }
     
@@ -489,3 +567,18 @@ saveRDS(multinichenet_output, geomx_MultiNicheNet_path)
 #                          There are some genes with NA/NaN fraction of expression. This is the result of the muscat function `calcExprFreqs` which will give NA/NaN when there are no cells of a particular cell type in a particular group or no cells of a cell type in one sample. As a temporary fix, we give all these genes an expression fraction of 0 in that group for that cell type
 #                        2: In DGEList.default(pb@assays@data[[celltype_oi]]) :
 #                          At least one library size is zero
+
+
+# TODO to write logs
+
+# # write logs --------------------------------------------------------------
+# 
+# # save logs
+# writeLines(c('deconvolution logs:',
+#              '; spatial decon normalisation type : ', norm_type,
+#              '; minimum cell type number : ', ct_nr_thr,
+#              '; cell type annotation  : ', scrna_anno,
+#              '; limma primary batch effect variable : ', primary_batch_var,
+#              '; limma secondary batch effect variable : ', secondary_batch_var,
+#              '; limma experimental design : ', as.character(exp_design)[2],
+#              '; limma covariate : ', as.character(cov_design)[2]), deconv_logs_path)
