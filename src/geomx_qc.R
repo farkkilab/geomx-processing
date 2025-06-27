@@ -8,18 +8,21 @@
 imp_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition)
 
 # parameters for removing genes based on LOQ
-# TODO adjustment may be needed: 10% for batch 1, 5% for batch2
+# TODO adjustment may be needed: 10% for batch 1, 5% for batch2 and batch3
+# typical values are 5-10% 
 gene_detect_thr <- 0.05 # segment is removed if <5% of genes > LOQ
+
 # TODO adjustments may be needed - thr is very low bcs we expect high biological variability
 segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less than 1% of segments
+# typical values are 15% but it highly depends on the variability of samples
 
 # !! 6 samples in batch1 have HighNTC - proibably contaminated wells
 # keep_high_NTC = TRUE means that all AOIs belonging to high NTC wells are keeped
 # while processing batch1 separately they're keeped 
 keep_high_NTC <- ifelse(batch == 'batch1', TRUE, FALSE)
 
-# 3 slides from b1 have high NTC count but they behave ok - suspected contamination
-# normal value should be 1000
+# 3 slides from b1 + 6 from b3 have high NTC count but they behave ok - suspected contamination
+# suggested value should be 1000
 max_ntc <- 3000 
 
 # create dirs -------------------------------------------------------------
@@ -98,7 +101,9 @@ plot_sankey(count_segments, imp_vars, main_roi_label,
 
 # set and plot basic qc parameters ----------------------------------------
 # Shift 0 counts to one - needed for  NegGeoMean
-#TODO examinate !! shifting all by 1 and only 0s gives different results
+# TODO !! shifting all by 1 and only 0s gives different results
+# shifting all to 1 (useDALogic = T) seems to be more reasonable and it rescues about 5% of segments
+# so it seems ok to stick to it
 geomx_obj <- shiftCountsOne(geomx_obj, useDALogic = FALSE)
 
 qc_params <-
@@ -112,8 +117,6 @@ qc_params <-
        minNuclei = 20,         # Minimum # of nuclei estimated (100) 
        minArea = 1000)         # Minimum segment area (5000)
 
-#TODO maxNTCCount basic param is 60 in default function. Ask Geomx ppl !
-# but in qc vignette 1000 is mentioned
 
 # set up qc flags for segments
 geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
@@ -222,10 +225,13 @@ qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
 })
 
+
+fwrite(qc_results_segment[qc_results_segment$qc_status == 'WARNING', ], file.path(output_dir, 'qc_results_segment.csv'))
+
 geomx_obj <- geomx_obj[, qc_results_segment$qc_status == "PASS", ]
 
 # remove segments with neggeomean < 1.5
-# TODO adjust thr and decide if that should be removed - later on LOQ is being checked
+# TODO possibly adjust thr, but mostly its not removing much
 geomx_obj <- geomx_obj[, sData(geomx_obj)[["NegGeoMean"]] >= 1.5]
 
 print(paste('dim after removing bad quality segments: '))
@@ -323,6 +329,11 @@ sapply(imp_vars, function(vname){
   plot_detection_rate(pData(geomx_obj), vname, 
                       file.path(output_dir, 'qc', paste0('gene_detect_rate_', vname, '.png')))
 })
+
+# save gdr info
+gdr_df <- pData(geomx_obj)[, -48]
+gdr_df$LOQ <- pData(geomx_obj)$LOQ$Hs_R_NGS_WTA_v1.0 # fixing df within df for saving
+fwrite(gdr_df, file.path(output_dir, 'segments_gdr.csv'))
 
 # filter out segments with too low gene detection rate
 geomx_obj <- geomx_obj[, pData(geomx_obj)$GeneDetectionRate >= gene_detect_thr]
