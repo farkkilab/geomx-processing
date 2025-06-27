@@ -16,7 +16,7 @@ library(CellChat, quietly =T)
 library(patchwork, quietly =T)
 library(ggh4x)
 library(rlang)
-library(purrr)
+
 #library(tidyverse) # check
 library(stringr)
 
@@ -34,8 +34,9 @@ library(ggplot2, quietly =T)
 library(SingleCellExperiment, quietly =T)
 library(nichenetr, quietly =T)
 library(multinichenetr, quietly =T)
-library(tidyr)
 library(parallel)
+library(tidyr)
+library(purrr)
 library(readr)
 library(stringr)
 
@@ -60,12 +61,9 @@ output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction')
 geomx_obj = readRDS(file.path(data_dir,"geomx_qc_norm_batch_eff_rm.RDS")) # Geomx Object
 bprism_res = readRDS(file.path(data_dir,"bp_res_mid_lvl_ct.RDS")) # BayesPrism Object
 cell_fractions_df = read.csv(file.path(data_dir,"bp_res_mid_lvl_ct_ct_fraction.csv")) # cell fractions from BayesPrism
-ligand_target_matrix = readRDS(file.path(data_dir,"Nichenet_Model","ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal. Can be downloaded from MultiNicheNet repo
-lr_network_all = readRDS(file.path(data_dir,"Nichenet_Model","lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network. Can be downloaded from MultiNicheNet repo
-pathway <- read.csv(file.path(data_dir,"pathway_names.csv")) # pathways for plotting: A list of reactome pathways in a .csv file
-
-
-# TODO If not provided plot for all pathways : Need to adjust the size of the pdf 
+ligand_target_matrix = readRDS(file.path(data_dir,"Nichenet_Model","ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal. Can be downloaded from MultiNicheNet repo : "https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds"
+lr_network_all = readRDS(file.path(data_dir,"Nichenet_Model","lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network. Can be downloaded from MultiNicheNet repo : "https://zenodo.org/record/10229222/files/lr_network_human_allInfo_30112033.rds"
+pathway <- read.csv(file.path(data_dir,"pathway_names.csv")) # pathways for plotting: A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
 
 
 # set up metadata variables names -----------------------------------------
@@ -87,7 +85,7 @@ grouping_var_col_ids <- c("Segment") # define the meta data column names of the 
 
 # define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre_stroma","pre_tumor") order matters. 
 # Can compare only two groups at a time
-comparison <- c("tumor","stroma") 
+comparison <- c("stroma","tumor") 
 
 
 # TODO define above as a tibble
@@ -99,7 +97,7 @@ cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types :
 # parameters for MultiNicheNet only
  
 # covariates for EdgeR DEGs calculated by MultiNicheNet. 
-# How to define the covariate: If the defined covaraite id not present in both groups of interest edger will not run.
+# How to define the covariate: If the defined covaraite id not present in both groups of interest EdgeR will not run.
 # therefore in such case leave the covariate to "NA" 
 covariates =  "Sample"
 
@@ -142,7 +140,6 @@ run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
 plot_dir = file.path(output_dir, BulkSignalR_folder_name,'plots_and_csv_files_2')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
-
 # Params
 
 qval_threshold = 0.001 # filter significant LR pairs
@@ -165,12 +162,13 @@ run_unless_exists('CellChat LR Analysis', geomx_CellChat_path,
 plot_dir = file.path(output_dir, CellChat_folder_name,'plots_and_csv_files')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
+# Params
+
 manually_filtered_cellchat_df = NULL # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe as a .RDS file eg: readRDS(file.path(output_dir,"df_combined_cellchat_for_plot.RDS"))
 pval_threshold = 0.01
 prob_threshold = 0.05
 
 source(file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Visualization.R'))
-
 
 
 # conditionally run MultiNicheNet LR Analysis -----------------------------------------
@@ -187,5 +185,12 @@ run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
 
 # MultiNicheNet Visualization -----------------------------------------
 
+# for plots
+
+plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files_2')
+dir.create(plot_dir , recursive = T, showWarnings = F)
+
+manually_filtered_LR_pairs_dfplot_median_bulk_expr = NULL
+manually_filtered_LR_pairs_dfplot_ligand_activity = NULL
 
 source(file.path(proj_dir, 'LR_Analysis', 'MultiNicheNet_LR_Visualization.R'))
