@@ -13,13 +13,45 @@ run_unless_exists <- function(step_name, expected_output, script){
 
 
 
+# return a list of paired_samples
+
+filter_paired_data = function(geomx_obj, main_experimental_condition, paired_id){
+  meta_data = sData(geomx_obj)
+  meta_data = meta_data %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(paired_id), !!sym(main_experimental_condition)) 
+  
+  
+  main_experimental_condition_groups = unique(meta_data[,main_experimental_condition])
+  
+  paired_patients <- meta_data %>%
+       group_by(!!sym(paired_id)) %>%
+       filter(all(main_experimental_condition_groups %in% !!sym(main_experimental_condition))) %>%
+       summarise() %>%
+       pull(!!sym(paired_id))
+  
+
+  paired_samples = unique(meta_data %>% filter(!!sym(paired_id) %in% paired_patients) %>% pull(!!sym(sample_name)))
+  return(paired_samples)
+  
+}
+
 
 # fuction to filter data for BulkSignalR prediction
 
-Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, paired_only = FALSE, count_geomx,group){
+Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, count_geomx,group,paired_only, paired_id = NULL){
   
     meta_data = sData(geomx_obj)
     meta_data = meta_data %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
+    
+    
+    # TODO check this code
+    # if (paired_only == TRUE){
+    #   
+    #   paired_samples = filter_paired_data(geomx_obj, main_experimental_condition, paired_id)
+    #   meta_data = meta_data %>% filter(!!sym(sample_name) %in% paired_samples)
+    # 
+    #   
+    # }  
+    
     
     groups <- strsplit(group, "_")[[1]]
     print(groups)
@@ -29,7 +61,6 @@ Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, 
       meta_data = meta_data %>% filter(!!sym(column_name) %in% groups)
       
     }
-    
     
    
   meta_data[,aoi_id] = gsub('-', '.', meta_data[,aoi_id])
@@ -216,6 +247,7 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_thr
   # Finally the heatmap
   
   col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+  
   
   heatmap <- pheatmap(scoresLR, 
                       annotation_row = row_annot,
