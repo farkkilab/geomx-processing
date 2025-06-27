@@ -1,23 +1,10 @@
 # Ligand Receptor Analysis by BulkSignaR : Bulk Data,Geomx Full Transcriptomic signal
 
 
-# Params
-
-qval_threshold = 0.001 # filter significant LR pairs
-n = 50 # number of top LR pairs needed to visualize in the signature scoes heatmap
-heatmap_col_ann = "segment" # based on what you want to annotate the heatmap
-LR_corr_threshold = 0.4 
-
-# for plots
-
-plot_dir = file.path(output_dir, BulkSignalR_folder_name,'plots_and_csv_files')
-dir.create(plot_dir , recursive = T, showWarnings = F)
-
-
 # Reading BulkSignaR objects
 
-BulkSignaR_Output = readRDS(geomx_BulkSignalR_path)
-BulkSignaR_Output = BulkSignaR_Output$BulkSignaR_Output
+BulkSignaR_Output_list = readRDS(geomx_BulkSignalR_path)
+BulkSignaR_Output = BulkSignaR_Output_list$BulkSignaR_Output
 BulkSignaR_Output_combined = BulkSignaR_Output[["combined"]]
 
 
@@ -28,7 +15,7 @@ pathway_names = pathway$Pathway.names
 
 
 
-# Generate a heatmap
+# # Generate a heatmap
 plot_heatmap = plot_heatmap(bsrinf.redBP, bsrdm, meta_data, pathway_names, qval_threshold, n, heatmap_col_ann)
 
 
@@ -46,31 +33,23 @@ dev.off()
 # provide pathways you want to visualize as a .csv file in the master script 
 
 
-
-lr_df_list = list()
-
-for (group in comparison){
+if (!is.null(manually_filtered_BulkSignalr_df) && is.data.frame(manually_filtered_BulkSignalr_df)) {
   
-  df = BulkSignaR_Output[[group]]$LRinter_pairs_best_pws
-  df$group = group
-  lr_df_list[[group]] = df
+  df_for_plotting = manually_filtered_BulkSignalr_df
+  
+} else {
+  
+  
+  df_for_plotting = BulkSignaR_Output_list$unfiltered_LR_df_for_plotting
+  df_for_plotting = df_for_plotting %>% filter(qval < qval_threshold,
+                                       LR.corr > LR_corr_threshold,
+                                       pw.name %in% pathway_names)
   
 }
 
-df_combined = do.call(rbind, lr_df_list)
 
 
-# TODO need to group based on pathway
-
-df_plot = df_combined %>% filter(qval < qval_threshold,
-                                 LR.corr > LR_corr_threshold,
-                                 pw.name %in% pathway_names)
-
-df_plot$lr_interaction = paste0(df_plot$L,"-",df_plot$R)
-df_plot$neg_log10_p_adj = -log(df_plot$qval)
-
-
-p1 =  df_plot %>%
+p1 =  df_for_plotting %>%
   ggplot(aes(group, lr_interaction, color = LR.corr, size = neg_log10_p_adj)) +
   geom_point() +
   facet_grid(pw.name~group, scales = "free", space = "free", switch = "y")+
@@ -91,7 +70,7 @@ p1 =  df_plot %>%
     strip.background = element_rect(color="darkgrey", fill="whitesmoke", size=1.5, linetype="solid")
   ) + labs(color = "Median difference\nin scaled L-R\npseudobulk\nexpression\nproduct", size = "-log10(pval_adj)") 
 
-max_corr = abs(df_plot$LR.corr) %>% max()
+max_corr = abs(df_for_plotting$LR.corr) %>% max()
 
 custom_scale_fill = scale_color_gradientn(
   colours = RColorBrewer::brewer.pal(n = 7, name = "PuRd"),
