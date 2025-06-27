@@ -81,16 +81,31 @@ for (group in comparison) {
   }
 
 
+# combining all the LR predictions from both groups to a single dataframe
 
+
+lr_df_list = list()
+
+for (group in comparison){
+  
+  df = cellchat_results[[group]]$df.net
+  df$group = group
+  lr_df_list[[group]] = df
+  
+}
+
+df_combined = do.call(rbind, lr_df_list)
+df_combined$sender_receiver = paste(df_combined$source, df_combined$target, sep = " -> ")
+rownames(df_combined) <- NULL
 
 # save final LR predictions
 
-#file_name = paste(comparison, collapse = "_")
 
 cellchat_output = list(
   expr_deseq2_norm_log = expr_deseq2_norm_log,
   metadt_all = metadt_all,
-  cellchat_results = cellchat_results
+  cellchat_results = cellchat_results,
+  unfiltered_LR_df_for_plotting = df_combined
   )
 
 saveRDS(cellchat_output, file = geomx_CellChat_path)
