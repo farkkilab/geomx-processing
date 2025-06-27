@@ -219,7 +219,7 @@ cellchat_predict_prob <- function(metadt_all, expr_deseq2_norm_log, DE_genes = N
 
   low_count_labels <- unique(df_grouped_samples[df_grouped_samples$count < min_cells,]$labels)
  
-  # TODO cell type abundance plot
+  # TODO cell type abundance plot: error in the plotting function
   # cell_type_abundance_plot(metadt_all, min_cells, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, output_dir)
 
 
