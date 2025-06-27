@@ -59,7 +59,7 @@ library(progeny, quietly =T)
 # TODO move loading libraries to each script separately
 
 #all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
-batch <<- 'batch2' # just for running qc for batch1 with kept high NTC samples
+batch <<- 'batch123' # just for running qc for batch1 with kept high NTC samples
 
 
 # define variables and paths ----------------------------------------------
@@ -71,19 +71,33 @@ proj_dir <<- '~/Documents/phd/st'
 # and dcc_name of proper NTC in 'NTC_ID' column if theres no 1NTC/batch
 
 if(batch == 'batch1'){
-  data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_nact' # batch1
+  data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch1_0823' # batch1
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
-  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_cleaned.xlsx') #batch1
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch1_0823.xlsx') #batch1
 } else if(batch == 'batch2'){
   data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
-  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch2_1124.xlsx') #batch2
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch2_1124.xlsx') #batch2
+} else if(batch == 'batch3'){
+  data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch3_0525/'
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch3-2606') # batch3
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch3_0525.xlsx') #batch1 and 2
 } else if(batch == 'batch12'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch12/' # batch1 and 2
   # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1205-no-counts-shift2') # batch12
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch12.xlsx') #batch1 and 2
-} else{
+} else if(batch == 'batch23'){
+  data_dir <<- '~/Documents/phd/st/data/geomx/batch23/' # batch2 and 3
+  # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch12
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch23.xlsx') #batch1 and 2
+} else if(batch == 'batch123'){
+  data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 and 2
+  # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2706') # batch12
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123.xlsx') #batch1 and 2
+}else{
   stop('wrong batch nr')
 }
 
@@ -115,7 +129,7 @@ main_roi_label <<- "Annotation_cell"
 main_experimental_condition <<- 'NACT_status'
 sample_name <<- 'Sample'
 
-other_vars_bio <<- c("Segment_geomx", "Patient", "Site") # 'PFS_months', 'PFS'
+other_vars_bio <<- c("Segment_geomx", "Patient", "Site", "tls_status") # 'PFS_months', 'PFS'
 other_vars_tech <<- c('Slide_Name', "batch_nr_sample_collection")
 
 # load util functions and create dirs -------------------------------------
@@ -148,8 +162,6 @@ run_unless_exists('Normalisation', geomx_norm_path,
 
 
 # conditonally run batch effect removal -----------------------------------
-# TODO compute voom() weights for dge - not so important
-# (voom computes precision weights for the downstream dge)
 
 # !!! check throughfully the 1st PVCA plots - if another variables are responsible for variance 
 # primary_batch_var and secondary_batch_var values should be changed
@@ -218,6 +230,8 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 
 
 # conditionally run differential gene expression --------------------------
+# TODO compute voom() weights for dge - not so important
+# (voom computes precision weights for the downstream dge)
 # TODO anova(full model, reduced model) - check if significantly improves the effect for interesting genes
 # TODO add limma voom - not so important
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
