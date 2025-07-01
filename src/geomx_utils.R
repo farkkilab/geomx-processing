@@ -328,7 +328,7 @@ make_umap_tsne <- function(geomx, assay_name, assay_is_log = F, top_var = NULL, 
   if(assay_is_log){
     inp_expr <- assayDataElement(geomx , elt = assay_name)
   } else{
-    inp_expr <- log2(assayDataElement(geomx , elt = assay_name))
+    inp_expr <- log2(assayDataElement(geomx , elt = assay_name)+1)
   }
   
   # get top N variable genes

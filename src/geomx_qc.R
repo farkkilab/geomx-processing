@@ -123,7 +123,6 @@ geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
 
 
 # rmv NTC segments
-#TODO check if this is not messing up with latter functions
 geomx_obj <- geomx_obj[, !(geomx_obj$Slide_Name == 'No Template Control')]
 
 qc_results_segment <- protocolData(geomx_obj)[["QCFlags"]]
@@ -266,8 +265,6 @@ geomx_obj <-
 print(paste('dim after removing bad quality probes (globally): '))
 print(dim(geomx_obj))
 
-# TODO what about local removal of probes per segment?
-
 # aggregate probes to features --------------------------------------------
 
 # collapse features to targets
@@ -331,7 +328,7 @@ sapply(imp_vars, function(vname){
 })
 
 # save gdr info
-gdr_df <- pData(geomx_obj)[, -48]
+gdr_df <- pData(geomx_obj)[, -48] # fixing df within df for saving
 gdr_df$LOQ <- pData(geomx_obj)$LOQ$Hs_R_NGS_WTA_v1.0 # fixing df within df for saving
 fwrite(gdr_df, file.path(output_dir, 'segments_gdr.csv'))
 
@@ -361,6 +358,8 @@ geomx_obj <-
 
 print(paste('dim after removing genes based on LOQ: '))
 print(dim(geomx_obj))
+
+# TODO what about removing genes below LOQ per segment?
 
 
 # additional background modelling for genes -------------------------------
