@@ -189,9 +189,18 @@ lapply(names(expr_list), function(expr_name){
       
       # use lapply in case you have multiple levels of your test factor to
       # correctly associate gene name with it's row in the results table
-      r_test$Gene <-
-        unlist(lapply(colnames(mixed_result),
-                      rep, nrow(mixed_result["lsmeans", ][[1]])))
+      r_test$Gene <- unlist(lapply(colnames(mixed_result), function(x){
+        lsmeans_res <- mixed_result["lsmeans", ][[x]]
+        
+        if(nrow(lsmeans_res) == 1 & all(is.na(lsmeans_res))){
+          gene_rep <- NA
+        } else{
+          gene_rep <- rep(x, nrow(lsmeans_res))
+        }
+      }))
+      
+      r_test <- r_test[!is.na(r_test$Gene), ]
+      
       r_test$data_group <- data_group
       r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
       r_test <- r_test[, c("Gene", "data_group",  "Contrast", "Estimate",
