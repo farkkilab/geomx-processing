@@ -25,7 +25,7 @@ library(Rtsne)
 # TODO split into 2 scripts - for sparsity, gdr etc and deconvolution
 # TODO gsea on canonical_markers (for scRNAseq cell typing) for deconv assesment
 
-batch <- 'batch12'
+batch <- 'batch123'
 
 ###########################
 
@@ -35,33 +35,67 @@ if(batch == 'batch1'){
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
 } else if(batch == 'batch2'){
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
+} else if(batch == 'batch3'){
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch3-2606') # batch3
 } else if(batch == 'batch12'){
+  # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1205-no-counts-shift2') # batch12
-} else{
+} else if(batch == 'batch23'){
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch23
+} else if(batch == 'batch123'){
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2706') # batch123
+}else{
   stop('wrong batch nr')
 }
 
-clinical_dt_path <- file.path(proj_dir, 'geomx-processing/data/b12_dcc_clinical_data.csv')
 
-#clinical_dt <<- file.path(proj_dir, 'data/geomx/9_eyemt_patient_clinical_data.csv')
+#clinical_dt_path <- file.path(proj_dir, 'geomx-processing/data/b12_dcc_clinical_data.csv')
+#TODO adjust script to this - clinical should be merged with dcc
+clinical_dt_path <<- file.path(proj_dir, 'data/geomx/clinical_data/9_eyemt_patient_clinical_data.csv')
 
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
 #geomx_norm_batch_eff_rm_path2 <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_deseq2.RDS') # without vst
 
-ct_names <- c('Bcells', 'DCs', 'Endothelial cells', 'Fibroblasts', 'Macrophages', 'NKcells', 'Tcells', 'tumor')
-cells_immune <- c('Bcells', 'DCs', 'Macrophages', 'NKcells', 'Tcells')
+#################
+# files and params for deconvolution
+
+#used for deconv
+scrna_anno <- 'low_lvl_ct' # 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+
+
+if(scrna_anno == 'mid_lvl_ct'){
+  ct_names <- c('Bcells', 'DCs', 'Endothelial cells', 'Fibroblasts', 'Macrophages', 'NKcells', 'Tcells', 'tumor')
+  cells_immune <- c('Bcells', 'DCs', 'Macrophages', 'NKcells', 'Tcells')
+} else if(scrna_anno == 'mid_lvl_ct_updated'){
+  ct_names <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Tcells_other", "Bcells", "NKcells",
+                "Macrophages_Monocytes", "DCs", "Mast_cells", "Fibroblasts", "Endothelial_cells", "tumor")
+  cells_immune <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Tcells_other", "Bcells", 
+                    "Macrophages", "Monocytes", "DCs", "Mast_cells")
+} else if(scrna_anno == 'low_lvl_ct'){
+  ct_names <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells", "Fibroblasts_Endothelial", "tumor")
+  cells_immune <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells")
+  ct_to_pathway <- list(Tcells_NK = c('Tcells', 'NKcells', 'Tcells_CD8'), Bcells = 'Bcells',
+                        Myeloids = 'Macrophages', Mast_cells = 'Mast_cells', 
+                        Fibroblasts_Endothelial = c('Fibroblasts', 'Endothelial_cells'),
+                        tumor = c('tumor', 'tumor_old'), stroma = 'stroma')
+} else{
+  stop('wrong annotation')
+}
+
+
 
 ct_markers_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'ct_markers.csv')
 
 ct_gsea_all_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'ssgsea_norm_harmony_batch_corr_all_custom_ct_markers.csv.csv')
 
 
-bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_ct_fraction.csv')
-sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 'sd_res_mid_lvl_ct_geomxfiltpc_ct_fraction.csv')
+bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))
+sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', paste0('sd_res_', scrna_anno, '_geomxfiltpc_ct_fraction.csv'))
 
-deconv_raw_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct.RDS')
-deconv_harmony_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')
-deconv_limma_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_expr_mtx_cleaned_vst_limma_batch_corr_main_batch_nrbatch_nr_cov_.RDS')
+# TODO not used atm
+deconv_raw_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '.RDS'))
+deconv_harmony_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
+deconv_limma_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_main_batch_nrbatch_nr_cov_no.RDS'))
 
 
 # set up metadata variables names -----------------------------------------
@@ -79,7 +113,7 @@ main_experimental_condition <<- 'NACT_status'
 sample_name <<- 'Sample'
 
 other_vars_bio <<- c("Segment_geomx", "Patient", "Site") # 'PFS_months', 'PFS'
-other_vars_tech <<- c('Slide_Name', "batch_nr_sample_collection")
+other_vars_tech <<- c('Slide_Name')
 
 primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
 if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
@@ -88,26 +122,23 @@ important_metadt <- c(primary_batch_var, secondary_batch_var,
                 aoi_segment_var, main_roi_label, sample_name, main_experimental_condition, 
                 other_vars_bio)
 
-important_clindt <- c('HRP_status', 'PFS_quartile_b12', 'OS_quartile_b12')
+important_clindt <- c('HRP_status', 'PFS_quartile_b123', 'OS_quartile_b123')
 
 # load util functions and create dirs -------------------------------------
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
 dir.create(file.path(output_dir, 'sanity_check'), recursive = T, showWarnings = F)
+dir.create(file.path(output_dir, 'sanity_check', 'deconv'), recursive = T, showWarnings = F)
 
 #################################################################
 ################################################################
-# cell markers: http://117.50.127.228/CellMarker/CellMarkerBrowse.jsp
-# human, ovary
+# basic sanity check, gene coverage etc
 
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 
 sort(colnames(sData(geomx_obj)))
 dim(geomx_obj@assayData$exprs)
-
-deconv_limma <- readRDS(deconv_limma_path)
-deconv_harmony <- readRDS(deconv_harmony_path)
 
 expr_list <- list(raw = geomx_obj@assayData$exprs, deseq_norm = geomx_obj@assayData$deseq2_norm,
                   q3_norm = geomx_obj@assayData$q3_norm, vst = geomx_obj@assayData$deseq2_vst, 
@@ -183,6 +214,7 @@ ggsave(file.path(output_dir, 'sanity_check', paste0('gene_detection_rate_per_aoi
 
 
 # stromal/tumor markers ---------------------------------------------------
+# check tum/str markers activity in tum/str AOIs
 
 ct_markers <- fread(ct_markers_path)
 all_markers <-   as.list(ct_markers)
@@ -193,6 +225,7 @@ all_markers <- lapply(all_markers, function(l){l[l !=""]})
 # SMA ? ACTA2
 
 ct_gsea_all <- fread(ct_gsea_all_path)
+ct_gsea_all$pathway <- gsub(' ', '_', ct_gsea_all$pathway)
 ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'Nkcells', 'NKcells', ct_gsea_all$pathway)
 ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'CD8_Tcells', 'Tcells_CD8', ct_gsea_all$pathway)
 
@@ -208,7 +241,7 @@ ct_gsea_imm <- filter(ct_gsea_all, pathway %in% c('Tcells', 'Macrophages', 'CD8_
 ct_boxpl_anno <- pathway_boxplot(ct_gsea_imm,'pathway', 'ssgsea_score', 'Annotation_cell', facet_var = 'Segment', 
                             'cell type markers ssgsea score per annotation',
                             file.path(output_dir, 'sanity_check', 'ct_markers_per_annotation.pdf'),
-                            manual_colours = viridis(14))
+                            manual_colours = viridis(17))
 
 # DCs were removed bcs only 3 genes - find sth else to check
 # T-cells work as expected (especially batch1, both new labels as well)
@@ -216,10 +249,13 @@ ct_boxpl_anno <- pathway_boxplot(ct_gsea_imm,'pathway', 'ssgsea_score', 'Annotat
 
 
 # deconvolution sanity check ----------------------------------------------
+# cell markers: http://117.50.127.228/CellMarker/CellMarkerBrowse.jsp
+# human, ovary
+
 
 ###########################
 # ct markers activity should be higher in given ct
-ct_gsea_deconv <- list.files(file.path(output_dir, 'pathway_analysis', 'gsea'), pattern = 'ct_markers.*csv', full.names = T)
+ct_gsea_deconv <- list.files(file.path(output_dir, 'pathway_analysis', 'gsea', scrna_anno), pattern = 'ct_markers.*csv', full.names = T)
 ct_gsea_deconv <- ct_gsea_deconv[-1]
 
 ct_gsea_deconv <- lapply(ct_gsea_deconv, fread)
@@ -228,25 +264,27 @@ ct_gsea_deconv$expr_signal <- gsub('deconv_', '', ct_gsea_deconv$expr_signal)
 
 ct_boxpl_deconv <- pathway_boxplot(ct_gsea_deconv,'pathway', 'ssgsea_score', 'expr_signal', facet_var = 'Segment', 
                                  'cell type markers ssgsea score in each deconvoluted data',
-                                 file.path(output_dir, 'sanity_check', 'ct_markers_in_deconv.pdf'),
-                                 manual_colours = viridis(14))
+                                 file.path(output_dir, 'sanity_check','deconv', 'ct_markers_in_deconv.pdf'),
+                                 manual_colours = viridis(17))
 
 ########################
 # ct markers activity in full signal correlated with nr of cells sd-bp
 cell_fraq <- list(bp = fread(bp_cellcounts_path), sd = fread(sd_cellcounts_path))
 colnames(cell_fraq$sd) <- gsub('.', ' ', colnames(cell_fraq$sd), fixed = T)
 
-
 sapply(1:length(cell_fraq), function(x){
   print(x)
   cell_fraq_res <- as.data.frame(cell_fraq[[x]])
-  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts + cell_fraq_res$`Endothelial cells`
+  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts + cell_fraq_res$Endothelial_cells
+  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts_Endothelial
   
   ct_gsea_all_fraq <- left_join(ct_gsea_all, cell_fraq_res[, c('dcc_filename', c(ct_names, 'stroma'))])
   
-  for(ct_name in c(ct_names[!ct_names == 'DCs'], 'stroma')){
+  for(ct_name in c(ct_names[!(ct_names %in% c('DCs'))], 'stroma')){ #TODO find markers for all ct incl DC
     print(ct_name)
-    ct_gsea_all_fraq_ct <- ct_gsea_all_fraq[grepl(ct_name, ct_gsea_all_fraq$pathway), ]
+    
+    #ct_gsea_all_fraq_ct <- ct_gsea_all_fraq[ct_gsea_all_fraq$pathway %in% ct_to_pathway[[ct_name]], ]
+    ct_gsea_all_fraq_ct <- ct_gsea_all_fraq[grepl(unlist(strsplit(ct_name, '_'))[1], ct_gsea_all_fraq$pathway), ] # find matching name in ct markers 
     
     ct_scatter <- ggplot(data = ct_gsea_all_fraq_ct, aes(x = ssgsea_score, y = get(ct_name), color = Segment)) +
       geom_point(aes(shape = Segment)) + 
@@ -257,7 +295,7 @@ sapply(1:length(cell_fraq), function(x){
       stat_poly_eq(use_label(c("R2", "p"))) +
       facet_wrap(~pathway, scales = "fixed", dir="v") 
     
-    ggsave(file.path(output_dir,'sanity_check', paste0(names(cell_fraq)[x], '_', ct_name, '_ssgsea_vs_cell_count.png')),
+    ggsave(file.path(output_dir,'sanity_check','deconv', paste0(names(cell_fraq)[x], '_', ct_name, '_ssgsea_vs_cell_count.png')),
            width = 2000, height = 2000, unit = 'px')
   }
 })
@@ -266,19 +304,19 @@ sapply(1:length(cell_fraq), function(x){
 # pairwise bp-sd comparison
 
 cell_fraq_bp <- as.data.frame(cell_fraq$bp)
-cell_fraq_bp$other <- cell_fraq_bp$`Mast cells` + cell_fraq_bp$other
-cell_fraq_bp <- cell_fraq_bp[, c('dcc_filename','Segment', 'Annotation_cell','other', ct_names)]
-colnames(cell_fraq_bp) <- c('dcc_filename', 'Segment', 'Annotation_cell','other_bp', paste0(ct_names, '_bp'))       
+#cell_fraq_bp$other <- cell_fraq_bp$`Mast cells` + cell_fraq_bp$other
+cell_fraq_bp <- cell_fraq_bp[, c('dcc_filename','Segment', 'Annotation_cell', ct_names)]
+colnames(cell_fraq_bp) <- c('dcc_filename', 'Segment', 'Annotation_cell', paste0(ct_names, '_bp'))       
 
 cell_fraq_sd <- as.data.frame(cell_fraq$sd)
-cell_fraq_sd$other <- cell_fraq_sd$`Mast cells` + cell_fraq_bp$other
-cell_fraq_sd <- cell_fraq_sd[, c('dcc_filename','other', ct_names)]
-colnames(cell_fraq_sd) <- c('dcc_filename','other_sd', paste0(ct_names, '_sd'))   
+#cell_fraq_sd$other <- cell_fraq_sd$`Mast cells` + cell_fraq_bp$other
+cell_fraq_sd <- cell_fraq_sd[, c('dcc_filename',ct_names)]
+colnames(cell_fraq_sd) <- c('dcc_filename', paste0(ct_names, '_sd'))   
 
 cell_fraq_both <- left_join(cell_fraq_bp, cell_fraq_sd)
 
-cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_bp + cell_fraq_both$`Endothelial cells_bp`
-cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_sd + cell_fraq_both$`Endothelial cells_sd`
+cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_bp + cell_fraq_both$Endothelial_cells_bp
+cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_sd + cell_fraq_both$Endothelial_cells_sd
 
 cell_fraq_both_long <- melt(cell_fraq_both, id.vars = c('dcc_filename', 'Segment', 'Annotation_cell'),
                             variable.name = 'cell_type', value.name = 'fraction')
@@ -299,7 +337,7 @@ for(ct in c(ct_names, 'stroma')){
     ggtitle(paste0(ct, ' fractions bp vs sd')) +
     facet_wrap(~ Segment)
   
-  ggsave(file.path(output_dir, 'sanity_check', paste0('deconv_comparison_', ct, '_bp_sd.png')),
+  ggsave(file.path(output_dir, 'sanity_check','deconv', paste0('deconv_comparison_', ct, '_bp_sd.png')),
          width = 1500, height = 1000, unit = 'px')
 }
 
@@ -311,19 +349,21 @@ ggplot(cell_fraq_both_long, aes(x = deconv_type, y = fraction)) +
   ggtitle('ct fractions bp vs sd') +
   facet_wrap(~ cell_type)
 
-ggsave(file.path(output_dir, 'sanity_check', paste0('deconv_comparison_all_bp_sd.png')),
+ggsave(file.path(output_dir, 'sanity_check','deconv', paste0('deconv_comparison_all_bp_sd.png')),
        width = 1500, height = 1000, unit = 'px')
 
 #########################
 # make scatters bp vs sd
 for(ct_name in c(ct_names, 'stroma')){
+  
+  print(ct_name)
   bp_sd_scatter <- ggplot(data = cell_fraq_both, aes(x = get(paste0(ct_name, '_bp')),
                                                             y = get(paste0(ct_name, '_sd')))) +
-    geom_point(aes(color = Annotation_cell)) + 
+    geom_point(aes(color = Annotation_cell)) +
     ggtitle(paste0(ct_name, ' fractions bp vs sd'),
             subtitle = paste('overall pearson cor: ', round(stats::cor(cell_fraq_both[[paste0(ct_name, '_bp')]],
                                                         cell_fraq_both[[paste0(ct_name, '_sd')]], 
-                                                        use = "complete.obs"), 2))) + 
+                                                        use = "complete.obs"), 2))) +
     xlab('bp fraq') +
     ylab('sd fraq') +
     facet_wrap(~ Segment) +
@@ -331,7 +371,7 @@ for(ct_name in c(ct_names, 'stroma')){
     # stat_poly_eq(use_label(c("R2", "p"))) +
     stat_correlation(method = 'pearson')
   
-  ggsave(file.path(output_dir,'sanity_check', paste0('deconv_comparison_scatter_', ct_name, '.png')),
+  ggsave(file.path(output_dir,'sanity_check', 'deconv', paste0('deconv_comparison_scatter_', ct_name, '.png')),
          width = 2000, height = 2000, unit = 'px')
 }
 
@@ -515,9 +555,12 @@ sapply(ct_names, function(ct_name){
 # for sisana
 demo <- fread('/home/iganiemi/Documents/phd/st/gene-regulatory-networks/sisana/sisana/example_input/BRCA_TCGA_20_LumA_LumB_samps_5000_genes_exp.tsv')
 
+geomx_norm_batch_eff_rm_path <- '/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2706/geomx_qc_norm_batch_eff_rm.RDS'
+geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
+
 geomx_harm <- data.frame(geomx_obj@assayData$harmony_batch_corr)
 geomx_harm <- rownames_to_column(geomx_harm, var = 'Target')
-write_tsv(geomx_harm, '/home/iganiemi/Documents/phd/st/gene-regulatory-networks/sisana/sisana/geomx_input/geomx_batch12_harmony_corr_expr_mtx.tsv',
+write_tsv(geomx_harm, '/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2706/sisana/geomx_input/geomx_batch123_harmony_corr_expr_mtx.tsv',
           col_names = T)
 
 meta_segment <- sData(geomx_obj)[, c('dcc_filename', 'Segment')]
