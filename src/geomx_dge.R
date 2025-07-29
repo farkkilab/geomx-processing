@@ -159,24 +159,30 @@ lapply(names(expr_list), function(expr_name){
     geomx_obj_dge_group_cleaned <- cleaned_dt$geomx_obj
     runlogs <- c(runlogs, cleaned_dt$logs)
     
-    # run LMM:
-    # formula follows conventions defined by the lme4 package
-    mixed_result <- tryCatch({
-      mixedOutmc <- mixedModelDE2(
-        geomx_obj_dge_group_cleaned,
-        elt = expr_name,
-        modelFormula = model_formula, 
-        groupVar = 'main_var_factor',
-        nCores = (parallel::detectCores() - 2),
-        multiCore = unname(ifelse(Sys.info()['sysname'] == 'Windows', FALSE, TRUE))
-      )
-      mixedOutmc  # Return the result of mixedModelDE
-    }, error = function(e) {
-      # Return an empty dataframe if an error occurs eg to little AOIs
-      print('not enough AOI for comparison!')
-      data.frame()
+    # if >1 main_variable value present in cleaned_dt, make dge
+    if(length(unique(pData(geomx_obj_dge_group_cleaned)$main_var_factor)) > 1){
       
-    })
+      # run LMM:
+      # formula follows conventions defined by the lme4 package
+      mixed_result <- tryCatch({
+        mixedOutmc <- mixedModelDE2(
+          geomx_obj_dge_group_cleaned,
+          elt = expr_name,
+          modelFormula = model_formula, 
+          groupVar = 'main_var_factor',
+          nCores = (parallel::detectCores() - 2),
+          multiCore = unname(ifelse(Sys.info()['sysname'] == 'Windows', FALSE, TRUE))
+        )
+        mixedOutmc  # Return the result of mixedModelDE
+      }, error = function(e) {
+        # Return an empty dataframe if an error occurs eg to little AOIs
+        print('not enough AOI for comparison!')
+        data.frame()
+        
+      })
+    } else{
+      mixed_result <- data.frame()
+    }
     
     gc()
     
