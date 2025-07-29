@@ -207,11 +207,20 @@ lapply(names(expr_list), function(expr_name){
       
       r_test <- r_test[!is.na(r_test$Gene), ]
       
-      r_test$data_group <- data_group
-      r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
-      r_test <- r_test[, c("Gene", "data_group",  "Contrast", "Estimate",
-                           "Pr(>|t|)", "FDR")]
-      dge_results <- rbind(dge_results, r_test)
+      # don't merge if NA results for all genes
+      if(nrow(r_test) >0){
+        r_test$data_group <- data_group
+        r_test$FDR <- p.adjust(r_test$`Pr(>|t|)`, method = "fdr")
+        r_test <- r_test[, c("Gene", "data_group",  "Contrast", "Estimate",
+                             "Pr(>|t|)", "FDR")]
+        dge_results <- rbind(dge_results, r_test)
+      } else{
+        err <- paste('no computed dge for', expr_name, data_group, 'probable reason: too little signal from given cell type')
+        print(err)
+        runlogs <- c(runlogs, err)
+        dge_results <- dge_results
+      }
+
     } else{
       err <- paste('error while computing dge for', expr_name, data_group, 'probably too little AOI for comparison. Check the comparison groups!!')
       print(err)
