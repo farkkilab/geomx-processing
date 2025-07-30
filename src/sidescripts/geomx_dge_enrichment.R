@@ -131,6 +131,7 @@ for(dge_df_path in dge_df_list){
         # subset to dt group + contrast
         gsea_subset <- gsea_res_all[gsea_res_all$data_group == dt_group & gsea_res_all$Contrast == cont, ]
         gsea_subset_name <- gsub(' ', '', paste0(dt_group, '_', cont))
+        print(gsea_subset_name)
         
         # filter to padj
         # padj is stochastic - different runs on the same data give slightly different results
@@ -142,22 +143,25 @@ for(dge_df_path in dge_df_list){
             gsea_subset <- gsea_subset[gsea_subset$is_main_pathway == 'yes', ]
           }
           
-          hmap_outpath <- file.path(dge_dir_path, 'gsea_enrichment', paste0('hmap_',gsea_subset_name, '_', signature_type,
-                                                                            '_', signature_name, '_', dge_inp_data,
-                                                                            '_fc', as.character(fc_thr), '.png'))
-          # cluster pathways by jaccard idx and make heatmap
-          gsea_clust <- cluster_gsea_enrichment(gsea_subset, 'leadingEdge', 'pathway', 
-                                                hmap_outpath = hmap_outpath, hmap_title = gsea_subset_name, 
-                                                lead_genes_split = '|')
+          # only clustering more than 1 pathways makes sense
+          if(nrow(gsea_subset) > 1){
+            hmap_outpath <- file.path(dge_dir_path, 'gsea_enrichment', paste0('hmap_',gsea_subset_name, '_', signature_type,
+                                                                              '_', signature_name, '_', dge_inp_data,
+                                                                              '_fc', as.character(fc_thr), '.png'))
+            # cluster pathways by jaccard idx and make heatmap
+            gsea_subset <- cluster_gsea_enrichment(gsea_subset, 'leadingEdge', 'pathway', 
+                                                  hmap_outpath = hmap_outpath, hmap_title = gsea_subset_name, 
+                                                  lead_genes_split = '|')
+          }
           
-          return(gsea_clust)
+          return(gsea_subset)
         } else{
           return()
         }
       })
     })
     
-    gsea_res_clust_all <- do.call(rbind, unlist(gsea_res_clust_all, recursive=FALSE))
+    gsea_res_clust_all <- do.call(rbind.fill, unlist(gsea_res_clust_all, recursive=FALSE))
     
     
     if(!is.null(gsea_res_clust_all)){
