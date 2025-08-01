@@ -89,13 +89,11 @@ if(batch == 'batch1'){
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch12.xlsx') #batch1 and 2
 } else if(batch == 'batch23'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch23/' # batch2 and 3
-  # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch12
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch23
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch23.xlsx') #batch1 and 2
 } else if(batch == 'batch123'){
-  data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 and 2
-  # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2706') # batch12
+  data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2706') # batch123
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123.xlsx') #batch1 and 2
 }else{
   stop('wrong batch nr')
@@ -142,7 +140,7 @@ dir.create(output_dir, recursive = T, showWarnings = F)
 
 geomx_qc_path <<- file.path(output_dir, 'geomx_qc.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
-geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
+geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_noTLS.RDS') # for runs for eyemt
 
 # start the pipeline ------------------------------------------------------
 
@@ -170,8 +168,13 @@ run_unless_exists('Normalisation', geomx_norm_path,
 # should be the same as in batch effect rm script
 # if analysing each batch separately, only batch_var is considered
 # if analysisng many big batches together, both main_batch_var and batch_var are considered
-primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
-if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
+if(batch %in% c('batch1', 'batch2', 'batch3')){
+  primary_batch_var <<- batch_var
+  secondary_batch_var <<- NULL
+  } else{
+  primary_batch_var <<- main_batch_var
+  secondary_batch_var <<- batch_var
+    }
 
 # biological covariates which effect should be ignored by limma 
 # if NULL no cov are added to limma rmv batch eff
@@ -190,7 +193,7 @@ primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_v
 if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
 
 # column name of cell type label in scRNAseq metadata
-scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
+scrna_anno <<- 'low_lvl_ct' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 deconv_logs_path <<- file.path(output_dir,'deconvolution', 
                              paste0('deconv_', scrna_anno, '_logs.txt'))
@@ -201,19 +204,25 @@ run_unless_exists('Deconvolution', deconv_logs_path,
 # conditionally run pathway analysis --------------------------------------
 # TODO add limma fry calculation - another algorithm for pathway analysis not super important
 
-scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
+scrna_anno <<- 'low_lvl_ct' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
-pathway_inp_data_type <<- c('all','bp') # within c('all', 'bp')
+pathway_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
-ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells",
-                     "Macrophages", "DCs", "Endothelial cells")
+ct_of_interest <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells",
+                    "Fibroblasts_Endothelial", "tumor")
+# mid_lvl_ct_updated
+# ct_of_interest <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells',
+#                     "Macrophages_Monocytes", "DCs", "Fibroblasts", "Endothelial_cells", "tumor")
+#ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells",
+#                     "Macrophages", "DCs", "Endothelial cells")
+
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
-signature_type <<- 'msigdb' # c('msigdb', 'custom')
+signature_type <<- 'custom' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
 # custom - on custom signatures list specified in custom_sign_path
 
@@ -237,14 +246,14 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
 
 # column name of cell type label in scRNAseq metadata
-scrna_anno <<- 'mid_lvl_ct' # either 'cell_type' or 'mid_lvl_ct'
+scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
 #ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells", "DCs")
-ct_of_interest <<- c("Macrophages", "Tcells")
+ct_of_interest <<- c("Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Bcells", "Fibroblasts")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
@@ -268,7 +277,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('NACT_status')
+dge_categories <<- c()
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

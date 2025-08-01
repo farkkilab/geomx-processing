@@ -60,6 +60,29 @@ dir.create(file.path(outp_dir, 'clustering'), recursive = T, showWarnings = F)
 
 #############################################################################
 #############################################################################
+# prepare input dfs for sisana
+# output_dir <- '/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2706'
+# dir.create(file.path(output_dir, 'sisana', 'geomx_input'), recursive = T)
+# geomx_obj <- readRDS(file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS'))
+# 
+# geomx_harm <- data.frame(geomx_obj@assayData$harmony_batch_corr)
+# geomx_harm <- rownames_to_column(geomx_harm, var = 'Target')
+# geomx_harm_demo <- geomx_harm[, 1:10]
+# write_tsv(geomx_harm, file.path(output_dir, 'sisana', 'geomx_input', 'geomx_batch123_harmony_corr_expr_mtx.tsv'),
+#           col_names = T)
+# write_tsv(geomx_harm_demo, file.path(output_dir, 'sisana', 'geomx_input', 'geomx_batch123_harmony_corr_expr_mtx_demo.tsv'),
+#           col_names = T)
+
+# meta_segment <- sData(geomx_obj)[, c('dcc_filename', 'Segment')]
+# meta_segment$dcc_filename <- gsub('\\-', '\\.', meta_segment$dcc_filename)
+# rownames(meta_segment) <- NULL
+# colnames(meta_segment) <- NULL
+# 
+# write_csv(meta_segment, file.path(output_dir, 'sisana', 'geomx_input', 'geomx_meta_segment.csv'), 
+#           col_names = F)
+
+############################################################################
+############################################################################
 # cluster gsea pathways for sisana results --------------------------------
 
 for(gsea_dir_path in gsea_dirs){
