@@ -2,36 +2,54 @@ library(dplyr)
 library(data.table)
 library(ggplot2)
 library(gridExtra)
+library(GeomxTools)
 
 
 
 # load variables ----------------------------------------------------------
+output_dir <- '~/Documents/phd/st/geomx-processing/results/batch1-1903/'
 
-data_dir <- '/media/iganiemi/T7-iga/st/data/geomx/nact_experiment/'
-output_dir <- '/media/iganiemi/T7-iga/st/geomx-processing/results/nact2'
+#cell_counts_dir <- file.path(data_dir, 'image_cell_counts') 
+# TODO these are only cell counts - where are the stupid ct from tribus?
+cell_counts_dir <- '~/Documents/phd/st/geomx-processing/data/b1_cycif_cell_quantification/'
 
-cell_counts_dir <- file.path(data_dir, 'image_cell_counts') 
-cell_counts_dir <- '/home/ad/P-drive/h345/afarkkilab/Data/9-tCycIF-GeoMx-PreandPost/data/geomx/quantification/'
+ct_quant_roi_path <- '/home/ad/P-drive/h345/afarkkilab/Data/9-EyeMT/Data_integration/Quantified_cells/cell_count_per_ROI.csv'
+ct_quant_aoi_path <- '/home/ad/P-drive/h345/afarkkilab/Data/9-EyeMT/Data_integration/Quantified_cells/cell_count_per_AOI.csv'
 
-geomx_path <- file.path(output_dir, 'geomx_qc_norm.RDS')
-prism_deconv_path <- file.path(output_dir, 'prism','results', 'geomx_weights_low_lvl_ct.tsv')
 
+geomx_path <- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
+#prism_deconv_path <- file.path(output_dir, 'prism','results', 'geomx_weights_low_lvl_ct.tsv')
+bp_ct_count_path <- file.path(output_dir, "/deconvolution/bayes_prism/bp_res_mid_lvl_ct_ct_fraction.csv")
+sd_ct_count_path <- file.path(output_dir, "/deconvolution/spatial_decon/sd_res_mid_lvl_ct_geomxfilt_ct_fraction.csv")
 
 #################
 
 geomx_obj <- readRDS(geomx_path)
 geomx_meta <- sData(geomx_obj)
 
+ct_roi <- fread(ct_quant_roi_path)
+ct_aoi <- fread(ct_quant_aoi_path)
+
 cell_counts <- lapply(list.files(cell_counts_dir, full.names = T), fread)
 cell_counts <- do.call(rbind, cell_counts)
 
-prism_deconv <- fread(prism_deconv_path)
+# prism_deconv <- fread(prism_deconv_path)
+# 
+# prism_deconv <- left_join(prism_deconv, geomx_meta[, c('dcc_filename', 'Segment', 'Patient', 'NACT status', 'Annotation_cell')],
+#                           by = c('V1' = 'dcc_filename'))
 
-prism_deconv <- left_join(prism_deconv, geomx_meta[, c('dcc_filename', 'Segment', 'Patient', 'NACT status', 'Annotation_cell')],
-                          by = c('V1' = 'dcc_filename'))
+bp_ct_count <- fread(bp_ct_count_path)
+sd_ct_count <- fread(sd_ct_count_path)
+
+#######################################
+# ct from cycif vs deconvolution fractions
+
+
+
+
 
 ########################################
-
+# nr of cells vs prism 
 
 geomx_meta$Sample_ROI <- paste0(geomx_meta$Patient, '-', geomx_meta$Roi)
 
