@@ -86,6 +86,8 @@ for(dge_df_path in dge_df_list){
   dge_inp_data <- gsub(paste0( '_',dge_name, '.csv'), '', basename(dge_df_path))
   print(paste0('##### ', dge_inp_data, ' #####'))
   
+  dir.create(file.path(dge_dir_path, "gsea_enrichment", dge_inp_data))
+  
   # read DGE results --------------------------------------------------------
   
   dge_df <- fread(dge_df_path)
@@ -117,9 +119,9 @@ for(dge_df_path in dge_df_list){
   gsea_res_all <- do.call(rbind, unlist(gsea_res_all, recursive=FALSE))
   
   if(!is.null(gsea_res_all)){
-    fwrite(gsea_res_all, file.path(dge_dir_path, 'gsea_enrichment', paste0('gsea_dge_', signature_type,
-                                                        '_', signature_name, '_', dge_inp_data,
-                                                        '_fc', as.character(fc_thr),'_nofiltering.csv')))
+    fwrite(gsea_res_all, file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
+                                   paste0('gsea_dge_', signature_type, '_', signature_name, 
+                                          '_', dge_inp_data, '_fc', as.character(fc_thr),'_nofiltering.csv')))
     
     
     # cluster gsea signatures by jaccard idx ----------------------------------
@@ -145,9 +147,11 @@ for(dge_df_path in dge_df_list){
           
           # only clustering more than 1 pathways makes sense
           if(nrow(gsea_subset) > 1){
-            hmap_outpath <- file.path(dge_dir_path, 'gsea_enrichment', paste0('hmap_',gsea_subset_name, '_', signature_type,
-                                                                              '_', signature_name, '_', dge_inp_data,
-                                                                              '_fc', as.character(fc_thr), '.png'))
+            hmap_outpath <- file.path(dge_dir_path, 'gsea_enrichment',dge_inp_data,
+                                      paste0('hmap_',gsea_subset_name, '_', signature_type,
+                                             '_', signature_name, '_', dge_inp_data, 
+                                             '_fc', as.character(fc_thr), '.png'))
+            
             # cluster pathways by jaccard idx and make heatmap
             gsea_subset <- cluster_gsea_enrichment(gsea_subset, 'leadingEdge', 'pathway', 
                                                   hmap_outpath = hmap_outpath, hmap_title = gsea_subset_name, 
@@ -165,9 +169,9 @@ for(dge_df_path in dge_df_list){
     
     
     if(!is.null(gsea_res_clust_all)){
-    fwrite(gsea_res_clust_all, file.path(dge_dir_path, 'gsea_enrichment', paste0('gsea_dge_clust_', signature_type,
-                                                              '_', signature_name, '_', dge_inp_data,
-                                                              '_fc', as.character(fc_thr), '.csv')))
+    fwrite(gsea_res_clust_all, file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
+                                         paste0('gsea_dge_clust_', signature_type, '_', signature_name,
+                                                '_', dge_inp_data, '_fc', as.character(fc_thr), '.csv')))
     }
     
   } else{
