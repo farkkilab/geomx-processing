@@ -1,3 +1,21 @@
+# geomx_pcg_list <- c('devtools','BiocManager', 'plyr', 'dplyr', 'data.table', 'tibble', 'tools', 'parallel',
+#                     'ggforce', 'ggplot2', 'cowplot', 'ggrepel', 'reshape2', 
+#                     'Biobase', 'NanoStringNCTools', 'GeomxTools', 'GeoDiff', 'DESeq2', 'SpatialDecon',
+#                     'preprocessCore', 'PCAtools', 'umap', 'Rtsne', 'limma', 'pvca', 'harmony', 
+#                     'Seurat', 'BayesPrism', 'biomaRt', 'msigdbr', 'GSVA', 'clusterProfiler',
+#                     'BulkSignalR', 'igraph', 'scales', 'pheatmap', 'ComplexHeatmap','NMF', 'CellChat',
+#                     'BiocNeighbors', 'patchwork', 'ggh4x', 'rlang', 'stringr', 'BiocGenerics', 'S4Vectors', 'stats4', 'SingleCellExperiment',
+#                     'nichenetr', 'multinichenetr', 'tidyr', 'purrr', 'readr')
+# 
+# to_install <- geomx_pcg_list[which(!(geomx_pcg_list %in% ins))]
+# for(pcg in to_install){BiocManager::install(pcg)}
+
+# devtools::install_github("jinworks/CellChat")
+# devtools::install_github("saeyslab/nichenetr")
+# devtools::install_github("saeyslab/multinichenetr")
+
+
+# TODO move loading pck to certain scripts
 # main packages for all scripts
 library(plyr, quietly =T)
 library(dplyr, quietly =T)
@@ -43,7 +61,7 @@ library(msigdbr, quietly =T)
 
 library(GSVA, quietly =T)
 library(clusterProfiler, quietly =T)
-library(progeny, quietly =T)
+#library(progeny, quietly =T)
 
 # library(ggpubr)
 # library(topGO)

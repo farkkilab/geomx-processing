@@ -10,7 +10,7 @@ library(circlize, quietly =T)
 library(pheatmap, quietly =T)
 library(ComplexHeatmap, quietly =T)
 
-# TODO check the libraries needed
+library(NMF)
 library(DESeq2, quietly =T)
 library(CellChat, quietly =T)
 library(patchwork, quietly =T)
