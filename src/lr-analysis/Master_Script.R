@@ -43,95 +43,109 @@ library(stringr)
 
 # define variables and paths ----------------------------------------------
 
-proj_dir <<- 'C:/Users/Sahas/Downloads/Masters_Thesis/Project_LR_prediction'
+# they're already defined in the main script
+#proj_dir <<- 'C:/Users/Sahas/Downloads/Masters_Thesis/Project_LR_prediction'
+
+#output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction') 
+
+#TODO optimize
+# path where to download nichenet data
+nichenet_data_dir <<- file.path(proj_dir, 'geomx-processing', 'data', 'nichenet')
+dir.create(nichenet_data_dir, recursive = T, showWarnings = F)
+
+# !! this may change in the future! 
+# keep up with https://github.com/saeyslab/nichenetr  and https://github.com/saeyslab/multinichenetr for updates
+
+if(!file.exists(file.path(nichenet_data_dir, "ligand_target_matrix_nsga2r_final.rds"))){
+  download.file('https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds', 
+                destfile = file.path(nichenet_data_dir, "ligand_target_matrix_nsga2r_final.rds"), method = "wget", extra = "-r -p --random-wait")
+  
+}
+
+if(!file.exists(file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.rds"))){
+  download.file('https://zenodo.org/record/10229222/files/lr_network_human_allInfo_30112033.rds', 
+                destfile = file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.rds"), method = "wget", extra = "-r -p --random-wait")
+}
+  
+dir.create(file.path(output_dir, 'lr_interactions'), showWarnings = T, recursive = T)
 
 
-data_dir <- file.path(proj_dir, 'Batch01_Data') 
-output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction') 
+# TODO check this
 
-
-# load data ----------------------------------------------
-
-# path to Geomx object 
-# path to BayesPrism Object 
-# path to cell fractions from BayesPrism
-# path to NicheNet modal
-# path to NicheNet lr network
-
-geomx_obj = readRDS(file.path(data_dir,"geomx_qc_norm_batch_eff_rm.RDS")) # Geomx Object
-bprism_res = readRDS(file.path(data_dir,"bp_res_mid_lvl_ct.RDS")) # BayesPrism Object
-cell_fractions_df = read.csv(file.path(data_dir,"bp_res_mid_lvl_ct_ct_fraction.csv")) # cell fractions from BayesPrism
-ligand_target_matrix = readRDS(file.path(data_dir,"Nichenet_Model","ligand_target_matrix_nsga2r_final.rds")) # NicheNet modal. Can be downloaded from MultiNicheNet repo : "https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds"
-lr_network_all = readRDS(file.path(data_dir,"Nichenet_Model","lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network. Can be downloaded from MultiNicheNet repo : "https://zenodo.org/record/10229222/files/lr_network_human_allInfo_30112033.rds"
-pathway <- read.csv(file.path(data_dir,"pathway_names.csv")) # pathways for plotting: A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
-
-
-# set up metadata variables names -----------------------------------------
-aoi_id <- 'dcc_filename'
-sample_name <- 'Sample'
-aoi_segment_var <- "Segment"
-main_experimental_condition <- 'NACT_status' # eg 'NACT_status', but NULL for demo data
-other_vars_bio <- c("Patient", "Site")
-other_vars_tech <- c('Slide_Name')
+pathway <<- read.csv(file.path(data_dir,"pathway_names.csv")) # pathways for plotting: A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
 paired_id <- "Patient" # If you want to predict for paired samples only in BUlkSignalR: I did not check this 
 
+# define params -----------------------------------------------------------
 
-# params  -----------------------------------------
+#TODO move to the main script
+# column name of cell type label in scRNAseq metadata
+scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 # common parameters
-
-
 grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("Segment","NACT_status")
 
 # define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre_stroma","pre_tumor") order matters. 
 # Can compare only two groups at a time
 comparison <- c("stroma","tumor") 
 
-
-# TODO define above as a tibble
-
 # parameters for CellChat and MultiNicheNet : Single cell approaches
-cell_types = c("Tcells","Macrophages") # set to NULL to get all the cell types : ct_of_interest
+# names of cells to fin
+cell_types = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
 
 
 # parameters for MultiNicheNet only
- 
+
 # covariates for EdgeR DEGs calculated by MultiNicheNet. 
 # How to define the covariate: If the defined covaraite id not present in both groups of interest EdgeR will not run.
 # therefore in such case leave the covariate to "NA" 
 covariates =  "Sample"
 
 
+# load data ----------------------------------------------
+
+# TODO check normalisation etc of bprism result
+# TODO move to low-lvl scripts
+geomx_obj <<- readRDS(geomx_norm_batch_eff_rm_path) # batch effect corrected Geomx Object
+
+bprism_res <<- readRDS(file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                               paste0('bp_res_', scrna_anno, '.RDS'))) # raw BayesPrism result Object
+
+cell_fractions_df <<- read.csv(file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                       paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))) # cell fractions from BayesPrism
+
+ligand_target_matrix <<- readRDS(file.path(nichenet_data_dir,"ligand_target_matrix_nsga2r_final.rds")) # NicheNet model
+lr_network_all <<- readRDS(file.path(nichenet_data_dir,"lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network
+
+# set up metadata variables names -----------------------------------------
+# already defined in a main script
+# aoi_id <- 'dcc_filename'
+# sample_name <- 'Sample'
+# aoi_segment_var <- "Segment"
+# main_experimental_condition <- 'NACT_status' # eg 'NACT_status', but NULL for demo data
+# other_vars_bio <- c("Patient", "Site")
+# other_vars_tech <- c('Slide_Name')
+
+
 # define intermediate output folders and paths  ----------------------------------------
 
-BulkSignalR_folder_name = 'BulkSignalR_outputs'
-CellChat_folder_name = 'CellChat_outputs'
-MultiNicheNet_folder_name = 'MultiNicheNet_outputs'
+dir.create(file.path(output_dir, 'lr_interactions', 'bulk_signalr') , recursive = T, showWarnings = F)
+dir.create(file.path(output_dir, 'lr_interactions', 'cell_chat') , recursive = T, showWarnings = F)
+dir.create(file.path(output_dir, 'lr_interactions', 'multi_niche_netr') , recursive = T, showWarnings = F)
 
-
-geomx_BulkSignalR_path <<- file.path(output_dir,BulkSignalR_folder_name ,'BulkSignalR_output.RDS')
-geomx_CellChat_path <<- file.path(output_dir, CellChat_folder_name,'CellChat_output.RDS')
-geomx_MultiNicheNet_path <<- file.path(output_dir, MultiNicheNet_folder_name,'multinichenet_output.rds')
-
-
-# create dirs -------------------------------------
-
-dir.create(file.path(output_dir, BulkSignalR_folder_name) , recursive = T, showWarnings = F)
-dir.create(file.path(output_dir, CellChat_folder_name) , recursive = T, showWarnings = F)
-dir.create(file.path(output_dir, MultiNicheNet_folder_name) , recursive = T, showWarnings = F)
-
-
+geomx_BulkSignalR_path <<- file.path(output_dir, 'lr_interactions', 'bulk_signalr' ,'BulkSignalR_output.RDS')
+geomx_CellChat_path <<- file.path(output_dir, 'lr_interactions', 'cell_chat','CellChat_output.RDS')
+geomx_MultiNicheNet_path <<- file.path(output_dir, 'lr_interactions', 'multi_niche_netr', 'multinichenet_output.rds')
 
 # load util functions  -------------------------------------
 
-source(file.path(proj_dir, 'LR_Analysis', 'BulkSignalR_LR_utils.R'))
-source(file.path(proj_dir, 'LR_Analysis', 'cellChat_util.R'))
+source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignalR_LR_utils.R'))
+source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'cellChat_util.R'))
 
 
 # conditionally run BulkSignaR Analysis  -----------------------------------------
 
 run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
-                  file.path(proj_dir, 'LR_Analysis', 'BulkSignaR_LR_Analysis.R'))
+                  file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignaR_LR_Analysis.R'))
 
 
 # BulkSignalR Visualization -----------------------------------------
