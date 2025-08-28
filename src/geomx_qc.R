@@ -10,20 +10,24 @@ imp_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition)
 # parameters for removing genes based on LOQ
 # TODO adjustment may be needed: 10% for batch 1, 5% for batch2 and batch3
 # typical values are 5-10% 
-gene_detect_thr <- 0.05 # segment is removed if <5% of genes > LOQ
+gene_detect_thr <- 0.02 # segment is removed if <5% of genes > LOQ lowered down bcs of low quality in b3
 
 # TODO adjustments may be needed - thr is very low bcs we expect high biological variability
-segment_detect_rate_thr <- 0.01 # genes are removed if its expr > LOQ in less than 1% of segments
+segment_detect_rate_thr <- 0.02 # genes are removed if its expr > LOQ in less than 5% of segments
 # typical values are 15% but it highly depends on the variability of samples
-
-# !! 6 samples in batch1 have HighNTC - proibably contaminated wells
-# keep_high_NTC = TRUE means that all AOIs belonging to high NTC wells are keeped
-# while processing batch1 separately they're keeped 
-keep_high_NTC <- ifelse(batch == 'batch1', TRUE, FALSE)
 
 # 3 slides from b1 + 6 from b3 have high NTC count but they behave ok - suspected contamination
 # suggested value should be 1000
 max_ntc <- 3000 
+
+# TODO remove this for merging the code to master
+# remove TLS
+# if(batch == 'batch3-tls'){
+#   geomx_obj <- geomx_obj[, (pData(geomx_obj)$tls_status %in% c('GC', 'S', 'TB'))]
+# } else{
+#   geomx_obj <- geomx_obj[, !(pData(geomx_obj)$tls_status %in% c('GC', 'S', 'TB'))]
+# }
+# 
 
 # create dirs -------------------------------------------------------------
 
@@ -93,6 +97,7 @@ if('NTC_ID' %in% colnames(pData(geomx_obj))){
 pData(geomx_obj) <- dplyr::rename(pData(geomx_obj), 'area' = 'Area', 'nuclei' = 'Nuclei')
 
 # make overall sankey plot ------------------------------------------------
+
 count_segments <- geomx_obj@phenoData@data[main_roi_label != 'NA' & !is.na(main_roi_label), ]
 
 plot_sankey(count_segments, imp_vars, main_roi_label, 
@@ -151,7 +156,6 @@ QC_histogram(sData(geomx_obj), "area", aoi_segment_var, qc_params[["minArea"]],
 QC_histogram(sData(geomx_obj), "nuclei", aoi_segment_var, qc_params[["minNuclei"]],
              scale_trans = NULL, file.path(output_dir, 'qc/qc_hist_nuclei.png'))
 
-
 # negative geometric means ------------------------------------------------
 
 # calculate the negative geometric means for each module
@@ -178,7 +182,7 @@ for(ann in paste0("NegGeoMean_", modules)) {
 pData(geomx_obj) <- pData(geomx_obj)[, !colnames(pData(geomx_obj)) %in% negCols]
 
 # background modelling based on negative probes ---------------------------
-
+# alternative to LOQ  now just for checking, not used for filtering
 sum(fData(geomx_obj)$Negative) # same as negativeControlSubset(geomx_obj)
 
 # fit poisson distribution
@@ -214,11 +218,6 @@ notes(geomx_diag)$disper_sp
 # remove flagged segments -------------------------------------------------
 
 table(sData(geomx_obj)$NTC)
-
-# 6 samples in batch1 have very high NTC, probably contaminated. remove them or not?
-if(keep_high_NTC){
-  qc_results_segment <- qc_results_segment[, -which(names(qc_results_segment) == 'HighNTC')]
-}
 
 qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
@@ -351,7 +350,7 @@ plot_gene_detection_rate(fData(geomx_obj), file.path(output_dir, 'qc/gene_detect
 negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative") # 1 bcs already collapsed to targets
 neg_probes <- unique(negativeProbefData$TargetName)
 
-# filter out genes detected > LOQ in less then thr nr of segments (1% for now)
+# filter out genes detected < LOQ in less then thr nr of segments (2% for now)
 geomx_obj <- 
   geomx_obj[fData(geomx_obj)$DetectionRate >= segment_detect_rate_thr |
               fData(geomx_obj)$TargetName %in% neg_probes, ]
@@ -359,16 +358,26 @@ geomx_obj <-
 print(paste('dim after removing genes based on LOQ: '))
 print(dim(geomx_obj))
 
-# TODO what about removing genes below LOQ per segment?
+
+
+# remove genes below LOQ per AOI ------------------------------------------
+# moving all genes which are below noise level per given AOI to NA
+expr <- exprs(geomx_obj)
+
+for (i in seq_len(ncol(expr))) {
+  genes_below_loq <- which(expr[, i] < pData(geomx_obj)$LOQ$Hs_R_NGS_WTA_v1.0[i])
+  expr[genes_below_loq, i] <- NA
+  }
+
+exprs(geomx_obj) <- expr
 
 
 # additional background modelling for genes -------------------------------
-
+# alternative for LOQ
 geomx_obj <- BGScoreTest(geomx_obj)
 
 sum(fData(geomx_obj)[["pvalues"]] < 1e-3, na.rm = TRUE)
 #TODO rmv genes below bcground
-
 
 # estimating signal size factor -------------------------------------------
 
@@ -384,13 +393,7 @@ sum(fData(geomx_obj)[["pvalues"]] < 1e-3, na.rm = TRUE)
 # shifting back counts by 1 -----------------------------------------------
 # we want back the original distribution for normalisation and downstream analysis
 
-# hacking GeoMx class object 
-newassay <- new.env(parent=geomx_obj@assayData)
-newassay$exprs <- geomx_obj@assayData$exprs
-newassay$exprs <- newassay$exprs - 1
-
-geomx_obj@assayData <- newassay
-
+exprs(geomx_obj) <- exprs(geomx_obj) -1 
 
 # save geomx object after QC ----------------------------------------------
 
@@ -399,3 +402,18 @@ print(paste("mean gene nr is: ", as.character(mean(pData(geomx_obj)$GenesDetecte
 print(paste("median gene detection rate is: ", as.character(median(pData(geomx_obj)$GeneDetectionRate))))
 
 saveRDS(geomx_obj, file = geomx_qc_path)
+
+# metadt <- data.frame(batchnr = sData(geomx_obj)$batch_nr, 
+#                      loq = unlist(as.vector(sData(geomx_obj)$LOQ)), 
+#                      gdr = sData(geomx_obj)$GeneDetectionRate, 
+#                      raw = sData(geomx_obj)$Raw, 
+#                      aligned = unlist(as.vector(sData(geomx_obj)$`Aligned (%)`)), 
+#                      saturated = unlist(as.vector(sData(geomx_obj)$`Saturated (%)`)), 
+#                      ntc = sData(geomx_obj)$NTC)
+# 
+# boxplot(loq ~ batchnr, data = metadt)
+# boxplot(gdr ~ batchnr, data = metadt)
+# boxplot(raw ~ batchnr, data = metadt)
+# boxplot(aligned ~ batchnr, data = metadt)
+# boxplot(saturated ~ batchnr, data = metadt)
+# boxplot(ntc ~ batchnr, data = metadt)

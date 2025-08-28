@@ -13,6 +13,7 @@
 # devtools::install_github("jinworks/CellChat")
 # devtools::install_github("saeyslab/nichenetr")
 # devtools::install_github("saeyslab/multinichenetr")
+# devtools::install_github("Danko-Lab/BayesPrism/BayesPrism")
 
 
 # TODO move loading pck to certain scripts
@@ -77,7 +78,7 @@ library(clusterProfiler, quietly =T)
 # TODO move loading libraries to each script separately
 
 #all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
-batch <<- 'batch123' # just for running qc for batch1 with kept high NTC samples
+batch <<- 'batch3-tls' # just for running qc for batch1 with kept high NTC samples
 
 
 # define variables and paths ----------------------------------------------
@@ -96,23 +97,28 @@ if(batch == 'batch1'){
   data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch2_1124/' # batch2 
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch2_1124.xlsx') #batch2
-} else if(batch == 'batch3'){
+} else if(batch %in% c('batch3')){
   data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch3_0525/'
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch3-2606') # batch3
-  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch3_0525.xlsx') #batch1 and 2
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch3_0525_no_tls.xlsx') #batch1 and 2
+} else if(batch %in% c('batch3-tls')){
+  data_dir <<- '~/Documents/phd/st/data/geomx/geomx_batch3_0525/'
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch3-tls-2808') # batch3
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_all_batch3_0525_tls.xlsx') #batch1 and 2
 } else if(batch == 'batch12'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch12/' # batch1 and 2
   # output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1004') # batch12
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1205-no-counts-shift2') # batch12
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch12.xlsx') #batch1 and 2
 } else if(batch == 'batch23'){
+  # metadata havent been changed and contains all roi with tls
   data_dir <<- '~/Documents/phd/st/data/geomx/batch23/' # batch2 and 3
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch23
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch23.xlsx') #batch1 and 2
 } else if(batch == 'batch123'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2706') # batch123
-  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123.xlsx') #batch1 and 2
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls.xlsx') #batch1 and 2
 }else{
   stop('wrong batch nr')
 }
@@ -148,6 +154,23 @@ sample_name <<- 'Sample'
 other_vars_bio <<- c("Segment_geomx", "Patient", "Site", "tls_status") # 'PFS_months', 'PFS'
 other_vars_tech <<- c('Slide_Name', "batch_nr_sample_collection")
 
+# variables for batch effect removal
+# if analysing each batch separately, only batch_var is considered
+# if analysisng many big batches together, both main_batch_var and batch_var are considered
+
+# !!! check throughfully the 1st PVCA plots from batch effect removal step
+# if another variables are responsible for variance 
+# primary_batch_var and secondary_batch_var values should be changed
+# secondary batch variable has to be INDEPENDENT from the primary_batch_var
+
+if(batch %in% c('batch1', 'batch2', 'batch3', 'batch3-tls')){
+  primary_batch_var <<- batch_var
+  secondary_batch_var <<- NULL
+} else{
+  primary_batch_var <<- main_batch_var
+  secondary_batch_var <<- batch_var
+}
+
 # load util functions and create dirs -------------------------------------
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
@@ -158,7 +181,7 @@ dir.create(output_dir, recursive = T, showWarnings = F)
 
 geomx_qc_path <<- file.path(output_dir, 'geomx_qc.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
-geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_noTLS.RDS') # for runs for eyemt
+geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
 # start the pipeline ------------------------------------------------------
 
@@ -179,21 +202,6 @@ run_unless_exists('Normalisation', geomx_norm_path,
 
 # conditonally run batch effect removal -----------------------------------
 
-# !!! check throughfully the 1st PVCA plots - if another variables are responsible for variance 
-# primary_batch_var and secondary_batch_var values should be changed
-# secondary batch variable has to be INDEPENDENT from the primary_batch_var
-
-# should be the same as in batch effect rm script
-# if analysing each batch separately, only batch_var is considered
-# if analysisng many big batches together, both main_batch_var and batch_var are considered
-if(batch %in% c('batch1', 'batch2', 'batch3')){
-  primary_batch_var <<- batch_var
-  secondary_batch_var <<- NULL
-  } else{
-  primary_batch_var <<- main_batch_var
-  secondary_batch_var <<- batch_var
-    }
-
 # biological covariates which effect should be ignored by limma 
 # if NULL no cov are added to limma rmv batch eff
 # TODO check if this is beneficial 
@@ -206,9 +214,6 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 # conditionally run deconvolution -----------------------------------------
 
 cov_design <- NULL
-
-primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_var, main_batch_var)
-if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
 
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'low_lvl_ct' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
@@ -320,4 +325,11 @@ signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(
 # run DGE enrichment
 # TODO make a proper pipeline step
 source(file.path(proj_dir, 'geomx-processing', 'src','sidescripts', 'geomx_dge_enrichment.R'), local = TRUE)
+
+
+# conditionally run L-R interactions analysis -----------------------------
+
+# column name of cell type label in scRNAseq metadata
+scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+
 
