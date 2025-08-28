@@ -14,7 +14,6 @@ sc_ref_path <- "/home/iganiemi/Documents/phd/st/data/scrna/vaharautio_scrnaseq_d
 sc_ref <- readRDS(sc_ref_path)
 sc_ref_orig <- readRDS(sc_ref_orig_path)
 
-
 ###############################################
 # re-cluster cell types
 
@@ -39,9 +38,6 @@ sc_ref@meta.data$low_lvl_ct <- mapvalues(sc_ref@meta.data$mid_lvl_ct_updated,
                                              "Myeloids", "Myeloids","Mast_cells", "Fibroblasts_Endothelial",
                                              "Fibroblasts_Endothelial", "tumor"))
 
-which(colnames(sc_ref@meta.data) == 'low_level_ct')
-
-sc_ref@meta.data <- sc_ref@meta.data[, -which(colnames(sc_ref@meta.data) == 'low_level_ct')]
 
 table(sc_ref@meta.data$cell_type, sc_ref@meta.data$mid_lvl_ct_updated)
 table(sc_ref@meta.data$cell_type, sc_ref@meta.data$low_lvl_ct)
@@ -73,7 +69,7 @@ u2 <- DimPlot(sc_ref, reduction = "umap", group.by = "mid_lvl_ct_updated")
 u3 <- DimPlot(sc_ref, reduction = "umap", group.by = "low_lvl_ct")
 u4 <- DimPlot(sc_ref, reduction = "umap", group.by = "cell_type")
 
-pdf(file= file.path(output_dir, 'umap_scrnaseq_ref_vaharautio_downsampled_mid_lvl_ct.pdf'), width=8, height=5)
+pdf(file= file.path(output_dir, 'umap_scrnaseq_ref_vaharautio_downsampled_mid_lvl_ct_orig.pdf'), width=8, height=5)
 plot(u1)
 dev.off()
 
@@ -89,4 +85,21 @@ pdf(file= file.path(output_dir, 'umap_scrnaseq_ref_vaharautio_downsampled_cell_t
 plot(u4)
 dev.off()
 
+# Feature plot for Fibro and tumor markers expression
 
+fibro_markers <- c('ACTA2', 'BGN', 'CAV1', 'COL1A1', 'COL1A2', 'COL6A1', 'COL6A2',
+                   'DCN', 'DDR2', 'FAP', 'FBLN1', 'LUM', 'PDGFRA', 'PDGFRB', 'PDPN', 'POSTN')
+
+tumor_markers <- c('BRCA2', 'MUC16', 'CD24', 'KRT7', 'CDH1', 'EPCAM', 'FAS', 'WFDC2', 'KLF6',
+                   'KLF7', 'KLF8', 'KRT18', 'MUC16', 'PAX8', 'PIK3CA', 'SOX18', 'WFDC2', 'WT1')
+
+fibro_plot <- FeaturePlot(sc_ref, features = fibro_markers)
+tumor_plot <- FeaturePlot(sc_ref, features = tumor_markers)
+
+pdf(file= file.path(output_dir, 'umap_scrnaseq_ref_vaharautio_downsampled_fibro_markers.pdf'), width=15, height=15)
+plot(fibro_plot)
+dev.off()
+
+pdf(file= file.path(output_dir, 'umap_scrnaseq_ref_vaharautio_downsampled_tumor_markers.pdf'), width=20, height=12)
+plot(tumor_plot)
+dev.off()
