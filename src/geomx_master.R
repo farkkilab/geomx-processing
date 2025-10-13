@@ -151,8 +151,8 @@ main_roi_label <<- "Annotation_cell"
 main_experimental_condition <<- 'NACT_status'
 sample_name <<- 'Sample'
 
-other_vars_bio <<- c("Segment_geomx", "Patient", "Site", "tls_status") # 'PFS_months', 'PFS'
-other_vars_tech <<- c('Slide_Name', "batch_nr_sample_collection")
+other_vars_bio <<- c("Segment_geomx", "Patient", "Site") # 'PFS_months', 'PFS' , "tls_status"
+other_vars_tech <<- c('Slide_Name')
 
 # variables for batch effect removal
 # if analysing each batch separately, only batch_var is considered
@@ -201,12 +201,6 @@ run_unless_exists('Normalisation', geomx_norm_path,
 
 
 # conditonally run batch effect removal -----------------------------------
-
-# biological covariates which effect should be ignored by limma 
-# if NULL no cov are added to limma rmv batch eff
-# TODO check if this is beneficial 
-# cov_design <- formula(~ Patient + Site) 
-cov_design <- NULL
 
 run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_batch_effect_rmv.R'))

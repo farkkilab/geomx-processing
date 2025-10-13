@@ -18,7 +18,7 @@ geomx_obj <- readRDS(geomx_qc_path)
 # Q3 normalisation --------------------------------------------------------
 
 # this plot only makes sense for Q3 norm since it explores q3 value against NegGeoMean 
-plot_q3_stats(geomx_obj, main_roi_label, file.path(output_dir,'qc', 'q3_stats.png'))
+plot_q3_stats(geomx_obj, aoi_segment_var, file.path(output_dir,'qc', 'q3_stats.png'))
 
 geomx_obj <- normalize(geomx_obj ,
                        norm_method = "quant", 
@@ -97,13 +97,13 @@ names(geomx_obj_seg_list) <- seg_types
 geomx_list <- c(all = geomx_obj, geomx_obj_seg_list)
 
 
-norm <- 'deseq2_vst_scaled'
+norm <- 'q3_norm'
 
 geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
   geomx <- geomx_list[[n]]
   
   # run UMAP and tSNE on deseq2 vst counts
-  geomx <- make_umap_tsne(geomx, norm, assay_is_log = T)
+  geomx <- make_umap_tsne(geomx, norm, assay_is_log = F)
 
   # generate umap and tsne plots and color by variables
   for(method in c('UMAP', 'tSNE')){

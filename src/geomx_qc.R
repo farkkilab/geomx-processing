@@ -10,10 +10,10 @@ imp_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition)
 # parameters for removing genes based on LOQ
 # TODO adjustment may be needed: 10% for batch 1, 5% for batch2 and batch3
 # typical values are 5-10% 
-gene_detect_thr <- 0.02 # segment is removed if <5% of genes > LOQ lowered down bcs of low quality in b3
+gene_detect_thr <- 0.03 # segment is removed if <5% of genes > LOQ lowered down bcs of low quality in b3
 
 # TODO adjustments may be needed - thr is very low bcs we expect high biological variability
-segment_detect_rate_thr <- 0.02 # genes are removed if its expr > LOQ in less than 5% of segments
+segment_detect_rate_thr <- 0.05 # genes are removed if its expr > LOQ in less than 5% of segments
 # typical values are 15% but it highly depends on the variability of samples
 
 # 3 slides from b1 + 6 from b3 have high NTC count but they behave ok - suspected contamination
@@ -362,15 +362,15 @@ print(dim(geomx_obj))
 
 # remove genes below LOQ per AOI ------------------------------------------
 # moving all genes which are below noise level per given AOI to NA
-expr <- exprs(geomx_obj)
-
-for (i in seq_len(ncol(expr))) {
-  genes_below_loq <- which(expr[, i] < pData(geomx_obj)$LOQ$Hs_R_NGS_WTA_v1.0[i])
-  expr[genes_below_loq, i] <- NA
-  }
-
-exprs(geomx_obj) <- expr
-
+# expr <- exprs(geomx_obj)
+# 
+# for (i in seq_len(ncol(expr))) {
+#   genes_below_loq <- which(expr[, i] < pData(geomx_obj)$LOQ$Hs_R_NGS_WTA_v1.0[i])
+#   expr[genes_below_loq, i] <- NA
+#   }
+# 
+# exprs(geomx_obj) <- expr
+# 
 
 # additional background modelling for genes -------------------------------
 # alternative for LOQ
