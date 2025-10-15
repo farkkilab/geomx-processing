@@ -37,6 +37,8 @@ dir.create(file.path(output_dir, 'deconvolution', 'bayes_prism', scrna_anno, 'hi
 
 scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
 
+norm_is_log <- ifelse(deconv_norm_type == 'q3_norm', FALSE, TRUE)
+
 # prepare scrnaseq reference dataset --------------------------------------
 
 # TODO move to functions script
@@ -253,7 +255,6 @@ deconv_ct_norm_list <- lapply(ct_names, function(ct_name){
     # do vst normalisation
     # before it was wrapped in trycatch, may be needed to comeback
     deconv_ct_cleaned_norm <- varianceStabilizingTransformation(round(t(deconv_ct_cleaned)))
-    islog <- T
     
     # TODO may be needed on the downstream analysis steps
     # remove genes with 0 variance across whole dataset (artifact from deconv + vst)
@@ -264,14 +265,13 @@ deconv_ct_norm_list <- lapply(ct_names, function(ct_name){
     # upper quartile normalisation from sourcecode of GeoMxTools normalize() function
     qs <- apply(t(deconv_ct_cleaned), 2, function(x) stats::quantile(x, 0.75))
     deconv_ct_cleaned_norm <- sweep(t(deconv_ct_cleaned), 2L, qs / ngeoMean(qs), FUN = "/")
-    islog <- F
     
     #qs_norm_factors <- qs / ngeoMean(qs)     # may be needed for additional validation
   } else{ stop(print('choose either deseq2_vst or q3_norm as deconv_norm_type'))}
   
   plot_expr_distribution(deconv_ct_cleaned_norm, paste(ct_name, deconv_norm_type), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_', deconv_norm_type, '.png')), is_log = islog)
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_', deconv_norm_type, '.png')), is_log = norm_is_log)
 
   return(deconv_ct_cleaned_norm)
 })
@@ -284,8 +284,6 @@ deconv_ct_norm_list[sapply(deconv_ct_norm_list, is.null)] <- NULL
 saveRDS(deconv_ct_norm_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
                                      paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_', deconv_norm_type, '.RDS')))
 
-
-
 # do batch effect correction ----------------------------------------------
 
 # make metadata for batch effect correction
@@ -294,71 +292,49 @@ meta_dt <- sData(geomx_obj)[, c(meta_names, primary_batch_var, secondary_batch_v
 # do batch effect removal with harmony
 deconv_batch_rm_list <- lapply(names(deconv_ct_norm_list), function(ct_name){
   print(ct_name)
-  deconv_norm <- deconv_ct_norm_list[[ct_name]]
+  
+  if(!norm_is_log){
+    # make log2 transformed normalised counts if norm_type not in log scale
+    deconv_ct_norm <- log2(deconv_ct_norm_list[[ct_name]] + 1)
+  } else{
+    deconv_ct_norm <- deconv_ct_norm_list[[ct_name]]
+  }
   
   # filter meta if some ROI does not contain given ct
-  mata_dt_ct <- meta_dt[meta_dt[[aoi_id]] %in% colnames(deconv_norm), ]
+  mata_dt_ct <- meta_dt[meta_dt[[aoi_id]] %in% colnames(deconv_ct_norm), ]
   
-  deconv_harmony_res <- t(HarmonyMatrix(deconv_norm, 
-                                        meta_data = mata_dt_ct,
-                                        vars_use = c(primary_batch_var, secondary_batch_var)))
+  if(batch_rm_type == 'harmony'){
+    
+    deconv_batch_rm <- t(HarmonyMatrix(deconv_ct_norm, 
+                                          meta_data = mata_dt_ct,
+                                          vars_use = c(primary_batch_var, secondary_batch_var)))
+  } else if(batch_rm_type == 'limma'){
+    
+    design <- model.matrix(exp_design, data = mata_dt_ct)
+    prim_batch <-  mata_dt_ct[[primary_batch_var]]
+    
+    if(!is.null(secondary_batch_var)){
+      second_batch <- mata_dt_ct[[secondary_batch_var]]
+    }else{second_batch <- NULL} 
+
+    deconv_batch_rm <- limma::removeBatchEffect(deconv_ct_norm, batch = prim_batch, 
+                                                 batch2 = second_batch, design = design)
+    
+  } else{ stop(print('choose either harmony or limma as batch_rm_type'))}
   
-  plot_expr_distribution(deconv_harmony_res, paste0(ct_name, '_harmony_corr'), 
+  
+  plot_expr_distribution(deconv_batch_rm, paste(ct_name, batch_rm_type, ' batch effect corr'), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_', deconv_norm_type, '_harmony_corr.png')), is_log = islog)
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_', deconv_norm_type, '_', batch_rm_type, '_corr.png')),
+                         is_log = T)
   
-  return(deconv_harmony_res)
+  return(deconv_batch_rm)
 })
 
-names(deconv_batch_rm_harm_list) <- names(deconv_ct_list)
+names(deconv_batch_rm_list) <- names(deconv_ct_norm_list)
 
-
-saveRDS(deconv_batch_rm_harm_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                                    paste0('bp_res_', scrna_anno,'_expr_mtx_cleaned_', deconv_norm_type, '_harmony_batch_corr.RDS')))
-
-# remove batch effect with limma
-
-deconv_batch_rm_limma_list <- lapply(names(deconv_ct_list), function(ct_name){
-  print(ct_name)
-  deconv_vst <- deconv_ct_list[[ct_name]]
-  
-  # filter meta if some ROI does not contain given ct
-  mata_dt_ct <- meta_dt[meta_dt[[aoi_id]] %in% colnames(deconv_vst), ]
-  
-  design <- model.matrix(exp_design, data = mata_dt_ct)
-  
-  prim_batch <-  mata_dt_ct[[primary_batch_var]]
-  
-  if(!is.null(secondary_batch_var)){
-    second_batch <- mata_dt_ct[[secondary_batch_var]]
-  }else{second_batch <- NULL} 
-  
-  if(!is.null(cov_design)){
-    cov <- model.matrix(cov_design, data = mata_dt_ct)
-  }else{cov <- NULL} 
-
-  
-  deconv_limma_res <- limma::removeBatchEffect(deconv_vst, batch = prim_batch, batch2 = second_batch,
-                                        covariates = cov, design = design)
-  
-
-  
-  plot_expr_distribution(deconv_limma_res, paste0(ct_name, '_limma_corr'), 
-                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   scrna_anno, 'hist',
-                                   paste0('expr_hist_', ct_name, '_limma_batch_corr_', 
-                                          primary_batch_var, secondary_batch_var,'.png')), is_log = T)
-
-
-  return(deconv_limma_res)
-})
-
-names(deconv_batch_rm_limma_list) <- names(deconv_ct_list)
-
-saveRDS(deconv_batch_rm_limma_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
-                                                     paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_', 
-                                                            primary_batch_var, secondary_batch_var, '.RDS')))
-
+saveRDS(deconv_batch_rm_list, file = file.path(output_dir,'deconvolution', 'bayes_prism', 
+                                                    paste0('bp_res_', scrna_anno,'_expr_mtx_cleaned_', deconv_norm_type, '_', batch_rm_type, '_corr.RDS')))
 
 # prepare data for SpatialDecon -------------------------------------------
 # from
