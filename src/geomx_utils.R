@@ -289,7 +289,8 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, is_log = F
   expr_df <- as.data.frame(as.vector(expr_data))
   colnames(expr_df) <- 'expr'
 
-  minval <- ifelse(min(expr_df$expr) < 0, min(expr_df$expr), 0)
+  #minval <- ifelse(min(expr_df$expr) < 0, min(expr_df$expr), 0)
+  minval <- min(expr_df$expr)
   
   ggplot(data = expr_df) +
     geom_histogram(aes(x = expr), bins = 100) +
@@ -747,40 +748,30 @@ prepare_custom_sign_list <- function(custom_sign_df, adjust_synonym = T, geomx_o
 #   norm_is_log: (logical) Whether the input data is already log-transformed.
 # Return value:
 #   (matrix) Log-tranformed expression matrix with low complexity genes removed if specified.
-prepare_expr_mtx <- function(geomx_obj_path, norm_type, norm_is_log, scrna_ref_cleaned_path = NULL){
+#TODO adjust function name and documentation
+remove_low_complex_and_noncoding_genes <- function(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts'){
   
-  geomx_obj <- readRDS(geomx_obj_path)
+  scrna_raw_counts_mtx <- GetAssayData(object = scrna_ref_obj[["RNA"]], layer = raw_counts_layer)
   
-  # make log expression mtx if needed
-  if(!norm_is_log){
-    # make log2 transformed normalised counts if norm_type not in log scale
-    expr_norm_log <- log2(geomx_obj@assayData[[norm_type]] + 1)
-  } else{
-    expr_norm_log <- geomx_obj@assayData[[norm_type]]
-  }
+  geomx_stat <- plot.bulk.outlier(
+    bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
+    sc.input=t(scrna_raw_counts_mtx), #make sure the colnames are gene symbol or ENSMEBL ID
+    cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+    species="hs", 
+    return.raw=TRUE,
+    pdf.prefix= NULL
+  )
   
-  # filter out from low complexity genes
-  if(file.exists(scrna_ref_cleaned_path)){
-    scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
-    scrna_mtx_name <- ifelse('RNA_common_genes' %in% colnames(scrna_ref_obj@meta.data), 'RNA_common_genes', 'RNA')
-    
-    geomx_stat <- plot.bulk.outlier(
-      bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
-      sc.input=t(scrna_ref_obj@assays[[scrna_mtx_name]]@data), #make sure the colnames are gene symbol or ENSMEBL ID
-      cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-      species="hs", 
-      return.raw=TRUE,
-      pdf.prefix= NULL
-    )
-    
-    geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
-    expr_norm_log <- expr_norm_log[!(rownames(expr_norm_log) %in% rownames(geomx_stat_to_rm)),  ]
-    
-  }
-  return(expr_norm_log)
+  # remove chrX, chrY, chrM etc genes (as for cleaning scRNAseq reference)
+  geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
+  geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% rownames(geomx_stat_to_rm)),  ]
+  
+  # subset to protein coding genes (neg probe have to be added for bg modelling)
+  geomx_pc <-  colnames(select.gene.type(t(geomx_filtered@assayData$exprs), gene.type = "protein_coding"))
+  geomx_filtered_pc <- geomx_filtered[rownames(geomx_filtered) %in% c(geomx_pc, "NegProbe-WTX"),  ]
+  
+  return(geomx_filtered_pc)
 }
-
-
 ###########################################
 # Description:
 #   Processes metadata for differential gene expression analysis, 

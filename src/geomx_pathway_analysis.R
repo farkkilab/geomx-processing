@@ -1,5 +1,7 @@
 # README: script to perform ssgsea/gsva 
 
+# TODO low complex removal should be done soewhere else and saved to the main geomx object
+
 # get variables -----------------------------------------------------------
 
 # variables to merge the final csv with
@@ -7,7 +9,12 @@ meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_
                main_roi_label, other_vars_bio)
 
 # best to use batch effect corrected or at least vst data (all in log form) 
-norm_type <- 'harmony_batch_corr' # limma_batch_corr, harmony_batch_corr or deseq2_vst
+norm_type <- 'harmony_batch_corr_q3_norm' # from geomx assays
+deconv_norm_type <- 'q3_norm' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
+deconv_batch_rm_type <- 'harmony' # c('harmony', 'limma')
+
+# whethr or not rmv low complexity and non-coding genes from full signal geomx obj  (as for bp deconvolution)
+low_complex_rmv <- TRUE 
 
 adj_synonym <- T # whether or not adjust synonyms genes
 # around 300 genes can be rescued this way but ensembl does not always work
@@ -26,36 +33,43 @@ dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursiv
 dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, recursive = T)
 
 norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
+norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) #TODO is it needed?
 
-# path to cleaned scrna which should be calculated in deconvolution step
-scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
 
 # path to deconvolution mtx
-deconv_bp_path <- ifelse(grepl('harmony', norm_type), 
-                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')), 
-                         file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_', 
-                                          primary_batch_var, secondary_batch_var,
-                                          '_cov_', covname, '.RDS'))) 
+deconv_bp_path <- file.path(output_dir,'deconvolution', 'bayes_prism', 
+                            paste0('bp_res_', scrna_anno,'_expr_mtx_cleaned_', 
+                                   deconv_norm_type, '_', deconv_batch_rm_type, '_corr.RDS'))
+
+#TODO move somewhere else - before normalisation? 
+# path to cleaned scrna which should be calculated in deconvolution step - for low complex gene rmv 
+scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
+raw_counts_layer <- 'counts'
 
 # load geomx obj from rds -------------------------------------------------
 
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 
-low_complex_rmv <- ifelse(file.exists(scrna_ref_cleaned_path), TRUE, FALSE)
-norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type))
+if(low_complex_rmv){
+  # removing low complexity genes as it was done before bp deconvolution
+  scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+  geomx_obj <-   remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
+} 
 
 expr_list <- list()
 
 if('all' %in% pathway_inp_data_type){
-  expr_mtx <- prepare_expr_mtx(geomx_norm_batch_eff_rm_path, norm_type, norm_is_log, 
-                               scrna_ref_cleaned_path)
+  # make log expression mtx if needed
+  if(!norm_is_log){
+    # make log2 transformed normalised counts if norm_type not in log scale
+    expr_mtx <- log2(geomx_obj@assayData[[norm_type]] + 1)
+  } else{
+    expr_mtx <- geomx_obj@assayData[[norm_type]]
+  }
   
   expr_list[[length(expr_list) + 1]] <- expr_mtx
   names(expr_list) <- 'all'
 }
-
 
 # load deconvoluted signal ------------------------------------------------
 

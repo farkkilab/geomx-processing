@@ -164,8 +164,6 @@ adjust_scrna_ref <- function(scrna_ref_path, scrna_ref_cleaned_path, raw_counts_
   # dev.off()
 }
 
-
-
 if(!file.exists(scrna_ref_cleaned_path)){
   
   adjust_scrna_ref(scrna_ref_path, scrna_ref_cleaned_path, raw_counts_layer, 
@@ -325,7 +323,8 @@ deconv_batch_rm_list <- lapply(names(deconv_ct_norm_list), function(ct_name){
   
   plot_expr_distribution(deconv_batch_rm, paste(ct_name, batch_rm_type, ' batch effect corr'), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_', deconv_norm_type, '_', batch_rm_type, '_corr.png')),
+                                   scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_', 
+                                                              deconv_norm_type, '_', batch_rm_type, '_corr.png')),
                          is_log = T)
   
   return(deconv_batch_rm)
@@ -345,29 +344,10 @@ geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
 scrna_ref_raw_counts_mtx <- GetAssayData(object = scrna_ref_obj[["RNA"]], layer = raw_counts_layer)
 
-scrna_mtx_name <- ifelse('RNA_common_genes' %in% colnames(scrna_ref_obj@meta.data), 'RNA_common_genes', 'RNA')
-
-# filter geomx object from low complexity genes
-geomx_stat <- plot.bulk.outlier(
-  bulk.input=t(geomx_obj@assayData$exprs),#make sure the colnames are gene symbol or ENSMEBL ID
-  sc.input=t(scrna_ref_raw_counts_mtx), #make sure the colnames are gene symbol or ENSMEBL ID
-  cell.type.labels=scrna_ref_obj@meta.data$cell_type,
-  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
-  return.raw=TRUE,
-  pdf.prefix= file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                        paste0('sd_res_', scrna_anno)) #specify pdf.prefix if need to output to pdf
-)
-
-
-geomx_stat_to_rm <- geomx_stat[ rowSums(geomx_stat[, -c(1,2)]) >= 1, ]
-geomx_filtered <- geomx_obj[!(rownames(geomx_obj) %in% rownames(geomx_stat_to_rm)),  ]
-
-# subset to protein coding genes (neg probe have to be added for bg modelling)
-geomx_pc <-  colnames(select.gene.type(t(geomx_filtered@assayData$exprs), gene.type = "protein_coding"))
-geomx_filtered_pc <- geomx_filtered[rownames(geomx_filtered) %in% c(geomx_pc, "NegProbe-WTX"),  ]
+geomx_filtered_pc <-   remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
 
 featureType(geomx_filtered_pc) <- "Target"
-sampleNames(geomx_filtered_pc) <- sData(geomx_filtered_pc)[['dcc_filename']]
+sampleNames(geomx_filtered_pc) <- sData(geomx_filtered_pc)[[aoi_id]]
 
 dim(geomx_obj)
 dim(geomx_filtered)
@@ -426,10 +406,11 @@ fwrite(ct_frac_st, file.path(output_dir,'deconvolution', 'spatial_decon',
 
 # save logs
 writeLines(c('deconvolution logs:',
-             '; spatial decon normalisation type : ', norm_type,
+             '; spatial decon input normalisation type : ', sd_norm_type,
              '; minimum cell type number : ', ct_nr_thr,
              '; cell type annotation  : ', scrna_anno,
+             '; bp normalisation  : ', deconv_norm_type,
              '; limma primary batch effect variable : ', primary_batch_var,
              '; limma secondary batch effect variable : ', secondary_batch_var,
-             '; limma experimental design : ', as.character(exp_design)[2],
-             '; limma covariate : ', as.character(cov_design)[2]), deconv_logs_path)
+             '; limma experimental design : ', as.character(exp_design)[2]),
+           deconv_logs_path)
