@@ -19,7 +19,7 @@ raw_counts_layer <- "counts" # raw counts slot (layer) name in reference scRNAse
 
 deconv_norm_type <- 'q3_norm' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
 sd_norm_type <- 'q3_norm' # suggested normalisation type for SpatialDecon (CANNOT BE IN LOG FORM), BayesPrism uses raw counts
-batch_rm_type <- 'harmony' # c('harmony', 'limma')
+batch_rm_type <- 'limma' # c('harmony', 'limma')
 
 # variables to merge the final csv with
 meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
@@ -250,6 +250,14 @@ deconv_ct_norm_list <- lapply(ct_names, function(ct_name){
                                    scrna_anno, 'hist', paste0('expr_hist_', ct_name, '_raw.png')), is_log = F)
   
   if(deconv_norm_type == 'deseq2_vst'){
+    
+    # remove genes with only 0 counts
+    deconv_ct_cleaned <- deconv_ct_cleaned[, colSums(deconv_ct_cleaned) != 0]
+    
+    #add pseudocount 1 to avoid vst error with log geo means
+    # https://help.galaxyproject.org/t/error-with-deseq2-every-gene-contains-at-least-one-zero/564/2
+    deconv_ct_cleaned <- deconv_ct_cleaned + 1
+    
     # do vst normalisation
     # before it was wrapped in trycatch, may be needed to comeback
     deconv_ct_cleaned_norm <- varianceStabilizingTransformation(round(t(deconv_ct_cleaned)))
@@ -350,7 +358,6 @@ featureType(geomx_filtered_pc) <- "Target"
 sampleNames(geomx_filtered_pc) <- sData(geomx_filtered_pc)[[aoi_id]]
 
 dim(geomx_obj)
-dim(geomx_filtered)
 dim(geomx_filtered_pc)
 
 # prepare cell profile matrix from reference scRNAseq

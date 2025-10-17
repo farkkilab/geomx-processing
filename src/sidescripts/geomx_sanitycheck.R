@@ -43,7 +43,7 @@ if(batch == 'batch1'){
 } else if(batch == 'batch23'){
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch23
 } else if(batch == 'batch123'){
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2706') # batch123
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
 }else{
   stop('wrong batch nr')
 }
@@ -60,17 +60,21 @@ geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_
 # files and params for deconvolution
 
 #used for deconv
-scrna_anno <- 'low_lvl_ct' # 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+scrna_anno <- 'mid_lvl_ct_updated' # 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 
 if(scrna_anno == 'mid_lvl_ct'){
   ct_names <- c('Bcells', 'DCs', 'Endothelial cells', 'Fibroblasts', 'Macrophages', 'NKcells', 'Tcells', 'tumor')
   cells_immune <- c('Bcells', 'DCs', 'Macrophages', 'NKcells', 'Tcells')
 } else if(scrna_anno == 'mid_lvl_ct_updated'){
-  ct_names <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Tcells_other", "Bcells", "NKcells",
-                "Macrophages_Monocytes", "DCs", "Mast_cells", "Fibroblasts", "Endothelial_cells", "tumor")
-  cells_immune <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Tcells_other", "Bcells", 
-                    "Macrophages", "Monocytes", "DCs", "Mast_cells")
+  # ct_names <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Tcells_other", "Bcells", "NKcells",
+  #               "Macrophages_Monocytes", "DCs", "Mast_cells", "Fibroblasts", "Endothelial_cells", "tumor")
+  # cells_immune <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Tcells_other", "Bcells", 
+  #                   "Macrophages", "Monocytes", "DCs", "Mast_cells")
+  ct_names <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
+                "Macrophages_Monocytes", "DCs", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor")
+  cells_immune <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
+                "Macrophages_Monocytes", "DCs")
 } else if(scrna_anno == 'low_lvl_ct'){
   ct_names <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells", "Fibroblasts_Endothelial", "tumor")
   cells_immune <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells")
@@ -86,16 +90,16 @@ if(scrna_anno == 'mid_lvl_ct'){
 
 ct_markers_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'ct_markers.csv')
 
-ct_gsea_all_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'ssgsea_norm_harmony_batch_corr_all_custom_ct_markers.csv.csv')
+ct_gsea_all_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'ssgsea_norm_harmony_batch_corr_q3_norm_all_custom_ct_markers.csv.csv')
 
 
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))
 sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', paste0('sd_res_', scrna_anno, '_geomxfiltpc_ct_fraction.csv'))
 
 # TODO not used atm
-deconv_raw_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '.RDS'))
-deconv_harmony_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
-deconv_limma_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_main_batch_nrbatch_nr_cov_no.RDS'))
+# deconv_raw_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '.RDS'))
+# deconv_harmony_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
+# deconv_limma_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_main_batch_nrbatch_nr_cov_no.RDS'))
 
 
 # set up metadata variables names -----------------------------------------
@@ -142,8 +146,10 @@ dim(geomx_obj@assayData$exprs)
 
 expr_list <- list(raw = geomx_obj@assayData$exprs, deseq_norm = geomx_obj@assayData$deseq2_norm,
                   q3_norm = geomx_obj@assayData$q3_norm, vst = geomx_obj@assayData$deseq2_vst, 
-                  limma_batch_corr = geomx_obj@assayData$limma_batch_corr,
-                  harmony_batch_corr = geomx_obj@assayData$harmony_batch_corr)
+                  limma_deseq2_vst_batch_corr = geomx_obj@assayData$limma_batch_corr_deseq2_vst,
+                  harmony_deseq2_vst_batch_corr = geomx_obj@assayData$harmony_batch_corr_deseq2_vst,
+                  limma_q3_norm_batch_corr = geomx_obj@assayData$limma_batch_corr_q3_norm,
+                  harmony_q3_norm_batch_corr = geomx_obj@assayData$harmony_batch_corr_q3_norm)
 
 # proportion of 0 reads ---------------------------------------------------
 
@@ -228,6 +234,7 @@ ct_gsea_all <- fread(ct_gsea_all_path)
 ct_gsea_all$pathway <- gsub(' ', '_', ct_gsea_all$pathway)
 ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'Nkcells', 'NKcells', ct_gsea_all$pathway)
 ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'CD8_Tcells', 'Tcells_CD8', ct_gsea_all$pathway)
+ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'Mast cells', 'Mast_cells', ct_gsea_all$pathway)
 
 
 # tum/stromal markers in tum/stromal AOIs
@@ -256,7 +263,7 @@ ct_boxpl_anno <- pathway_boxplot(ct_gsea_imm,'pathway', 'ssgsea_score', 'Annotat
 ###########################
 # ct markers activity should be higher in given ct
 ct_gsea_deconv <- list.files(file.path(output_dir, 'pathway_analysis', 'gsea', scrna_anno), pattern = 'ct_markers.*csv', full.names = T)
-ct_gsea_deconv <- ct_gsea_deconv[-1]
+#ct_gsea_deconv <- ct_gsea_deconv[-1]
 
 ct_gsea_deconv <- lapply(ct_gsea_deconv, fread)
 ct_gsea_deconv <- do.call(rbind, ct_gsea_deconv)
@@ -275,12 +282,13 @@ colnames(cell_fraq$sd) <- gsub('.', ' ', colnames(cell_fraq$sd), fixed = T)
 sapply(1:length(cell_fraq), function(x){
   print(x)
   cell_fraq_res <- as.data.frame(cell_fraq[[x]])
-  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts + cell_fraq_res$Endothelial_cells
-  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts_Endothelial
+  #TODO manual change here
+  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts_Mesothelial + cell_fraq_res$Endothelial_cells
+  #cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts_Endothelial
   
   ct_gsea_all_fraq <- left_join(ct_gsea_all, cell_fraq_res[, c('dcc_filename', c(ct_names, 'stroma'))])
   
-  for(ct_name in c(ct_names[!(ct_names %in% c('DCs'))], 'stroma')){ #TODO find markers for all ct incl DC
+  for(ct_name in c(ct_names[!(ct_names %in% c('DCs', 'Mast_cells'))], 'stroma')){ #TODO find markers for all ct incl DC
     print(ct_name)
     
     #ct_gsea_all_fraq_ct <- ct_gsea_all_fraq[ct_gsea_all_fraq$pathway %in% ct_to_pathway[[ct_name]], ]
@@ -315,8 +323,8 @@ colnames(cell_fraq_sd) <- c('dcc_filename', paste0(ct_names, '_sd'))
 
 cell_fraq_both <- left_join(cell_fraq_bp, cell_fraq_sd)
 
-cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_bp + cell_fraq_both$Endothelial_cells_bp
-cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_sd + cell_fraq_both$Endothelial_cells_sd
+cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_Mesothelial_bp + cell_fraq_both$Endothelial_cells_bp
+cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_Mesothelial_sd + cell_fraq_both$Endothelial_cells_sd
 
 cell_fraq_both_long <- melt(cell_fraq_both, id.vars = c('dcc_filename', 'Segment', 'Annotation_cell'),
                             variable.name = 'cell_type', value.name = 'fraction')
@@ -374,6 +382,10 @@ for(ct_name in c(ct_names, 'stroma')){
   ggsave(file.path(output_dir,'sanity_check', 'deconv', paste0('deconv_comparison_scatter_', ct_name, '.png')),
          width = 2000, height = 2000, unit = 'px')
 }
+
+################################333
+###################################
+# up here works for now
 
 #####################
 # compare macro vs Tcells - scatter per annotation cell (same per sample?)

@@ -1,7 +1,7 @@
 # README: script to perform ssgsea/gsva 
 
 # TODO low complex removal should be done soewhere else and saved to the main geomx object
-
+# TODO better output_names - deconv and all may have diff norm types!
 # get variables -----------------------------------------------------------
 
 # variables to merge the final csv with
@@ -10,7 +10,7 @@ meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_
 
 # best to use batch effect corrected or at least vst data (all in log form) 
 norm_type <- 'harmony_batch_corr_q3_norm' # from geomx assays
-deconv_norm_type <- 'q3_norm' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
+deconv_norm_type <- 'deseq2_vst' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
 deconv_batch_rm_type <- 'harmony' # c('harmony', 'limma')
 
 # whethr or not rmv low complexity and non-coding genes from full signal geomx obj  (as for bp deconvolution)
@@ -24,7 +24,7 @@ min_sign_gene_nr <- 5 # signatures with less nr of genes will be removed, 5 is m
 compute_hallmark <- T
 # should GSEA for msigdb hallmark be computed
 
-msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG','GO:BP')
+msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG','CP:KEGG_MEDICUS', 'GO:BP')
 # subcategories ('gs_subcat') of msigdb database for GSEA calculation
 
 # make dirs and set additional vars ---------------------------------------
@@ -124,6 +124,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   gsea_long$expr_signal <- names(expr_list)[x]
   gsea_long <- left_join(gsea_long, sData(geomx_obj)[meta_names])
   
+  #TODO better names - deconv and all may have diff norm types!
   fwrite(gsea_long, file.path(output_dir,'pathway_analysis', 'gsea', 
                               paste0(gsea_type, '_norm_', norm_name, '_',
                                      names(expr_list)[x], '_', out_name,  '.csv')))

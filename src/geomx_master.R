@@ -78,7 +78,7 @@ library(clusterProfiler, quietly =T)
 # TODO move loading libraries to each script separately
 
 #all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
-batch <<- 'batch3-tls' # just for running qc for batch1 with kept high NTC samples
+batch <<- 'batch123' # just for running qc for batch1 with kept high NTC samples
 
 
 # define variables and paths ----------------------------------------------
@@ -130,7 +130,7 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name in metadata
-scrna_ref_path <<- file.path(proj_dir, 'data/scrna/vaharautio_scrnaseq_dataset_downsampled_for_iga_processed.RDS')
+scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE266577_qc_downsampled_keepfreq.RDS')
 
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
@@ -207,10 +207,8 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 
 # conditionally run deconvolution -----------------------------------------
 
-cov_design <- NULL
-
 # column name of cell type label in scRNAseq metadata
-scrna_anno <<- 'low_lvl_ct' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+scrna_anno <<- 'mid_lvl_ct_updated' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 deconv_logs_path <<- file.path(output_dir,'deconvolution', 
                              paste0('deconv_', scrna_anno, '_logs.txt'))
@@ -221,20 +219,19 @@ run_unless_exists('Deconvolution', deconv_logs_path,
 # conditionally run pathway analysis --------------------------------------
 # TODO add limma fry calculation - another algorithm for pathway analysis not super important
 
-scrna_anno <<- 'low_lvl_ct' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+scrna_anno <<- 'mid_lvl_ct_updated' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 pathway_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
-ct_of_interest <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells",
-                    "Fibroblasts_Endothelial", "tumor")
-# mid_lvl_ct_updated
-# ct_of_interest <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells',
-#                     "Macrophages_Monocytes", "DCs", "Fibroblasts", "Endothelial_cells", "tumor")
-#ct_of_interest <<- c("tumor", "Tcells", "Bcells", "Fibroblasts", "NKcells",
-#                     "Macrophages", "DCs", "Endothelial cells")
+# low_lvl_ct
+# ct_of_interest <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells",
+#                     "Fibroblasts_Endothelial", "tumor")
 
+# mid_lvl_ct_updated
+ct_of_interest <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
+                     "Macrophages_Monocytes", "DCs", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
