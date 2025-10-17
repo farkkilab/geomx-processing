@@ -7,6 +7,8 @@ umap_vars <- c(aoi_segment_var, main_roi_label, main_experimental_condition, sam
 
 exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
 
+outliers_to_rm <- c('DSP-1001660037684-F-A12.dcc') # dcc filename of outliers to manually remove
+
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'umap_tsne', 'all'), showWarnings = T, recursive = T)
@@ -14,6 +16,11 @@ dir.create(file.path(output_dir, 'umap_tsne', 'all'), showWarnings = T, recursiv
 # load qc geomx data ------------------------------------------------------
 
 geomx_obj <- readRDS(geomx_qc_path)
+
+# remove selected outliers after manual inspection (eg anormally low counts nr)
+if(length(outliers_to_rm) > 0){
+  geomx_obj <- geomx_obj[, which(!(colnames(geomx_obj) %in% outliers_to_rm))]
+}
 
 # Q3 normalisation --------------------------------------------------------
 
