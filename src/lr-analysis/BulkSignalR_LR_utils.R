@@ -76,80 +76,77 @@ Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, 
 
 # function to run BulkSignaR LR prediction 
 
-BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normalize_method, UQ_pc, output_dir, qval_threshold, group, null_model){
-  
+BulkSignalR_LR_prediction <- function(count_geomx, meta_data, normalize_needed, norm_is_log,
+                                     min_expr_counts, null_model,
+                                     qval_threshold, group, output_dir){
 
-  
-  if(is.null(group)){
-    plot_name = "combined"
-  } else{
-    plot_name = group
-
-  }
-  
-  count_geomx = count_geomx_list$count_geomx
-  meta_data = count_geomx_list$meta_data
-  
   ### Analysis : written according to the BulkSignalR Vignette
   # browseVignettes("BulkSignalR")
   
   # step 01 : Prepare Dataset
-  # bsrdm <- BSRDataModel(speSubset,
-  #                       min.count = 1,
-  #                       prop = 0.01,
-  #                       method = "TC",
-  #                       symbol.col = 2,
-  #                       x.col = 4,
-  #                       y.col = 5, 
-  #                       barcodeID.col = 1)
-  
-  # TODO this function cannot be found :0
-  #bsrdm <- prepareDataset(counts = count_geomx, normalize = normalize_needed , method = normalize_method, UQ.pc = UQ_pc, log.transformed = FALSE, min.count = 10, prop = 0.1) 
-  bsrdm <- BSRDataModel(counts = count_geomx, normalize = normalize_needed , method = normalize_method, UQ.pc = UQ_pc, log.transformed = FALSE, min.count = 10, prop = 0.1) 
+  bsrdm <- BSRDataModel(counts = count_geomx, 
+                        normalize = normalize_needed , 
+                        method = "UQ", 
+                        UQ.pc = 0.75,
+                        log.transformed = norm_is_log, 
+                        min.count = min_expr_counts, 
+                        prop = 0.05) 
   
   # step 02 : learnParameters
-
   set.seed(123)
   
-  if(is.null(null_model)){
-    bsrdm <- learnParameters(bsrdm, 
-                             plot.folder = file.path(output_dir), 
-                             filename = paste0("geomxUQ_",plot_name), 
-                             verbose = TRUE
-                             )
-  } else{
-    
-    bsrdm <- learnParameters(bsrdm,
-                             null.model = null_model,
-                             plot.folder = file.path(output_dir), 
-                             filename = paste0("geomxUQ_",plot_name), 
-                             verbose = TRUE
-                             )
-    
-    }
+  bsrdm <- learnParameters(bsrdm,
+                           null.model = null_model,
+                           plot.folder = file.path(output_dir), 
+                           filename = paste0("geomxUQ_",group), 
+                           verbose = TRUE)
   
+
   # step 03 : Building a BSRInference object
+  bsrinf <- BSRInference(bsrdm, reference="REACTOME-GOBP")
+
+  # reducing to best pathways 
+  bsrinf.redP <- reduceToPathway(bsrinf)
+  bsrinf.redPBP <- reduceToBestPathway(bsrinf.redP)
   
-  bsrinf <- BSRInference(bsrdm, min.cor = 0.3, reference="REACTOME-GOBP")
-  LRinter.dataframe <- LRinter(bsrinf)
-  LRinter.dataframe <- LRinter.dataframe[order(LRinter.dataframe$qval <= qval_threshold),]
+  # reducing to ligands and receptors
+  bsrinf.L <- reduceToLigand(bsrinf)
+  bsrinf.R <- reduceToReceptor(bsrinf)
   
-  # reducing to best pathways before calculating signature scores
-  
-  bsrinf.redBP    <- reduceToBestPathway(bsrinf) 
-  LRinter_pairs_best_pws = LRinter(bsrinf.redBP)
-  
-  
-  return(list(
+  # extracting and filtering LR dataframes
+  # LRinter.df <- LRinter(bsrinf) %>%
+  #   filter(qval <= qval_threshold) %>%
+  #   arrange(desc(qval))
+  # 
+  # LRinter.df.redP <- LRinter(bsrinf.redP) %>%
+  #   filter(qval <= qval_threshold) %>%
+  #   arrange(desc(qval))
+  # 
+  # LRinter.df.redPBP <- LRinter(bsrinf.redPBP) %>%
+  #   filter(qval <= qval_threshold) %>%
+  #   arrange(desc(qval))
+  # 
+  # LRinter.df.redL <- LRinter(bsrinf.L) %>%
+  #   filter(qval <= qval_threshold) %>%
+  #   arrange(desc(qval))
+  # 
+  # LRinter.df.redR <- LRinter(bsrinf.R) %>%
+  #   filter(qval <= qval_threshold) %>%
+  #   arrange(desc(qval))
+  BSR_all <- list(
     bsrdm = bsrdm,
     bsrinf = bsrinf,
-    bsrinf_redBP = bsrinf.redBP,
-    LRinter_dataframe = LRinter.dataframe,
-    LRinter_pairs_best_pws = LRinter_pairs_best_pws,
+    bsrinf_redP = bsrinf.redP,
+    bsrinf_redPBP = bsrinf.redPBP,
+    bsrinf_redL = bsrinf.L,
+    bsrinf_redR = bsrinf.R,
     count_geomx = count_geomx,
     meta_data = meta_data
-    ))
+  )
+  
+  saveRDS(BSR_all, file.path(output_dir, paste0('BSR_results_', group, '.RDS')))
 
+  return(BSR_all)
 }
 
 

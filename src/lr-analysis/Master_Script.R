@@ -48,7 +48,7 @@ library(stringr)
 
 #output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction') 
 
-#TODO optimize
+#TODO optimize and move to nichenetr script
 # path where to download nichenet data
 nichenet_data_dir <<- file.path(proj_dir, 'geomx-processing', 'data', 'nichenet')
 dir.create(nichenet_data_dir, recursive = T, showWarnings = F)
@@ -70,7 +70,7 @@ if(!file.exists(file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.
 dir.create(file.path(output_dir, 'lr_interactions'), showWarnings = T, recursive = T)
 
 
-# TODO make the new file
+
 # names of interesting pathways from REACTOME+GO:BP for BulkSignalR plotting: 
 # A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
 pathway <<- read.csv(file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'immune_signatures_selected_forpaper_names_reactome_gobp.csv')) 
