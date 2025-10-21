@@ -33,8 +33,17 @@ min_expr_counts <- ifelse(data_type == 'exprs', 10, 0)
 
 geomx_obj <<- readRDS(geomx_norm_batch_eff_rm_path) # batch effect corrected Geomx Object
 
-count_geomx <- data.frame(geomx_obj@assayData[[data_type]])
+count_geomx <- as.data.frame(geomx_obj@assayData[[data_type]])
 meta_data_all <- sData(geomx_obj)[, unique(meta_names)]
+
+# make variable with all categories from grouping_var_col_ids
+meta_data_all$comparison_group <- apply(meta_data_all, 1, function(row){
+  group <- sapply(grouping_var_col_ids, function(var){
+    paste(row[var])
+  })
+  group <- paste(group, collapse = '_')
+  return(group)
+})
 
 # TODO change it to filter through Paired_status column
 # if (paired_only == TRUE){
@@ -56,7 +65,7 @@ if (combined_Data == TRUE){
   print("combined data")
 
   # TODO add norm type to output name
-  BulkSignaR_Output[[output_name]] = BulkSignalR_LR_prediction(count_geomx, 
+  BulkSignaR_Output[['combined']] = BulkSignalR_LR_prediction(count_geomx, 
                                                               meta_data_all, 
                                                               normalize_needed, 
                                                               norm_is_log,
@@ -67,66 +76,64 @@ if (combined_Data == TRUE){
                                                               file.path(output_dir, 'lr_interactions', 'bulk_signalr'))
 } 
 
-
-for (group in comparison) {
-  
+# separately for groups
+for(group in unique(meta_data_all$comparison_group)) {
   print(group)
   
-  # TODO simplify by passing metadata colnames as 1 argument      
-  count_geomx_filtered_list <- Filter_for_BulkSignaR_LR_prediction(geomx_obj, 
-                                                                aoi_id, 
-                                                                sample_name, 
-                                                                aoi_segment_var, 
-                                                                main_experimental_condition, 
-                                                                grouping_var_col_ids,
-                                                                count_geomx,
-                                                                group,
-                                                                paired_only,
-                                                                paired_id = NULL)
-        
-  BulkSignaR_Output[[group]] = BulkSignaR_LR_prediction(count_geomx_filtered_list,
-                                                          normalize_needed,
-                                                          normalize_method,
-                                                          UQ_pc, 
-                                                        file.path(output_dir, 'lr_interactions', 'bulk_signalr'),
-                                                          qval_threshold,
-                                                          group,
-                                                          null_model)
-      
+  #filter to group 
+  meta_data_group <- meta_data_all[meta_data_all$comparison_group == group, ]
+  count_geomx_group <- count_geomx[, meta_data_group$dcc_filename]
+  
+  BulkSignaR_Output[[group]] = BulkSignalR_LR_prediction(count_geomx_group, 
+                                                              meta_data_group, 
+                                                              normalize_needed, 
+                                                              norm_is_log,
+                                                              min_expr_counts, 
+                                                              null_model,
+                                                              qval_threshold, 
+                                                              group = group, 
+                                                              file.path(output_dir, 'lr_interactions', 'bulk_signalr'))
+
       
 }
   
-# combining all the LR predictions from both groups to a single dataframe
 
-lr_df_list = list()
+# combine all LR predictions to a single dataframe list -------------------
 
-for (group in comparison){
-  
-  df = BulkSignaR_Output[[group]]$LRinter_pairs_best_pws
-  df$group = group
-  lr_df_list[[group]] = df
-  
-}
+lr_df_all_groups <- lapply(names(BulkSignaR_Output), function(group){
+  print(group)
+  # loop through all bsrinf objects with different reducing options (see vignette)
+  lr_df_bsrinf <- lapply(grep('bsrinf', names(BulkSignaR_Output[[group]]), value = T), function(bsrinf_name){
+    print(bsrinf_name)
+    
+    bsrinf <- BulkSignaR_Output[[group]][[bsrinf_name]]
+    reduction_type <- ifelse(bsrinf_name == 'bsrinf', 'none', gsub('bsrinf_', '', bsrinf_name))
+    
+    # extracting and filtering LR dataframes
+    LRinter.df <- LRinter(bsrinf) %>%
+      filter(qval <= qval_threshold) %>%
+      arrange(desc(qval)) %>%
+      mutate(qval = ifelse(qval == 0, 1e-70, qval),
+             neg_log10_p_adj = -log10(qval),
+             reduction = reduction_type,
+             group = group) 
+    
+    rownames(LRinter.df) <- NULL
+    
+    return(LRinter.df)
+  })
+  return(lr_df_bsrinf)
+})
 
-df_combined = do.call(rbind, lr_df_list)
-df_combined$lr_interaction = paste0(df_combined$L,"-",df_combined$R)
-df_combined$qval[df_combined$qval == 0] <- 1e-70
-df_combined$neg_log10_p_adj = -log(df_combined$qval)
-rownames(df_combined) <- NULL
 
+lr_df_combined <- do.call(Map, c(f = rbind, lr_df_all_groups))
+names(lr_df_combined) <- grep('bsrinf', names(BulkSignaR_Output[[group]]), value = T)
 
-BulkSignaR_Output_list = list(
-  
-  BulkSignaR_Output = BulkSignaR_Output,
-  count_geomx_filtered = count_geomx_filtered_list$count_geomx,
-  meta_data_filtered = count_geomx_filtered_list$meta_data,
-  unfiltered_LR_df_for_plotting = df_combined
-  
-)
-  
+# save BRS output and LR dfs
+saveRDS(lr_df_combined, file = file.path(output_dir, 'lr_interactions', 'bulk_signalr', 
+                                         paste0('LR_list_all_qval_', qval_threshold, '.RDS')))
 
-saveRDS(BulkSignaR_Output_list, file = geomx_BulkSignalR_path)
-  
+saveRDS(BulkSignaR_Output, file = geomx_BulkSignalR_path)  
 
 
 

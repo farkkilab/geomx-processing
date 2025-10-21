@@ -34,48 +34,7 @@ filter_paired_data = function(geomx_obj, main_experimental_condition, paired_id)
   
 }
 
-
-# fuction to filter data for BulkSignalR prediction
-# TODO simplify by passing metadata colnames as 1 argument
-Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, count_geomx,group,paired_only, paired_id = NULL){
-  
-    meta_data = sData(geomx_obj)
-    meta_data = meta_data %>% select(!!sym(aoi_id), !!sym(sample_name), !!sym(aoi_segment_var), !!sym(main_experimental_condition), all_of(grouping_var_col_ids)) 
-    
-    
-    # TODO check this code
-    # if (paired_only == TRUE){
-    #   
-    #   paired_samples = filter_paired_data(geomx_obj, main_experimental_condition, paired_id)
-    #   meta_data = meta_data %>% filter(!!sym(sample_name) %in% paired_samples)
-    # 
-    #   
-    # }  
-    
-    
-    groups <- strsplit(group, "_")[[1]]
-    print(groups)
-    
-    for (column_name in grouping_var_col_ids){
-      
-      meta_data = meta_data %>% filter(!!sym(column_name) %in% groups)
-      
-    }
-    
-   
-  meta_data[,aoi_id] = gsub('-', '.', meta_data[,aoi_id])
-  col_ids = colnames(count_geomx)  %in% meta_data$dcc_filename
-  count_geomx = count_geomx[,col_ids]
-  
-  return(list(count_geomx = count_geomx,
-              meta_data = meta_data
-              ))
-  
-}
-
-
 # function to run BulkSignaR LR prediction 
-
 BulkSignalR_LR_prediction <- function(count_geomx, meta_data, normalize_needed, norm_is_log,
                                      min_expr_counts, null_model,
                                      qval_threshold, group, output_dir){
@@ -104,40 +63,24 @@ BulkSignalR_LR_prediction <- function(count_geomx, meta_data, normalize_needed, 
 
   # step 03 : Building a BSRInference object
   bsrinf <- BSRInference(bsrdm, reference="REACTOME-GOBP")
+  
+  # reducing to best pathways
+  bsrinf.redBP <- reduceToBestPathway(bsrinf)
 
-  # reducing to best pathways 
+  # reducing to pathways and to  best pathways 
   bsrinf.redP <- reduceToPathway(bsrinf)
   bsrinf.redPBP <- reduceToBestPathway(bsrinf.redP)
   
   # reducing to ligands and receptors
   bsrinf.L <- reduceToLigand(bsrinf)
   bsrinf.R <- reduceToReceptor(bsrinf)
-  
-  # extracting and filtering LR dataframes
-  # LRinter.df <- LRinter(bsrinf) %>%
-  #   filter(qval <= qval_threshold) %>%
-  #   arrange(desc(qval))
-  # 
-  # LRinter.df.redP <- LRinter(bsrinf.redP) %>%
-  #   filter(qval <= qval_threshold) %>%
-  #   arrange(desc(qval))
-  # 
-  # LRinter.df.redPBP <- LRinter(bsrinf.redPBP) %>%
-  #   filter(qval <= qval_threshold) %>%
-  #   arrange(desc(qval))
-  # 
-  # LRinter.df.redL <- LRinter(bsrinf.L) %>%
-  #   filter(qval <= qval_threshold) %>%
-  #   arrange(desc(qval))
-  # 
-  # LRinter.df.redR <- LRinter(bsrinf.R) %>%
-  #   filter(qval <= qval_threshold) %>%
-  #   arrange(desc(qval))
+
   BSR_all <- list(
     bsrdm = bsrdm,
-    bsrinf = bsrinf,
+    bsrinf_all = bsrinf,
     bsrinf_redP = bsrinf.redP,
     bsrinf_redPBP = bsrinf.redPBP,
+    bsrinf_redBP = bsrinf.redBP,
     bsrinf_redL = bsrinf.L,
     bsrinf_redR = bsrinf.R,
     count_geomx = count_geomx,
