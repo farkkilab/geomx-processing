@@ -115,16 +115,16 @@ harmony_res <- t(HarmonyMatrix(expr_norm_log,
 
 # check PVCA after batch effect removal -----------------------------------
 
-exprset_after_limma <- ExpressionSet(assayData=limma_res, 
-                                         phenoData = phenoData,
-                                         featureData = featureData)
-
-exprset_after_harmony <- ExpressionSet(assayData=harmony_res, 
-                                     phenoData = phenoData,
-                                     featureData = featureData)
-
 
 if(calculate_pvca){
+  exprset_after_limma <- ExpressionSet(assayData=limma_res, 
+                                       phenoData = phenoData,
+                                       featureData = featureData)
+  
+  exprset_after_harmony <- ExpressionSet(assayData=harmony_res, 
+                                         phenoData = phenoData,
+                                         featureData = featureData)
+  
   pvcaObj_limma <- pvcaBatchAssess(exprset_after_limma, batch_factors_names, pct_threshold) 
   pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
   
@@ -145,15 +145,13 @@ geomx_obj@assayData[[paste0('harmony_batch_corr_', norm_type)]] <- harmony_res
 plot_expr_distribution(geomx_obj@assayData[[paste0('limma_batch_corr_', norm_type)]], paste0('limma_batch_corr_', norm_type), 
                        file.path(output_dir, 'batch_correction', 
                                  paste0('expr_hist_limma_batch_corr_', 
-                                        primary_batch_var, secondary_batch_var,
-                                        '.png')), is_log = T)
+                                        norm_type, '.png')), is_log = T)
 
 
 plot_expr_distribution(geomx_obj@assayData[[paste0('harmony_batch_corr_', norm_type)]], paste0('harmony_batch_corr_', norm_type), 
                        file.path(output_dir, 'batch_correction',
                                  paste0('expr_hist_harmony_batch_corr_', 
-                                        primary_batch_var, secondary_batch_var,
-                                        '.png')), is_log = T)
+                                        norm_type, '.png')), is_log = T)
 
 # make UMAP and visualise batch-corrected results -------------------------
 # TODO simplify code (as in sanity_check)
