@@ -70,9 +70,12 @@ if(!file.exists(file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.
 dir.create(file.path(output_dir, 'lr_interactions'), showWarnings = T, recursive = T)
 
 
-# TODO check this
+# TODO make the new file
+# names of interesting pathways from REACTOME+GO:BP for BulkSignalR plotting: 
+# A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
+pathway <<- read.csv(file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'immune_signatures_selected_forpaper_names_reactome_gobp.csv')) 
 
-pathway <<- read.csv(file.path(data_dir,"pathway_names.csv")) # pathways for plotting: A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
+# TODO this have to be re-written
 paired_id <- "Patient" # If you want to predict for paired samples only in BUlkSignalR: I did not check this 
 
 # define params -----------------------------------------------------------
@@ -151,7 +154,7 @@ run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
 # BulkSignalR Visualization -----------------------------------------
 
 # for plots
-plot_dir = file.path(output_dir, BulkSignalR_folder_name,'plots_and_csv_files_2')
+plot_dir = file.path(output_dir, 'lr_interactions', 'bulk_signalr', 'plots_and_csv_files')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
 # Params
@@ -162,7 +165,8 @@ heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
 LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
 manually_filtered_BulkSignalr_df = NULL# readRDS(file.path(output_dir,"df_combined_BulkSignalr_for_plot.RDS")) # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe  
 
-source(file.path(proj_dir, 'LR_Analysis', 'BulkSignaR_LR_Visualization.R'))
+source(file.path(proj_dir,'geomx_processing', 'src',  'lr-analysis', 'BulkSignaR_LR_Visualization.R')) # ??
+source("/home/iganiemi/Documents/phd/st/geomx-processing/src/lr-analysis/BulkSignaR_LR_Visualization.R")
 
 # conditionally run CellChat LR Analysis -----------------------------------------
 

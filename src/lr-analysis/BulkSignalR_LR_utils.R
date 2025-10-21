@@ -36,7 +36,7 @@ filter_paired_data = function(geomx_obj, main_experimental_condition, paired_id)
 
 
 # fuction to filter data for BulkSignalR prediction
-
+# TODO simplify by passing metadata colnames as 1 argument
 Filter_for_BulkSignaR_LR_prediction <- function(geomx_obj, aoi_id, sample_name, aoi_segment_var, main_experimental_condition, grouping_var_col_ids, count_geomx,group,paired_only, paired_id = NULL){
   
     meta_data = sData(geomx_obj)
@@ -94,8 +94,18 @@ BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normali
   # browseVignettes("BulkSignalR")
   
   # step 01 : Prepare Dataset
+  # bsrdm <- BSRDataModel(speSubset,
+  #                       min.count = 1,
+  #                       prop = 0.01,
+  #                       method = "TC",
+  #                       symbol.col = 2,
+  #                       x.col = 4,
+  #                       y.col = 5, 
+  #                       barcodeID.col = 1)
   
-  bsrdm <- prepareDataset(counts = count_geomx, normalize = normalize_needed , method = normalize_method, UQ.pc = UQ_pc, log.transformed = FALSE, min.count = 10, prop = 0.1) 
+  # TODO this function cannot be found :0
+  #bsrdm <- prepareDataset(counts = count_geomx, normalize = normalize_needed , method = normalize_method, UQ.pc = UQ_pc, log.transformed = FALSE, min.count = 10, prop = 0.1) 
+  bsrdm <- BSRDataModel(counts = count_geomx, normalize = normalize_needed , method = normalize_method, UQ.pc = UQ_pc, log.transformed = FALSE, min.count = 10, prop = 0.1) 
   
   # step 02 : learnParameters
 
@@ -118,10 +128,9 @@ BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normali
     
     }
   
-  
   # step 03 : Building a BSRInference object
   
-  bsrinf <- initialInference(bsrdm)
+  bsrinf <- BSRInference(bsrdm, min.cor = 0.3, reference="REACTOME-GOBP")
   LRinter.dataframe <- LRinter(bsrinf)
   LRinter.dataframe <- LRinter.dataframe[order(LRinter.dataframe$qval <= qval_threshold),]
   
@@ -150,33 +159,35 @@ BulkSignaR_LR_prediction <- function(count_geomx_list, normalize_needed, normali
 
 # Creating a function to plot the heatmap
 
-plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_threshold, n, heatmap_col_ann){
+plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names = NULL, qval_threshold=0.01, n=50, heatmap_col_ann){
   
-  pairs = LRinter(bsrinf_redBP)
+  pairs <- LRinter(bsrinf_redBP)
   pairs$index <- seq_len(nrow(pairs))
-  selected_pairs = pairs %>% filter(qval < qval_threshold) %>% filter(pw.name  %in% pathway_names)
+  selected_pairs <- filter(pairs, qval < qval_threshold) 
+  
+  if(!is.null(pathway_names)){
+    selected_pairs <- filter(selected_pairs, pw.name  %in% pathway_names)
+  }
+  
+  if(nrow(selected_pairs) == 0){
+    print('no pairs selected. try changing qval thr or add more pathway names')
+    return(NULL)
+  }
   
   # TODO if selected_pairs == 0 then an error message
   
-  top_n_pairs <- selected_pairs %>%
-    arrange(desc(LR.corr)) 
-  
-  top_n_pairs = top_n_pairs[1:n,]
-  # TODO not working %>% slice(1:n)
-  
-  # TODO top_n_pairs < n gives a warning
-  
+  top_n_pairs <- arrange(selected_pairs, desc(LR.corr))
+  top_n_pairs = head(top_n_pairs, n)
+
   top_n_pairs_index <- top_n_pairs$index
   
   
   ligands   <- ligands(bsrinf_redBP)[top_n_pairs_index]
   receptors   <- receptors(bsrinf_redBP)[top_n_pairs_index]
   pathways  <- pairs$pw.name
-  t.genes   <- tGenes(bsrinf_redBP)[top_n_pairs_index]
+  t.genes   <- tgGenes(bsrinf_redBP)[top_n_pairs_index]
   t.corrs   <- tgCorr(bsrinf_redBP)[top_n_pairs_index]
-  
-  
-  
+
   for (i in seq_len(nrow(top_n_pairs))){
     tg <- t.genes[[i]]
     t.genes[[i]] <- tg[top_n_pairs$rank[i]:length(tg)]
@@ -185,17 +196,16 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names, qval_thr
     t.corrs[[i]] <- tc[top_n_pairs$rank[i]:length(tc)]
   }
   
-  
   bsrinf_redBP@LRinter = top_n_pairs
   bsrinf_redBP@ligands = ligands
   bsrinf_redBP@receptors = receptors
-  bsrinf_redBP@t.genes = t.genes
+  bsrinf_redBP@tg.genes = t.genes
   bsrinf_redBP@tg.corr = t.corrs
   
   
   # step 4 : Building a BSRSignature object
   
-  bsrsig.redBP <- getLRGeneSignatures(bsrinf_redBP, qval.thres = qval_threshold)
+  bsrsig.redBP <- BSRSignature(bsrinf_redBP, qval.thres = qval_threshold)
   
   scoresLR <- scoreLRGeneSignatures(bsrdm, bsrsig.redBP,
                                     name.by.pathway=FALSE)

@@ -2,28 +2,40 @@
 
 
 # Reading BulkSignaR objects
-
+# TODO loop over all objects in a list
 BulkSignaR_Output_list = readRDS(geomx_BulkSignalR_path)
 BulkSignaR_Output = BulkSignaR_Output_list$BulkSignaR_Output
-BulkSignaR_Output_combined = BulkSignaR_Output[["combined"]]
+#BulkSignaR_Output_combined = BulkSignaR_Output[["combined"]]
+
+pathway_names <- pathway$pathway
 
 
-bsrdm = BulkSignaR_Output_combined$bsrdm
-bsrinf.redBP = BulkSignaR_Output_combined$bsrinf_redBP 
-meta_data = BulkSignaR_Output_combined$meta_data # collecting Meta data for the plot
-pathway_names = pathway$Pathway.names
+for(outname in names(BulkSignaR_Output)){
+  print(outname)
+  
+  bsrdm = BulkSignaR_Output[[outname]]$bsrdm
+  bsrinf.redBP = BulkSignaR_Output[[outname]]$bsrinf_redBP 
+  meta_data = BulkSignaR_Output[[outname]]$meta_data # collecting Meta data for the plot
+  
+  # heatmap with top-n pairs, without pathways selection
+  heatmap_no_sel = plot_heatmap(bsrinf.redBP, bsrdm, meta_data, pathway_names = NULL, qval_threshold, n, heatmap_col_ann)
+  
+  if(!is.null(heatmap_no_sel)){
+    pdf(file.path(plot_dir,paste0("heatmap_LR_",qval_threshold, '_', outname, ".pdf")), width = 12, height = 12)  # Width and height in inches
+    print(heatmap_no_sel)
+    dev.off()
+  }
 
-
-
-# # Generate a heatmap
-plot_heatmap = plot_heatmap(bsrinf.redBP, bsrdm, meta_data, pathway_names, qval_threshold, n, heatmap_col_ann)
-
-
-# save in a pdf
-pdf(file.path(plot_dir,paste0("heatmap_LR_",qval_threshold,".pdf")), width = 12, height = 12)  # Width and height in inches
-print(plot_heatmap)
-dev.off()
-
+  # heatmap with top-n pairs with pathways selection
+  heatmap_sel = plot_heatmap(bsrinf.redBP, bsrdm, meta_data, pathway_names = pathway$pathway, qval_threshold, n, heatmap_col_ann)
+  
+  if(!is.null(heatmap_sel)){
+    pdf(file.path(plot_dir,paste0("heatmap_LR_",qval_threshold, '_', outname, "_selected_pathways.pdf")), width = 12, height = 12)  # Width and height in inches
+    print(heatmap_sel)
+    dev.off()
+  }
+  
+}
 
 
 ############ bubble plot #####################
@@ -41,11 +53,15 @@ if (!is.null(manually_filtered_BulkSignalr_df) && is.data.frame(manually_filtere
   
   
   df_for_plotting = BulkSignaR_Output_list$unfiltered_LR_df_for_plotting
-  df_for_plotting = df_for_plotting %>% filter(qval < qval_threshold,
-                                       LR.corr > LR_corr_threshold,
-                                       pw.name %in% pathway_names)
+  df_for_plotting = df_for_plotting %>% 
+    filter(qval < qval_threshold, LR.corr > LR_corr_threshold) %>%
+    arrange(desc(LR.corr))
+  #df_for_plotting = filter(df_for_plotting, pw.name %in% pathway_names)
+  df_for_plotting = head(df_for_plotting, n)
   
 }
+
+
 
 
 
@@ -84,22 +100,5 @@ p1 = p1+ custom_scale_fill + scale_size_binned_area(max_size = 4)
 pdf(file.path(plot_dir, "bubble_plot.pdf"), width = 9, height = 7)
 print(p1)
 dev.off()
-
-
-
-
-
-
-
-
-
-
-    
-    
-    
-    
-    
-
-
 
 
