@@ -78,7 +78,7 @@ library(clusterProfiler, quietly =T)
 # TODO move loading libraries to each script separately
 
 #all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
-batch <<- 'batch123' # just for running qc for batch1 with kept high NTC samples
+batch <<- 'batch123' # for correct paths and batch eff vars 
 
 
 # define variables and paths ----------------------------------------------
@@ -208,7 +208,7 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 # conditionally run deconvolution -----------------------------------------
 
 # column name of cell type label in scRNAseq metadata
-scrna_anno <<- 'mid_lvl_ct_updated' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+scrna_anno <<- 'low_lvl_ct' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 deconv_logs_path <<- file.path(output_dir,'deconvolution', 
                              paste0('deconv_', scrna_anno, '_logs.txt'))
@@ -300,6 +300,7 @@ dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name,
 
 dge_logs_path <<- file.path(output_dir, 'dge', dge_name, 'dge_logs.txt')
 
+#TODO no padding for deconvoluted data, filter when ct freq too low
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
 

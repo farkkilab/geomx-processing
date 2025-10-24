@@ -19,7 +19,7 @@ raw_counts_layer <- "counts" # raw counts slot (layer) name in reference scRNAse
 
 deconv_norm_type <- 'q3_norm' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
 sd_norm_type <- 'q3_norm' # suggested normalisation type for SpatialDecon (CANNOT BE IN LOG FORM), BayesPrism uses raw counts
-batch_rm_type <- 'limma' # c('harmony', 'limma')
+batch_rm_type <- 'harmony' # c('harmony', 'limma')
 
 # variables to merge the final csv with
 meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
