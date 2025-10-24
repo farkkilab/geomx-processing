@@ -1,6 +1,7 @@
 # Ligand Receptor Analysis by BulkSignaR : Bulk Data,Geomx Full Transcriptomic signal
 
 # TODO fix legend placement, row names width etc
+# TODO bubble plot for redPBP, red LBP and red RBP
 # set up parameters -------------------------------------------------------
 # params
 qval_threshold = 0.001 # filter significant LR pairs
@@ -8,7 +9,7 @@ top_n = 50 # number of top LR pairs needed to visualize in the signature scoes h
 #heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
 LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
 
-reduction_name <- 'redPBP' # from c('redPBP', 'redBP', 'redLBP', 'redRBP')
+reduction_name <- 'redBP' # from c('redPBP', 'redBP', 'redLBP', 'redRBP')
 
 pathway_names <- pathway$pathway
 
@@ -18,9 +19,7 @@ aoi_id <- 'dcc_filename' # from main
 # Reading BulkSignaR objects
 BulkSignalR_Output = readRDS(geomx_BulkSignalR_path)
 
-LR_output <- readRDS(lr_output_path) #TODO maybe not needed
-
-kk <- LR_output[[paste0('bsrinf_', reduction_name)]]
+LR_output <- readRDS(lr_output_path)
 
 # make heatmap ------------------------------------------------------------
 
@@ -54,60 +53,75 @@ for(outname in names(BulkSignalR_Output)){
 # provide pathways you want to visualize as a .csv file in the master script 
 
 
-if (!is.null(manually_filtered_BulkSignalr_df) && is.data.frame(manually_filtered_BulkSignalr_df)) {
+# if (!is.null(manually_filtered_BulkSignalr_df) && is.data.frame(manually_filtered_BulkSignalr_df)) {
+#   
+#   df_for_plotting = manually_filtered_BulkSignalr_df
+#   
+# } else {
+ 
+# }
+
+if(reduction_name == 'redBP'){
+  df_for_plotting <- LR_output[[paste0('bsrinf_', reduction_name)]]
   
-  df_for_plotting = manually_filtered_BulkSignalr_df
-  
-} else {
-  
-  
-  df_for_plotting = BulkSignaR_Output_list$unfiltered_LR_df_for_plotting
   df_for_plotting = df_for_plotting %>% 
-    filter(qval < qval_threshold, LR.corr > LR_corr_threshold) %>%
-    arrange(desc(LR.corr))
-  #df_for_plotting = filter(df_for_plotting, pw.name %in% pathway_names)
-  df_for_plotting = head(df_for_plotting, n)
+    filter(group != 'combined') %>%
+    filter(qval < qval_threshold) %>%
+    mutate(lr_inter = paste0("{",L,"} / {",R,"}")) 
+  
+  # fix names for different reduction types
+  df_for_plotting$lr_inter <- gsub('{{', '{', df_for_plotting$lr_inter, fixed = T)
+  df_for_plotting$lr_inter <- gsub('}}', '}', df_for_plotting$lr_inter, fixed = T)
+  
+  top_lr <- df_for_plotting %>%
+    arrange(desc(LR.corr)) %>%
+    head(n)
+  
+  # to retain values in all groups
+  df_for_plotting_top <- df_for_plotting[df_for_plotting$lr_inter %in% top_lr$lr_inter, ]
+  
+  # make glued pah name if for the same pair, diff best pathway in diff group
+  df_for_plotting_top <- df_for_plotting_top %>%
+    group_by(lr_inter) %>%
+    mutate(pw_both = paste(pw.name, collapse = ' / ')) %>%
+    ungroup()
+  
+  
+  p1 =  df_for_plotting_top %>%
+    ggplot(aes(group, lr_inter, color = LR.corr, size = neg_log10_p_adj)) +
+    geom_point() +
+    facet_grid(pw_both~group, scales = "free", space = "free", switch = "y")+
+    scale_x_discrete(position = "top") +
+    theme_light() +
+    theme(
+      axis.ticks = element_blank(),
+      axis.title = element_blank(),
+      axis.text.y = element_text(face = "bold.italic", size = 7),
+      axis.text.x = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.spacing.x = unit(0.40, "lines"),
+      panel.spacing.y = unit(0.25, "lines"),
+      strip.text.x.top = element_text(size = 8, color = "black", face = "bold", angle = 0),
+      strip.text.y.left = element_text(size = 6, color = "black", face = "bold", angle = 0),
+      strip.background = element_rect(color="darkgrey", fill="whitesmoke", size=1.5, linetype="solid")
+    ) + labs(color = "LR correlation", size = "-log10(pval_adj)")
+  
+  max_corr = abs(df_for_plotting$LR.corr) %>% max()
+  
+  custom_scale_fill = scale_color_gradientn(
+    colours = RColorBrewer::brewer.pal(n = 7, name = "PuRd"),
+    values = c(0, 0.5,0.6,0.7,0.8,0.9,1),
+    limits = c(0,max_corr))
+  
+  p1 = p1+ custom_scale_fill + scale_size_binned_area(max_size = 4)
+  
+  pdf(file.path(plot_dir, paste0("bubble_plot_", reduction_name, ".pdf")), width =12, height = 12)
+  print(p1)
+  dev.off()
+  
+  
   
 }
-
-
-
-
-
-p1 =  df_for_plotting %>%
-  ggplot(aes(group, lr_interaction, color = LR.corr, size = neg_log10_p_adj)) +
-  geom_point() +
-  facet_grid(pw.name~group, scales = "free", space = "free", switch = "y")+
-  scale_x_discrete(position = "top") +
-  theme_light() +
-  theme(
-    axis.ticks = element_blank(),
-    axis.title = element_blank(),
-    #axis.text.y = element_blank(),
-    axis.text.y = element_text(face = "bold.italic", size = 7),
-    axis.text.x = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.spacing.x = unit(0.40, "lines"),
-    panel.spacing.y = unit(0.25, "lines"),
-    strip.text.x.top = element_text(size = 8, color = "black", face = "bold", angle = 0),
-    strip.text.y.left = element_text(size = 9, color = "black", face = "bold", angle = 0),
-    strip.background = element_rect(color="darkgrey", fill="whitesmoke", size=1.5, linetype="solid")
-  ) + labs(color = "Median difference\nin scaled L-R\npseudobulk\nexpression\nproduct", size = "-log10(pval_adj)") 
-
-max_corr = abs(df_for_plotting$LR.corr) %>% max()
-
-custom_scale_fill = scale_color_gradientn(
-  colours = RColorBrewer::brewer.pal(n = 7, name = "PuRd"),
-  values = c(0, 0.5,0.6,0.7,0.8,0.9,1),  
-  limits = c(0,max_corr))
-
-p1 = p1+ custom_scale_fill + scale_size_binned_area(max_size = 4) 
-
-
-
-pdf(file.path(plot_dir, "bubble_plot.pdf"), width = 9, height = 7)
-print(p1)
-dev.off()
 
 
