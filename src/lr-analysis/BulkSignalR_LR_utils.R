@@ -71,9 +71,11 @@ BulkSignalR_LR_prediction <- function(count_geomx, meta_data, normalize_needed, 
   bsrinf.redP <- reduceToPathway(bsrinf)
   bsrinf.redPBP <- reduceToBestPathway(bsrinf.redP)
   
-  # reducing to ligands and receptors
-  bsrinf.L <- reduceToLigand(bsrinf)
-  bsrinf.R <- reduceToReceptor(bsrinf)
+  # reducing to ligands and receptors and best bathways
+  bsrinf.redL <- reduceToLigand(bsrinf)
+  bsrinf.redLBP <- reduceToBestPathway(bsrinf.redL)
+  bsrinf.redR <- reduceToReceptor(bsrinf)
+  bsrinf.redRBP <- reduceToBestPathway(bsrinf.redR)
 
   BSR_all <- list(
     bsrdm = bsrdm,
@@ -81,8 +83,10 @@ BulkSignalR_LR_prediction <- function(count_geomx, meta_data, normalize_needed, 
     bsrinf_redP = bsrinf.redP,
     bsrinf_redPBP = bsrinf.redPBP,
     bsrinf_redBP = bsrinf.redBP,
-    bsrinf_redL = bsrinf.L,
-    bsrinf_redR = bsrinf.R,
+    bsrinf_redL = bsrinf.redL,
+    bsrinf_redR = bsrinf.redR,
+    bsrinf_redLBP = bsrinf.redLBP,
+    bsrinf_redRBP = bsrinf.redRBP,
     count_geomx = count_geomx,
     meta_data = meta_data
   )
@@ -99,91 +103,74 @@ BulkSignalR_LR_prediction <- function(count_geomx, meta_data, normalize_needed, 
 
 # Creating a function to plot the heatmap
 
-plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names = NULL, qval_threshold=0.01, n=50, heatmap_col_ann){
+plot_heatmap <- function(bsrinf_red, bsrdm, reduction_name, meta_data, pathway_names = NULL, 
+                         qval_threshold=0.001, top_n=50,
+                         heatmap_col_ann, aoi_id = 'dcc_filename',
+                         out_path){
+
+  # step 4 : Building a BSRSignature object
+  bsrsig_red <- BSRSignature(bsrinf_red, qval.thres = qval_threshold)
   
-  pairs <- LRinter(bsrinf_redBP)
-  pairs$index <- seq_len(nrow(pairs))
-  selected_pairs <- filter(pairs, qval < qval_threshold) 
+  # different name.by.pathway param dependig on reduction type
+  scoresLR <- scoreLRGeneSignatures(bsrdm, bsrsig_red, 
+                                    name.by.pathway=ifelse(reduction_name == 'redPBP', TRUE, FALSE))
+  
+  # filtering LR interactions df
+  LRinter <- LRinter(bsrinf_red) %>%
+    filter(qval <= qval_threshold) %>%
+    mutate(lr_inter = paste0("{",L,"} / {",R,"}"))
+  
+  # fix names for different reduction types
+  LRinter$lr_inter <- gsub('{{', '{', LRinter$lr_inter, fixed = T)
+  LRinter$lr_inter <- gsub('}}', '}', LRinter$lr_inter, fixed = T)
   
   if(!is.null(pathway_names)){
-    selected_pairs <- filter(selected_pairs, pw.name  %in% pathway_names)
+    LRinter <- filter(LRinter, pw.name %in% pathway_names)
   }
   
-  if(nrow(selected_pairs) == 0){
+  if(nrow(LRinter) < 2){
+    if(nrow(LRinter) > 0){
+      print('only 1 pathway found. try add more pathway names')
+      print(LRinter$pw.name)
+      return(NULL)
+    }
     print('no pairs selected. try changing qval thr or add more pathway names')
     return(NULL)
   }
-  
-  # TODO if selected_pairs == 0 then an error message
-  
-  top_n_pairs <- arrange(selected_pairs, desc(LR.corr))
-  top_n_pairs = head(top_n_pairs, n)
-
-  top_n_pairs_index <- top_n_pairs$index
-  
-  
-  ligands   <- ligands(bsrinf_redBP)[top_n_pairs_index]
-  receptors   <- receptors(bsrinf_redBP)[top_n_pairs_index]
-  pathways  <- pairs$pw.name
-  t.genes   <- tgGenes(bsrinf_redBP)[top_n_pairs_index]
-  t.corrs   <- tgCorr(bsrinf_redBP)[top_n_pairs_index]
-
-  for (i in seq_len(nrow(top_n_pairs))){
-    tg <- t.genes[[i]]
-    t.genes[[i]] <- tg[top_n_pairs$rank[i]:length(tg)]
     
-    tc <- t.corrs[[i]]
-    t.corrs[[i]] <- tc[top_n_pairs$rank[i]:length(tc)]
+  LRinter_top <- LRinter %>%
+    arrange(desc(LR.corr)) %>%
+    head(top_n)
+  
+  # Filter LRscores to match top pairs or pathways
+  if(reduction_name == 'redPBP'){
+    scoresLR_top <- scoresLR[rownames(scoresLR) %in% LRinter_top$pw.name, ]
+    scoresLR_top <- scoresLR_top[LRinter_top$pw.name, ] # ensure ordering
+    row_annot <- NA
+    colors_pw <- NA
+  } else{
+    scoresLR_top <- scoresLR[rownames(scoresLR) %in% LRinter_top$lr_inter, ]
+    scoresLR_top <- scoresLR_top[LRinter_top$lr_inter, ] # ensure ordering
+    
+    # row annotations based on pathways
+    row_annot <- data.frame(Pathway = LRinter_top$pw.name)
+    rownames(row_annot) <- rownames(scoresLR_top)  
+    
+    # colors for col annotations
+    pathways_anno <- as.character(unique(as.character(unique(row_annot$Pathway))))
+    colors_pw <- hue_pal()(length(pathways_anno))
+    colors_pw <- setNames(colors_pw, pathways_anno)
   }
-  
-  bsrinf_redBP@LRinter = top_n_pairs
-  bsrinf_redBP@ligands = ligands
-  bsrinf_redBP@receptors = receptors
-  bsrinf_redBP@tg.genes = t.genes
-  bsrinf_redBP@tg.corr = t.corrs
-  
-  
-  # step 4 : Building a BSRSignature object
-  
-  bsrsig.redBP <- BSRSignature(bsrinf_redBP, qval.thres = qval_threshold)
-  
-  scoresLR <- scoreLRGeneSignatures(bsrdm, bsrsig.redBP,
-                                    name.by.pathway=FALSE)
-  
-  
-  LRinter = bsrinf_redBP@LRinter # check !!
-  LRinter$lr_inter = paste0("{",LRinter$L,"} / {",LRinter$R,"}")
-  
-  # Filter the dataframe based on matches with the column names
-  
-  row_names <- rownames(scoresLR)
-  matched_pw_names <- LRinter %>%
-    filter(lr_inter %in% row_names) %>%
-    arrange(match(lr_inter, row_names)) %>%  # Preserve the column order
-    pull(pw.name)
-  
-  # row annotations based on pathways
-  
-  row_annot <- data.frame(Pathway = matched_pw_names)
-  rownames(row_annot) <- rownames(scoresLR)  # ensure they align with row_annot 
-  
-  
-  # column annotations
-  
-  col_annot <- data.frame(SampleGroup = factor(meta_data[,heatmap_col_ann]))
 
-  # if both 
-  # col_annot <- data.frame(SampleGroup = factor(paste0(meta_data$Segment,"_",meta_data$NACT_status)))
+
+  # column annotations
+  col_annot <- data.frame(SampleGroup = factor(meta_data[,heatmap_col_ann]), row.names = meta_data[, aoi_id])
+
+  # TODO col_annot <- data.frame(SampleGroup = factor(paste0(meta_data$Segment,"_",meta_data$NACT_status))) # if both
   
-  rownames(col_annot) <- gsub('-', '.', meta_data$dcc_filename)
-  
-  # colors for the row and col annotations
-  
-  pathways_anno <- as.character(unique(matched_pw_names)) # Convert to character vector (if not already)
+  # colors for col annotations
+
   Sample_Group <- as.character(unique(col_annot$SampleGroup))
-  
-  colors_pw <- hue_pal()(length(pathways_anno))
-  colors_pw <- setNames(colors_pw, pathways_anno)
   colors_SGroup <- hue_pal()(length(Sample_Group))
   colors_SGroup <- setNames(colors_SGroup, Sample_Group)
   
@@ -191,15 +178,13 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names = NULL, q
     SampleGroup = colors_SGroup,
     Pathway = colors_pw)
   
-  # TO DO
-  # viridisLite::viridis() or colorspace::qualitative_hcl() better colors
+  # TODO viridisLite::viridis() or colorspace::qualitative_hcl()  # better colors
   
   # Finally the heatmap
-  
   col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+  wid <- ifelse(reduction_name == 'redPBP', 12, 24)
   
-  
-  heatmap <- pheatmap(scoresLR, 
+  heatmap <- pheatmap(scoresLR_top, 
                       annotation_row = row_annot,
                       annotation_col = col_annot,
                       annotation_colors = ann_colors,
@@ -209,12 +194,11 @@ plot_heatmap <- function(bsrinf_redBP, bsrdm, meta_data, pathway_names = NULL, q
                       color = col_fun, 
                       main = paste0("Ligand receptor signatures per samples"),
                       name = "signature score",
-                      labels_col = rep("", ncol(scoresLR)))
+                      labels_col = rep("", ncol(scoresLR_top)))
   
-  
-  return(heatmap)
-  
-  
+  pdf(out_path, width = wid, height = 12)  # Width and height in inches
+  print(heatmap)
+  dev.off()
 }
 
 

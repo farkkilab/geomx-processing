@@ -40,6 +40,22 @@ library(purrr)
 library(readr)
 library(stringr)
 
+# define intermediate output folders and paths  ----------------------------------------
+
+dir.create(file.path(output_dir, 'lr_interactions', 'bulk_signalr') , recursive = T, showWarnings = F)
+dir.create(file.path(output_dir, 'lr_interactions', 'cell_chat') , recursive = T, showWarnings = F)
+dir.create(file.path(output_dir, 'lr_interactions', 'multi_niche_netr') , recursive = T, showWarnings = F)
+
+geomx_BulkSignalR_path <<- file.path(output_dir, 'lr_interactions', 'bulk_signalr' ,'BulkSignalR_output.RDS')
+geomx_CellChat_path <<- file.path(output_dir, 'lr_interactions', 'cell_chat','CellChat_output.RDS')
+geomx_MultiNicheNet_path <<- file.path(output_dir, 'lr_interactions', 'multi_niche_netr', 'multinichenet_output.rds')
+
+# load util functions  -------------------------------------
+
+source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignalR_LR_utils.R'))
+source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'cellChat_util.R'))
+
+
 
 # define variables and paths ----------------------------------------------
 
@@ -70,14 +86,6 @@ if(!file.exists(file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.
 dir.create(file.path(output_dir, 'lr_interactions'), showWarnings = T, recursive = T)
 
 
-
-# names of interesting pathways from REACTOME+GO:BP for BulkSignalR plotting: 
-# A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
-pathway <<- read.csv(file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'immune_signatures_selected_forpaper_names_reactome_gobp.csv')) 
-
-# TODO this have to be re-written
-paired_id <- "Patient" # If you want to predict for paired samples only in BUlkSignalR: I did not check this 
-
 # define params -----------------------------------------------------------
 
 #TODO move to the main script
@@ -85,8 +93,9 @@ paired_id <- "Patient" # If you want to predict for paired samples only in BUlkS
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 # common parameters
-grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared eg: c("Segment","NACT_status")
+grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
 
+# TODO BSR - handled with code - check for NN and CC
 # define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre_stroma","pre_tumor") order matters. 
 # Can compare only two groups at a time
 comparison <- c("stroma","tumor") 
@@ -129,23 +138,20 @@ lr_network_all <<- readRDS(file.path(nichenet_data_dir,"lr_network_human_allInfo
 # other_vars_tech <- c('Slide_Name')
 
 
-# define intermediate output folders and paths  ----------------------------------------
-
-dir.create(file.path(output_dir, 'lr_interactions', 'bulk_signalr') , recursive = T, showWarnings = F)
-dir.create(file.path(output_dir, 'lr_interactions', 'cell_chat') , recursive = T, showWarnings = F)
-dir.create(file.path(output_dir, 'lr_interactions', 'multi_niche_netr') , recursive = T, showWarnings = F)
-
-geomx_BulkSignalR_path <<- file.path(output_dir, 'lr_interactions', 'bulk_signalr' ,'BulkSignalR_output.RDS')
-geomx_CellChat_path <<- file.path(output_dir, 'lr_interactions', 'cell_chat','CellChat_output.RDS')
-geomx_MultiNicheNet_path <<- file.path(output_dir, 'lr_interactions', 'multi_niche_netr', 'multinichenet_output.rds')
-
-# load util functions  -------------------------------------
-
-source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignalR_LR_utils.R'))
-source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'cellChat_util.R'))
-
 
 # conditionally run BulkSignaR Analysis  -----------------------------------------
+
+# TODO this have to be re-written
+paired_id <- "Patient" # If you want to predict for paired samples only in BUlkSignalR: I did not check this 
+
+qval_threshold = 0.01 # thr for filtering significant LR pairs from LR output dfs
+
+
+grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
+
+
+lr_output_path <- file.path(output_dir, 'lr_interactions', 'bulk_signalr', 
+                            paste0('LR_list_all_qval_', qval_threshold, '.RDS'))
 
 run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
                   file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignaR_LR_Analysis.R'))
@@ -153,17 +159,23 @@ run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
 
 # BulkSignalR Visualization -----------------------------------------
 
+# names of interesting pathways from REACTOME+GO:BP for BulkSignalR plotting: 
+# A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
+pathway <<- read.csv(file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'immune_signatures_selected_forpaper_names_reactome_gobp.csv')) 
+
+
 # for plots
 plot_dir = file.path(output_dir, 'lr_interactions', 'bulk_signalr', 'plots_and_csv_files')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
 # Params
-
+# TODO make it different from qval from Analysis
 qval_threshold = 0.001 # filter significant LR pairs
 n = 50 # number of top LR pairs needed to visualize in the signature scoes heatmap
 heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
 LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
 manually_filtered_BulkSignalr_df = NULL# readRDS(file.path(output_dir,"df_combined_BulkSignalr_for_plot.RDS")) # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe  
+
 
 source(file.path(proj_dir,'geomx_processing', 'src',  'lr-analysis', 'BulkSignaR_LR_Visualization.R')) # ??
 source("/home/iganiemi/Documents/phd/st/geomx-processing/src/lr-analysis/BulkSignaR_LR_Visualization.R")

@@ -2,24 +2,24 @@
 
 # parameters for BulkSignalR
 
+# paired_only = FALSE # TODO I haven't tried this : for paired samples only set to TRUE
+# TODO rmv - in the master script
+#qval_threshold = 0.01 # filter significant LR pairs
 
-# you can specify one of the null model from this list (see learnParameters() documentation): 
-# c("automatic", "mixedNormal", "normal", "kernelEmpirical", "empirical",  "stable")
-# or 'automatic' to get the best fitting null model
-null_model = 'automatic' 
-paired_only = FALSE # TODO I haven't tried this : for paired samples only set to TRUE
-qval_threshold = 0.01 # filter significant LR pairs
-
-# TODO make it useful + add else to the loop if FALSE
-combined_Data = TRUE # To run for combined data as well. you should keep this TRUE if you want to generate the signature score heatmap
+combined_Data = TRUE # To run for all data as well. you should keep this TRUE if you want to generate the signature score heatmap
 
 # unnormalized expression data (exprs) or normalized data, best harmony_q3_norm
-# unnormalised data will be normalised y default with UQ (upper quartile - 0.75)
+# unnormalised data will be normalised by default with quartile norm UQ (upper quartile - 0.75)
 data_type <- "harmony_batch_corr_q3_norm"  
 
 # variables to merge the final csv with
 meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
                 grouping_var_col_ids)
+
+# you can specify one of the null model from this list (see learnParameters() documentation): 
+# c("automatic", "mixedNormal", "normal", "kernelEmpirical", "empirical",  "stable")
+# or 'automatic' to get the best fitting null model
+null_model = 'automatic' 
 
 norm_is_log <- ifelse(data_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
 normalize_needed <- ifelse(data_type == 'exprs', TRUE, FALSE)
@@ -58,14 +58,14 @@ meta_data_all$comparison_group <- apply(meta_data_all, 1, function(row){
 
 # Run BulkSignalR predictions ---------------------------------------------
 
-BulkSignaR_Output <- list()
+BulkSignalR_Output <- list()
 
 # run for all data
 if (combined_Data == TRUE){
   print("combined data")
 
   # TODO add norm type to output name
-  BulkSignaR_Output[['combined']] = BulkSignalR_LR_prediction(count_geomx, 
+  BulkSignalR_Output[['combined']] = BulkSignalR_LR_prediction(count_geomx, 
                                                               meta_data_all, 
                                                               normalize_needed, 
                                                               norm_is_log,
@@ -84,7 +84,7 @@ for(group in unique(meta_data_all$comparison_group)) {
   meta_data_group <- meta_data_all[meta_data_all$comparison_group == group, ]
   count_geomx_group <- count_geomx[, meta_data_group$dcc_filename]
   
-  BulkSignaR_Output[[group]] = BulkSignalR_LR_prediction(count_geomx_group, 
+  BulkSignalR_Output[[group]] = BulkSignalR_LR_prediction(count_geomx_group, 
                                                               meta_data_group, 
                                                               normalize_needed, 
                                                               norm_is_log,
@@ -96,18 +96,19 @@ for(group in unique(meta_data_all$comparison_group)) {
 
       
 }
-  
+
+saveRDS(BulkSignalR_Output, geomx_BulkSignalR_path)  
 
 # combine all LR predictions to a single dataframe list -------------------
 
-lr_df_all_groups <- lapply(names(BulkSignaR_Output), function(group){
+lr_df_all_groups <- lapply(names(BulkSignalR_Output), function(group){
   print(group)
   # loop through all bsrinf objects with different reducing options (see vignette)
-  lr_df_bsrinf <- lapply(grep('bsrinf', names(BulkSignaR_Output[[group]]), value = T), function(bsrinf_name){
+  lr_df_bsrinf <- lapply(grep('bsrinf', names(BulkSignalR_Output[[group]]), value = T), function(bsrinf_name){
     print(bsrinf_name)
     
-    bsrinf <- BulkSignaR_Output[[group]][[bsrinf_name]]
-    reduction_type <- ifelse(bsrinf_name == 'bsrinf', 'none', gsub('bsrinf_', '', bsrinf_name))
+    bsrinf <- BulkSignalR_Output[[group]][[bsrinf_name]]
+    reduction_type <- gsub('bsrinf_', '', bsrinf_name)
     
     # extracting and filtering LR dataframes
     LRinter.df <- LRinter(bsrinf) %>%
@@ -127,15 +128,8 @@ lr_df_all_groups <- lapply(names(BulkSignaR_Output), function(group){
 
 
 lr_df_combined <- do.call(Map, c(f = rbind, lr_df_all_groups))
-names(lr_df_combined) <- grep('bsrinf', names(BulkSignaR_Output[[group]]), value = T)
+names(lr_df_combined) <- grep('bsrinf', names(BulkSignalR_Output[[1]]), value = T)
 
 # save BRS output and LR dfs
-saveRDS(lr_df_combined, file = file.path(output_dir, 'lr_interactions', 'bulk_signalr', 
-                                         paste0('LR_list_all_qval_', qval_threshold, '.RDS')))
-
-saveRDS(BulkSignaR_Output, file = geomx_BulkSignalR_path)  
-
-
-
-
+saveRDS(lr_df_combined, file = lr_output_path)
 

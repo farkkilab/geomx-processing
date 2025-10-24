@@ -1,40 +1,49 @@
 # Ligand Receptor Analysis by BulkSignaR : Bulk Data,Geomx Full Transcriptomic signal
 
+# TODO fix legend placement, row names width etc
+# set up parameters -------------------------------------------------------
+# params
+qval_threshold = 0.001 # filter significant LR pairs
+top_n = 50 # number of top LR pairs needed to visualize in the signature scoes heatmap
+#heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
+LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
 
-# Reading BulkSignaR objects
-# TODO loop over all objects in a list
-BulkSignaR_Output_list = readRDS(geomx_BulkSignalR_path)
-BulkSignaR_Output = BulkSignaR_Output_list$BulkSignaR_Output
-#BulkSignaR_Output_combined = BulkSignaR_Output[["combined"]]
+reduction_name <- 'redPBP' # from c('redPBP', 'redBP', 'redLBP', 'redRBP')
 
 pathway_names <- pathway$pathway
 
+aoi_id <- 'dcc_filename' # from main
+# read BSR outputs --------------------------------------------------------
 
-for(outname in names(BulkSignaR_Output)){
+# Reading BulkSignaR objects
+BulkSignalR_Output = readRDS(geomx_BulkSignalR_path)
+
+LR_output <- readRDS(lr_output_path) #TODO maybe not needed
+
+kk <- LR_output[[paste0('bsrinf_', reduction_name)]]
+
+# make heatmap ------------------------------------------------------------
+
+outname <- 'combined'
+
+for(outname in names(BulkSignalR_Output)){
   print(outname)
   
-  bsrdm = BulkSignaR_Output[[outname]]$bsrdm
-  bsrinf.redBP = BulkSignaR_Output[[outname]]$bsrinf_redBP 
-  meta_data = BulkSignaR_Output[[outname]]$meta_data # collecting Meta data for the plot
+  heatmap_col_ann = ifelse(outname == 'combined', "Segment", "NACT_status")
+  
+  bsrdm = BulkSignalR_Output[[outname]]$bsrdm
+  bsrinf_red = BulkSignalR_Output[[outname]][[paste0('bsrinf_', reduction_name)]] 
+  meta_data = BulkSignalR_Output[[outname]]$meta_data # collecting Meta data for the plot
   
   # heatmap with top-n pairs, without pathways selection
-  heatmap_no_sel = plot_heatmap(bsrinf.redBP, bsrdm, meta_data, pathway_names = NULL, qval_threshold, n, heatmap_col_ann)
-  
-  if(!is.null(heatmap_no_sel)){
-    pdf(file.path(plot_dir,paste0("heatmap_LR_",qval_threshold, '_', outname, ".pdf")), width = 12, height = 12)  # Width and height in inches
-    print(heatmap_no_sel)
-    dev.off()
-  }
+  plot_heatmap(bsrinf_red, bsrdm, reduction_name, meta_data, pathway_names = NULL, 
+               qval_threshold, top_n, heatmap_col_ann, aoi_id, 
+               file.path(plot_dir,paste0("heatmap_LR_",qval_threshold, '_', outname, "_", reduction_name, ".pdf")))
 
   # heatmap with top-n pairs with pathways selection
-  heatmap_sel = plot_heatmap(bsrinf.redBP, bsrdm, meta_data, pathway_names = pathway$pathway, qval_threshold, n, heatmap_col_ann)
-  
-  if(!is.null(heatmap_sel)){
-    pdf(file.path(plot_dir,paste0("heatmap_LR_",qval_threshold, '_', outname, "_selected_pathways.pdf")), width = 12, height = 12)  # Width and height in inches
-    print(heatmap_sel)
-    dev.off()
-  }
-  
+  plot_heatmap(bsrinf_red, bsrdm, reduction_name, meta_data, pathway_names = pathway_names, 
+               qval_threshold, top_n, heatmap_col_ann, aoi_id,
+               file.path(plot_dir,paste0("heatmap_LR_",qval_threshold, '_', outname, "_", reduction_name, "_selpath.pdf")))
 }
 
 
