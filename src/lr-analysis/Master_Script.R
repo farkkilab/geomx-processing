@@ -2,6 +2,12 @@
 
 # load libraries
 
+library(BayesPrism)
+library(DESeq2)
+library(harmony)
+library(ggplot2)
+library(tools)
+
 library(BulkSignalR, quietly =T)
 library(igraph, quietly =T)
 library(dplyr, quietly =T)
@@ -39,6 +45,8 @@ library(tidyr)
 library(purrr)
 library(readr)
 library(stringr)
+library(data.table)
+library(dplyr)
 
 # define intermediate output folders and paths  ----------------------------------------
 
@@ -54,7 +62,6 @@ geomx_MultiNicheNet_path <<- file.path(output_dir, 'lr_interactions', 'multi_nic
 
 source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignalR_LR_utils.R'))
 source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'cellChat_util.R'))
-
 
 
 # define variables and paths ----------------------------------------------
@@ -142,11 +149,9 @@ lr_network_all <<- readRDS(file.path(nichenet_data_dir,"lr_network_human_allInfo
 # conditionally run BulkSignaR Analysis  -----------------------------------------
 
 # TODO this have to be re-written
-paired_id <- "Patient" # If you want to predict for paired samples only in BUlkSignalR: I did not check this 
+#paired_id <- "Patient" # If you want to predict for paired samples only in BUlkSignalR: I did not check this 
 
 qval_threshold = 0.01 # thr for filtering significant LR pairs from LR output dfs
-
-
 grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
 
 
@@ -163,7 +168,6 @@ run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
 # A list of reactome pathways in a .csv file. This needed to be provided to plot the heatmap
 pathway <<- read.csv(file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'immune_signatures_selected_forpaper_names_reactome_gobp.csv')) 
 
-
 # for plots
 plot_dir = file.path(output_dir, 'lr_interactions', 'bulk_signalr', 'plots_and_csv_files')
 dir.create(plot_dir , recursive = T, showWarnings = F)
@@ -173,7 +177,6 @@ dir.create(plot_dir , recursive = T, showWarnings = F)
 qval_threshold = 0.001 # filter significant LR pairs
 n = 50 # number of top LR pairs needed to visualize in the signature scoes heatmap
 heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
-LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
 manually_filtered_BulkSignalr_df = NULL# readRDS(file.path(output_dir,"df_combined_BulkSignalr_for_plot.RDS")) # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe  
 
 

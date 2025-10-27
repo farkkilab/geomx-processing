@@ -6,8 +6,8 @@
 # params
 qval_threshold = 0.001 # filter significant LR pairs
 top_n = 50 # number of top LR pairs needed to visualize in the signature scoes heatmap
+# TODO better setting
 #heatmap_col_ann = "Segment" # based on what you want to annotate the heatmap
-LR_corr_threshold = 0.4 # For the bubble plot : correlation threshold
 
 reduction_name <- 'redBP' # from c('redPBP', 'redBP', 'redLBP', 'redRBP')
 
