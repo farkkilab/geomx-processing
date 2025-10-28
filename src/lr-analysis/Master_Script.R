@@ -6,7 +6,6 @@
 
 library(BayesPrism)
 library(DESeq2)
-library(harmony)
 library(ggplot2)
 library(tools)
 library(parallel)
@@ -53,8 +52,11 @@ library(data.table)
 library(dplyr)
 library(tibble)
 
+#TODO make umap of pseudosc gene set
+
 # define intermediate output folders and paths  ----------------------------------------
 
+# TODO make plotdirs here/inside downstream scripts
 dir.create(file.path(output_dir, 'lr_interactions', 'bulk_signalr') , recursive = T, showWarnings = F)
 dir.create(file.path(output_dir, 'lr_interactions', 'cell_chat') , recursive = T, showWarnings = F)
 dir.create(file.path(output_dir, 'lr_interactions', 'multi_niche_netr') , recursive = T, showWarnings = F)
@@ -68,35 +70,6 @@ geomx_MultiNicheNet_path <<- file.path(output_dir, 'lr_interactions', 'multi_nic
 # TODO move all utils to 1 script
 source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignalR_LR_utils.R'))
 source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'cellChat_util.R'))
-
-
-# define variables and paths ----------------------------------------------
-
-# they're already defined in the main script
-#proj_dir <<- 'C:/Users/Sahas/Downloads/Masters_Thesis/Project_LR_prediction'
-
-#output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction') 
-
-#TODO optimize and move to nichenetr script
-# path where to download nichenet data
-nichenet_data_dir <<- file.path(proj_dir, 'geomx-processing', 'data', 'nichenet')
-dir.create(nichenet_data_dir, recursive = T, showWarnings = F)
-
-# !! this may change in the future! 
-# keep up with https://github.com/saeyslab/nichenetr  and https://github.com/saeyslab/multinichenetr for updates
-
-if(!file.exists(file.path(nichenet_data_dir, "ligand_target_matrix_nsga2r_final.rds"))){
-  download.file('https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds', 
-                destfile = file.path(nichenet_data_dir, "ligand_target_matrix_nsga2r_final.rds"), method = "wget", extra = "-r -p --random-wait")
-  
-}
-
-if(!file.exists(file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.rds"))){
-  download.file('https://zenodo.org/record/10229222/files/lr_network_human_allInfo_30112033.rds', 
-                destfile = file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.rds"), method = "wget", extra = "-r -p --random-wait")
-}
-  
-dir.create(file.path(output_dir, 'lr_interactions'), showWarnings = T, recursive = T)
 
 
 # define params -----------------------------------------------------------
@@ -128,7 +101,6 @@ covariates =  "Sample"
 
 # load data ----------------------------------------------
 
-# TODO check normalisation etc of bprism result
 # TODO move to low-lvl scripts
 geomx_obj <<- readRDS(geomx_norm_batch_eff_rm_path) # batch effect corrected Geomx Object
 
@@ -143,6 +115,10 @@ lr_network_all <<- readRDS(file.path(nichenet_data_dir,"lr_network_human_allInfo
 
 # set up metadata variables names -----------------------------------------
 # already defined in a main script
+
+#proj_dir <<- 'C:/Users/Sahas/Downloads/Masters_Thesis/Project_LR_prediction'
+#output_dir <<- file.path(proj_dir, 'results', 'Batch01','LR_prediction') 
+
 # aoi_id <- 'dcc_filename'
 # sample_name <- 'Sample'
 # aoi_segment_var <- "Segment"
@@ -243,10 +219,25 @@ source(file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Visualization.R'))
 
 # conditionally run MultiNicheNet LR Analysis -----------------------------------------
 
-# for multiNicheNetR if you are providing DEGS externally follow the MultiNicheNet_LR_util.R script to prepare the DEGs dataframe. 
-# Else MUltiNicheNet will not work
-external_DE_info = FALSE # if TRUE,  provide the prepared DEGs dataframe to  'celltype_de_external'. Eg: celltype_de_external = readRDS(file.path(output_dir,MultiNicheNet_folder_name,"celltype_de_combined_calculated_externally.RDS"))
-celltype_de_external = NULL 
+scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+sample_name <- 'Sample'
+# common parameters
+grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
+
+# parameters for CellChat and MultiNicheNet : Single cell approaches
+# names of cells to fin
+cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
+
+# parameters for Cellchat
+cell_frac_cutoff = 0.005 # 0.01 or 0.005
+min_cells = 10 # Number of minimum cells in each cell group
+
+# path where to download nichenet data
+nichenet_data_dir <<- file.path(proj_dir, 'geomx-processing', 'data', 'nichenet')
+dir.create(nichenet_data_dir, recursive = T, showWarnings = F)
+
+plot_dir = file.path(output_dir, 'lr_interactions', 'multi_niche_netr','plots_and_csv_files')
+dir.create(plot_dir , recursive = T, showWarnings = F)
 
 
 run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
@@ -256,10 +247,6 @@ run_unless_exists('MultiNicheNet LR Analysis', geomx_MultiNicheNet_path,
 # MultiNicheNet Visualization -----------------------------------------
 
 # for plots
-
-plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files_3')
-dir.create(plot_dir , recursive = T, showWarnings = F)
-
 manually_filtered_LR_pairs_dfplot_median_bulk_expr = NULL # provide the dataframe  
 manually_filtered_LR_pairs_dfplot_ligand_activity = NULL # provide the dataframe  
 

@@ -1,7 +1,366 @@
 # Ligand Receptor Analysis  by CellChat : Geomx Deconvoluted data
 
 
+# define params -----------------------------------------------------------
+
+# for multiNicheNetR if you are providing DEGS externally follow the MultiNicheNet_LR_util.R script to prepare the DEGs dataframe. 
+# Else MUltiNicheNet will not work
+celltype_de_external_path = NULL # either NULL or path to the prepared DEGs dataframe to  'celltype_de_external'. Eg: celltype_de_external = readRDS(file.path(output_dir,MultiNicheNet_folder_name,"celltype_de_combined_calculated_externally.RDS"))
+
+# which groups from combination of grouping_var_col_ids should be compared (if NULL: everything with everything)
+# note that even for 4 groups, there will be already 12 combinations so choose wisely!
+# see documentation for get_DE_info()
+# format eg: c('stroma_pre-stroma_post', 'stroma_post-stroma_pre') each comparison in both directions
+groups_to_compare <- NULL
+
+sample_name <- 'Sample'
+grouping_var_col_ids <- c('Segment')
+
+# which from grouping_var_col_ids are connected to ROI types within sample (such as Segment)
+# and not directly to sample (such as NACT_status)
+# if there are no such vars - NULL
+grouping_var_col_ids_within_sample <- c('Segment')
+
+cell_frac_cutoff = 0.005 # 0.01 or 0.005 ct specific expr from dcc with ct fraction lower than cutoff will be removed
+min_cells = 3 # minimum number of rois containing given cell > cell_frac_cutoff per cell type per sample.Samples that have less than min_cells cells will be excluded from the analysis for that specific cell type
+
+min_sample_prop = 0.1 # genes expressed if they are expressed in at least a min_sample_prop fraction of samples in the condition with the lowest number of samples
+fraction_cutoff = 0.05 # genes as expressed if they have non-zero expression values in a fraction_cutoff fraction of cells of that cell type in that sample
+
+
+# variables to merge the final csv with
+meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
+                grouping_var_col_ids, main_batch_var, secondary_batch_var)
+
+# often not enough cells in all batches and throws errors
+main_batch_var <- "main_batch_nr"
+main_batch_var <- NA
+
+# path to the prepared normalized pseudo scRNaseq dataset from all bpres
+bp_pseudosc_path <- file.path(output_dir, 'lr_interactions', 
+                              paste0('bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_norm.csv'))
+
+outct <- ifelse(!is.null(cell_types_selected), paste(cell_types_selected, collapse = '_'), 'all')
+
+# download necessary files ------------------------------------------------
+
+# !! this may change in the future! 
+# keep up with https://github.com/saeyslab/nichenetr  and https://github.com/saeyslab/multinichenetr for updates
+if(!file.exists(file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.rds"))){
+  download.file('https://zenodo.org/record/10229222/files/lr_network_human_allInfo_30112033.rds', 
+                destfile = file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.rds"), method = "wget", extra = "-r -p --random-wait")
+}
+
+if(!file.exists(file.path(nichenet_data_dir, "ligand_target_matrix_nsga2r_final.rds"))){
+  download.file('https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds', 
+                destfile = file.path(nichenet_data_dir, "ligand_target_matrix_nsga2r_final.rds"), method = "wget", extra = "-r -p --random-wait")
+  
+}
+
+if(!file.exists(file.path(nichenet_data_dir, "weighted_networks_nsga2r_final.rds"))){
+  download.file('https://zenodo.org/record/10229222/files/weighted_networks_nsga2r_final.rds', 
+                destfile = file.path(nichenet_data_dir, "weighted_networks_nsga2r_final.rds"), method = "wget", extra = "-r -p --random-wait")
+}
+
+# lr_network <- readRDS(url("https://zenodo.org/record/7074291/files/lr_network_human_21122021.rds"))
+# ligand_target_matrix <- readRDS(url("https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds"))
+# weighted_networks <- readRDS(url("https://zenodo.org/record/7074291/files/weighted_networks_nsga2r_final.rds"))
+
+lr_network_all <- readRDS(file.path(nichenet_data_dir, "lr_network_human_allInfo_30112033.rds"))
+ligand_target_matrix <- readRDS(file.path(nichenet_data_dir, "ligand_target_matrix_nsga2r_final.rds"))
+
+# TODO cannot find this file
+weighted_networks <- readRDS(file.path(nichenet_data_dir, "weighted_networks_nsga2r_final.rds"))
+
+# load geomx metadata -----------------------------------------------------
+
+geomx_obj <<- readRDS(geomx_norm_batch_eff_rm_path) # batch effect corrected Geomx Object
+meta_data_all <- sData(geomx_obj)[, unique(meta_names)]
+
+# TODO code repetition from BSR Analysis
+# make variable with all categories from grouping_var_col_ids
+meta_data_all$comparison_group <- apply(meta_data_all, 1, function(row){
+  group <- sapply(grouping_var_col_ids, function(var){
+    paste(row[var])
+  })
+  group <- paste(group, collapse = '_')
+  return(group)
+})
+
+rm(geomx_obj)
+gc()
+
+# create normalised pseudo scRNAseq dataset -------------------------------
+
+# create a combined 'artificial pseudo-bulk scRNAseq' dataset with all ct specific counts 
+if(file.exists(bp_pseudosc_path)){
+  bprism_res_norm <- as.matrix(fread(bp_pseudosc_path), rownames=1)
+} else{
+  bprism_res_norm <- create_norm_pseudosc_from_deconv(bp_res_path, bp_ct_frac_path, scrna_anno, cell_frac_cutoff, bp_pseudosc_path)
+}
+
+# make metadata -----------------------------------------------------------
+
+# make metadata with dcc_cell type
+dcc_ct <- data.frame('dcc_filename' = gsub('_.*', '', colnames(bprism_res_norm)), 
+                     'dcc_ct' = colnames(bprism_res_norm))
+meta_data_ct <- left_join(dcc_ct, meta_data_all)
+meta_data_ct$ct_label <- gsub('^[^_]*', '', meta_data_ct$dcc_ct)
+meta_data_ct$ct_label <- gsub('^_', '', meta_data_ct$ct_label)
+rownames(meta_data_ct) <- meta_data_ct$dcc_ct
+meta_data_ct$samples <- meta_data_ct[[sample_name]]
+
+# hacking NichenetR - 1 sample can only be in 1 group
+if(is.null(grouping_var_col_ids_within_sample)){
+  meta_data_ct$sample_id <- meta_data_ct[[sample_name]]
+} else{
+  # add additional ROI type labels to sample name to treat it as separate sample
+  meta_data_ct$sample_id <- apply(meta_data_ct, 1, function(row){
+    sample_add <- paste(row[grouping_var_col_ids_within_sample], collapse = '_')
+    sample_id <- paste(c(row[sample_name], sample_add), collapse = '_')
+  })
+  
+}
+
+bprism_res_norm <- bprism_res_norm[, !grepl('Mast_cells', colnames(bprism_res_norm))]
+meta_data_ct <- meta_data_ct[meta_data_ct$ct_label != 'Mast_cells', ]
+
+if(!is.null(cell_types_selected)){
+  cell_idents <- cell_types_selected
+} else{
+  cell_idents <- unique(meta_data_ct$ct_label)
+}
+
+# which groups should be compared (by default: everything)
+if(!is.null(groups_to_compare)){
+  contrasts_oi <- groups_to_compare
+} else{
+  # find all combinations of comparison_groups
+  comp_pairs <- combn(unique(meta_data_ct$comparison_group),2)
+  
+  # get vector with combinations, including reverse
+  # see documentation for get_DE_info()
+  contrasts_oi <- unique(as.vector(apply(comp_pairs, 2, function(x){
+    comb <- paste(x, collapse = '-')
+    comb_rev <- paste(rev(x), collapse = '-')
+    return(c(comb, comb_rev))
+  })))
+}
+
+contrasts_oi <- sapply(contrasts_oi, function(x){paste0("'", x, "'" )})
+contrasts_oi <- paste(contrasts_oi, collapse = ',')
+
+# prepare input expr mtx --------------------------------------------------
+
+# creating single cell experiment object
+sce <- SingleCellExperiment(
+  assays = list(counts = bprism_res_norm),
+  colData = meta_data_ct
+)
+
+# make sure that gene symbols used in the expression data are updated
+sce = makenames_SCE(alias_to_symbol_SCE(sce, "human")) 
+
+# Define sender and receiver cell types
+# filter to interesting cell types
+senders_oi <- SummarizedExperiment::colData(sce)[, 'ct_label'] %>% unique() %>% .[.%in% cell_idents]
+receivers_oi <- SummarizedExperiment::colData(sce)[, 'ct_label'] %>% unique() %>% .[.%in% cell_idents]
+sce = sce[, SummarizedExperiment::colData(sce)[,'ct_label'] %in% 
+            c(senders_oi, receivers_oi)
+]
+
+# filter lr network files -------------------------------------------------
+
+# TODO move it to outside function
+colnames(ligand_target_matrix) = make.names(convert_alias_to_symbols(colnames(ligand_target_matrix), organism = 'human'))
+rownames(ligand_target_matrix) = make.names(convert_alias_to_symbols(rownames(ligand_target_matrix), organism = 'human'))
+
+lr_network_all = lr_network_all %>% 
+  mutate(ligand = make.names(convert_alias_to_symbols(ligand, organism = 'human')), 
+         receptor = make.names(convert_alias_to_symbols(receptor, organism = 'human'))) 
+
+lr_network = lr_network_all %>% 
+  distinct(ligand, receptor) %>%
+  filter(ligand %in% colnames(ligand_target_matrix))
+
+ligand_target_matrix = ligand_target_matrix[, colnames(ligand_target_matrix) %in% lr_network$ligand]
+
+
+# check cell type abundance -----------------------------------------------
+# diagnostic plots
+# To check whether each cell type have enough number of cells in each sample
+
+abundance_expression_info <- get_abundance_info(sce = sce, 
+                                                sample_id = 'sample_id', 
+                                                group_id = 'comparison_group', 
+                                                celltype_id = 'ct_label', 
+                                                min_cells = min_cells, 
+                                                senders_oi = senders_oi, 
+                                                receivers_oi = receivers_oi,
+                                                batches = main_batch_var)
+
+
+# plotted by comparison + batch
+pdf(file.path(plot_dir,'abund_plot.pdf'), width = 17, height = 10)
+print(abundance_expression_info$abund_plot_sample)
+print(abundance_expression_info$abund_plot_group)
+print(abundance_expression_info$abund_barplot)
+dev.off()
+
+# NicheNet Analysis 01 cell type filtering --------------------------------
+
+abundance_df_summarized = abundance_expression_info$abundance_data %>%
+  mutate(keep = as.logical(keep)) %>%
+  group_by(group_id, celltype_id) %>%
+  summarise(samples_present = sum((keep)))
+
+celltypes_absent_one_condition = abundance_df_summarized %>%
+  filter(samples_present == 0) %>% pull(celltype_id) %>% unique()
+# find truly condition-specific cell types by searching for cell types
+# truely absent in at least one condition
+
+celltypes_present_one_condition = abundance_df_summarized %>%
+  filter(samples_present >= 2) %>% pull(celltype_id) %>% unique()
+# require presence in at least 2 samples of one group so
+# it is really present in at least one condition
+
+condition_specific_celltypes = intersect(
+  celltypes_absent_one_condition,
+  celltypes_present_one_condition)
+
+total_nr_conditions = length(unique(SummarizedExperiment::colData(sce)[,'comparison_group']))
+
+absent_celltypes = abundance_df_summarized %>%
+  filter(samples_present < 2) %>%
+  group_by(celltype_id) %>%
+  dplyr::count() %>%
+  filter(n == total_nr_conditions) %>%
+  pull(celltype_id)
+
+print("condition-specific celltypes:")
+print(condition_specific_celltypes)
+print("absent celltypes:")
+print(absent_celltypes)
+
+#TODO filter out absent cell types
+
+
+# NicheNet analysis 02 - gene filtering ------------------------------------
+
+frq_list = get_frac_exprs(
+  sce = sce, 
+  sample_id = 'sample_id', 
+  group_id = 'comparison_group', 
+  celltype_id = 'ct_label', 
+  batches = main_batch_var,
+  min_cells = min_cells, 
+  fraction_cutoff = fraction_cutoff, 
+  min_sample_prop = min_sample_prop)
+
+
+# Now only keep genes that are expressed by at least one cell type:
+genes_oi = frq_list$expressed_df %>% 
+  filter(expressed == TRUE) %>% pull(gene) %>% unique() 
+
+sce = sce[genes_oi, ]
+
+# NicheNet analysis 03 pseudobulk expression calculation ------------------
+
+abundance_expression_info = process_abundance_expression_info(
+  sce = sce, 
+  sample_id = 'sample_id',
+  group_id = 'comparison_group',
+  celltype_id = 'ct_label', 
+  min_cells = min_cells, 
+  senders_oi = senders_oi, 
+  receivers_oi = receivers_oi, 
+  lr_network = lr_network, 
+  batches = main_batch_var, 
+  frq_list = frq_list, 
+  abundance_info = abundance_expression_info)
+
+#TODO Warning message:
+# In get_pseudobulk_logCPM_exprs(sce, sample_id = sample_id, celltype_id = celltype_id,  :
+# Not all possible group-batch/batch combinations are present in your data. 
+# This will result in errors during the batch effect correction process of Combat and/or Muscat DE analysis. 
+# Please reconsider the groups and batches you defined.
+
+# NicheNet Analysis 04 Differential Expression ----------------------------
+
+#TODO 
+# IF there are externally provided DEGS
+
+if(!is.null(celltype_de_external_path)){
+  celltype_de = readRDS(celltype_de_external_path)
+} else{
+  
+  DE_info = get_DE_info(
+    sce = sce, 
+    sample_id = 'sample_id', 
+    group_id = 'comparison_group',
+    celltype_id = 'ct_label', 
+    batches = main_batch_var, 
+    covariates = sample_name, 
+    contrasts_oi = contrasts_oi, 
+    min_cells = min_cells, 
+    expressed_df = frq_list$expressed_df)
+  
+  
+  if(empirical_pval == TRUE){
+    DE_info_emp = get_empirical_pvals(DE_info$celltype_de$de_output_tidy)
+    celltype_de = DE_info_emp$de_output_tidy_emp %>% select(-p_val, -p_adj) %>% 
+      rename(p_val = p_emp, p_adj = p_adj_emp)
+    
+  } else {
+    celltype_de = DE_info$celltype_de$de_output_tidy
+    
+  }  
+  
+  
+}
+
+
+# Combine DE information for ligand-senders and receptors-receivers
+
+sender_receiver_de = multinichenetr::combine_sender_receiver_de(
+  sender_de = celltype_de,
+  receiver_de = celltype_de,
+  senders_oi = senders_oi,
+  receivers_oi = receivers_oi,
+  lr_network = lr_network
+)
+
+
+# plot to check the p value distribution
+
+pdf(file.path(plot_dir,'hist_pvals.pdf'), width = 17, height = 10)
+print(DE_info$hist_pvals)
+dev.off()
+
+
+# TODO save geneset_assessment
+
+geneset_assessment = contrast_tbl$contrast %>% 
+  lapply(
+    process_geneset_data, 
+    celltype_de, logFC_threshold, p_val_adj, p_val_threshold
+  ) %>% 
+  bind_rows() 
+
+write.csv(geneset_assessment, file.path(output_dir,MultiNicheNet_folder_name,"geneset_assessment.csv"))
+
+
+if (all(geneset_assessment$n_geneset_up == 0)) {
+  stop("Execution halted: there are no up regulated genes between groups. check the geneset_assessment table saved in MultiNicheNet output folder")
+}
+
+
+############################################################################################
+##############################################################################################
+##############################################################################################
 # param
+comparison <- c('stroma', 'tumor')
+
 
 cell_frac_cutoff = 0.01 # cutoff to filter out AOIs based on the bayesprsim cell fraction values
 
@@ -27,8 +386,11 @@ verbose = TRUE
 cores_system = detectCores()-4
 
 ##################
+############################
+#############################
 
-cell_idents = cell_types
+# TODO if null, take all types from metadf
+cell_idents = cell_types_selected
 
 
 # TODO generate contrasts and contrast table from grouping_var_col_ids
@@ -46,10 +408,6 @@ contrast_tbl <- tibble(contrast = c(paste(comparison[1], comparison[2], sep = "-
                        group = c(comparison[1], comparison[2]))
 
 
-# for plots
-
-plot_dir = file.path(output_dir, MultiNicheNet_folder_name,'plots_and_csv_files')
-dir.create(plot_dir , recursive = T, showWarnings = F)
 
 #  Extracting expression data of the desired cell types and combining
 
@@ -121,6 +479,8 @@ metadt_all <- metadt_all[rownames(metadt_all) %in% colnames(expr_deseq2_norm_log
 expr_deseq2_norm_log_cf_filtered = expr_deseq2_norm_log_cf_filtered[,colnames(expr_deseq2_norm_log_cf_filtered) %in% rownames(metadt_all)]
 
 
+#################################################33
+######################################################
 
 # creating single cell experiment object
 

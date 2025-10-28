@@ -21,8 +21,12 @@ grouping_var_col_ids <- c("Segment") # define the meta data column names of the 
 cell_types_selected <- NULL
 
 # parameters for Cellchat
+# TODO rerun with 0.01
 cell_frac_cutoff = 0.005 # 0.01 or 0.005
 min_cells = 10 # Number of minimum cells in each cell group
+
+thresh_fc = 0.1 # min FC between cell types to count as diff expr
+thresh_p = 0.05 # min pval of selected lr pairs
 
 # variables to merge the final csv with
 meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
@@ -113,6 +117,7 @@ gc()
 bprism_res_sel <- bprism_res_sel[, !grepl('Mast_cells', colnames(bprism_res_sel))]
 meta_data_sel <- meta_data_sel[meta_data_sel$ct_label != 'Mast_cells', ]
 
+#TODO until this it's the same with NicheNetR - can be combined in 1 script
 # calculate cellchat probabilities ----------------------------------------
 
 #  calculating the cellchat probabilties
@@ -136,8 +141,8 @@ for(group in unique(meta_data_sel$comparison_group)) {
   cellchat_results[[group]] <- cellchat_predict_prob(
     meta_data_sel_group,
     bprism_res_sel_group,
-    thresh_fc = 0.1, 
-    thresh_p = 0.05, 
+    thresh_fc = thresh_fc, 
+    thresh_p = thresh_fc, 
     min_cells = min_cells
   )
 }
