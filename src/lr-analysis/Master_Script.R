@@ -1,6 +1,6 @@
 # Master Script
 
-devtools::install_github('immunogenomics/presto')
+#devtools::install_github('immunogenomics/presto')
 
 # load libraries
 
@@ -65,6 +65,7 @@ geomx_MultiNicheNet_path <<- file.path(output_dir, 'lr_interactions', 'multi_nic
 
 # load util functions  -------------------------------------
 
+# TODO move all utils to 1 script
 source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'BulkSignalR_LR_utils.R'))
 source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'cellChat_util.R'))
 
@@ -174,6 +175,7 @@ run_unless_exists('BulkSignaR LR Analysis', geomx_BulkSignalR_path,
 pathway <<- read.csv(file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'immune_signatures_selected_forpaper_names_reactome_gobp.csv')) 
 
 # for plots
+# can be hardcoded inside
 plot_dir = file.path(output_dir, 'lr_interactions', 'bulk_signalr', 'plots_and_csv_files')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
@@ -190,6 +192,35 @@ source("/home/iganiemi/Documents/phd/st/geomx-processing/src/lr-analysis/BulkSig
 
 # conditionally run CellChat LR Analysis -----------------------------------------
 
+scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+sample_name <- 'Sample'
+# common parameters
+grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
+
+# parameters for CellChat and MultiNicheNet : Single cell approaches
+# names of cells to fin
+cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
+
+# parameters for Cellchat
+cell_frac_cutoff = 0.005 # 0.01 or 0.005
+min_cells = 10 # Number of minimum cells in each cell group
+
+outct <- ifelse(!is.null(cell_types_selected), paste(cell_types_selected, collapse = '_'), 'all')
+
+# path to cellchat output file
+geomx_CellChat_path <- file.path(output_dir, 'lr_interactions', 'cell_chat', 
+                                 paste0('CellChat_output_',paste(grouping_var_col_ids, collapse = '_'),
+                                        '_', outct, '.RDS'))
+
+# path to output lr dataframe
+cc_lr_df_path <- file.path(output_dir, 'lr_interactions', 'cell_chat', 
+                           paste0('CellChat_df_',paste(grouping_var_col_ids, collapse = '_'),
+                                  '_', outct, '_lr.csv'))
+
+cc_path_df_path <- file.path(output_dir, 'lr_interactions', 'cell_chat', 
+                             paste0('CellChat_df_', paste(grouping_var_col_ids, collapse = '_'),
+                                    '_', outct, '_pathway.csv'))
+
 run_unless_exists('CellChat LR Analysis', geomx_CellChat_path, 
                   file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Analysis.R'))
 
@@ -197,14 +228,15 @@ run_unless_exists('CellChat LR Analysis', geomx_CellChat_path,
 # CellChat Visualization -----------------------------------------
 
 # for plots
-plot_dir = file.path(output_dir, CellChat_folder_name,'plots_and_csv_files')
+# can be hardcoded inside
+plot_dir = file.path(output_dir, 'lr_interactions', 'cell_chat', 'plots_and_csv_files')
 dir.create(plot_dir , recursive = T, showWarnings = F)
 
 # Params
 
 manually_filtered_cellchat_df = NULL # to plot the bubble plot: If you want to visulaze your own filtered dataframe provide the dataframe  eg: readRDS(file.path(output_dir,"df_combined_cellchat_for_plot.RDS"))
 pval_threshold = 0.01
-prob_threshold = 0.05
+prob_threshold = 0.1
 
 source(file.path(proj_dir, 'LR_Analysis', 'CellChat_LR_Visualization.R'))
 

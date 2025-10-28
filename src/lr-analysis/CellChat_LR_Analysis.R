@@ -10,26 +10,19 @@
 
 # define parameters -------------------------------------------------------
 
+# common params
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 sample_name <- 'Sample'
-# common parameters
 grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
-
-# TODO BSR - handled with code - check for NN and CC
-# define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre_stroma","pre_tumor") order matters. 
-# Can compare only two groups at a time
-# comparison <- c("stroma","tumor") 
 
 # parameters for CellChat and MultiNicheNet : Single cell approaches
 # names of cells to fin
-cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
+#cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
+cell_types_selected <- NULL
 
 # parameters for Cellchat
 cell_frac_cutoff = 0.005 # 0.01 or 0.005
 min_cells = 10 # Number of minimum cells in each cell group
-
-# normalised + in log form (best after batch effect correction - then always in log form)
-# data_type <- "harmony_batch_corr_deseq2_vst"  
 
 # variables to merge the final csv with
 meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
@@ -43,15 +36,26 @@ bp_res_path <- file.path(output_dir, 'deconvolution', 'bayes_prism',
 bp_ct_frac_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 
                                        paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))
 
-
 # path to the prepared normalized pseudo scRNaseq dataset from all bpres
 bp_pseudosc_path <- file.path(output_dir, 'lr_interactions', 
                               paste0('bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_norm.csv'))
 
+# output paths
+outct <- ifelse(!is.null(cell_types_selected), paste(cell_types_selected, collapse = '_'), 'all')
+
 # path to cellchat output file
 geomx_CellChat_path <- file.path(output_dir, 'lr_interactions', 'cell_chat', 
                                  paste0('CellChat_output_',paste(grouping_var_col_ids, collapse = '_'),
-                                        '_', paste(cell_types_selected, collapse = '_'), '.RDS'))
+                                        '_', outct, '.RDS'))
+
+# path to output lr dataframe
+cc_lr_df_path <- file.path(output_dir, 'lr_interactions', 'cell_chat', 
+                           paste0('CellChat_df_',paste(grouping_var_col_ids, collapse = '_'),
+                                  '_', outct, '_lr.csv'))
+
+cc_path_df_path <- file.path(output_dir, 'lr_interactions', 'cell_chat', 
+                             paste0('CellChat_df_', paste(grouping_var_col_ids, collapse = '_'),
+                                    '_', outct, '_pathway.csv'))
 
 # load geomx metadata -----------------------------------------------------
 
@@ -106,6 +110,9 @@ if(!is.null(cell_types_selected)) {
 rm(bprism_res_norm)
 gc()
 
+bprism_res_sel <- bprism_res_sel[, !grepl('Mast_cells', colnames(bprism_res_sel))]
+meta_data_sel <- meta_data_sel[meta_data_sel$ct_label != 'Mast_cells', ]
+
 # calculate cellchat probabilities ----------------------------------------
 
 #  calculating the cellchat probabilties
@@ -120,8 +127,10 @@ for(group in unique(meta_data_sel$comparison_group)) {
   bprism_res_sel_group <- bprism_res_sel[, meta_data_sel_group$dcc_ct]
   
   # return error if not enough cells for comparison
+  # TODO if too little cells in a group - remove this ct + omit it while plotting
   if(any(as.vector(table(meta_data_sel_group$ct_label)) < min_cells)){
-    stop(paste0('nr of cells in comparison group smaller than min_cells'))
+    print(table(meta_data_sel_group$ct_label))
+    next(paste0('nr of cells in comparison group smaller than min_cells'))
   }
 
   cellchat_results[[group]] <- cellchat_predict_prob(
@@ -153,14 +162,8 @@ lr_df_all_groups <- lapply(names(cellchat_results), function(group){
   return(list(net = df.net, path = df.path))
 })
 
-
 lr_df_combined <- do.call(Map, c(f = rbind, lr_df_all_groups))
 
 # save LR and pathway dfs
-fwrite(lr_df_combined[[1]], file = file.path(output_dir, 'lr_interactions', 'cell_chat', 
-                                              paste0('CellChat_lr_df_',paste(grouping_var_col_ids, collapse = '_'),
-                                                     '_', paste(cell_types_selected, collapse = '_'), '.csv')))
-
-fwrite(lr_df_combined[[2]], file = file.path(output_dir, 'lr_interactions', 'cell_chat', 
-                                             paste0('CellChat_pathway_df_',paste(grouping_var_col_ids, collapse = '_'),
-                                                    '_', paste(cell_types_selected, collapse = '_'), '.csv')))
+fwrite(lr_df_combined[[1]], file = cc_lr_df_path)
+fwrite(lr_df_combined[[2]], file = cc_path_df_path)
