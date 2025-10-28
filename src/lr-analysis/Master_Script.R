@@ -1,5 +1,7 @@
 # Master Script
 
+devtools::install_github('immunogenomics/presto')
+
 # load libraries
 
 library(BayesPrism)
@@ -7,6 +9,7 @@ library(DESeq2)
 library(harmony)
 library(ggplot2)
 library(tools)
+library(parallel)
 
 library(BulkSignalR, quietly =T)
 library(igraph, quietly =T)
@@ -22,6 +25,7 @@ library(CellChat, quietly =T)
 library(patchwork, quietly =T)
 library(ggh4x)
 library(rlang)
+library(presto)
 
 #library(tidyverse) # check
 library(stringr)
@@ -47,6 +51,7 @@ library(readr)
 library(stringr)
 library(data.table)
 library(dplyr)
+library(tibble)
 
 # define intermediate output folders and paths  ----------------------------------------
 
