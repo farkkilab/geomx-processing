@@ -206,10 +206,15 @@ create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna
     ct_fraq <- cell_fractions_df[!is.na(cell_fractions_df[[ct_name]]), c('dcc_filename', ct_name)]
     aoi_with_ct <- ct_fraq$dcc_filename[ct_fraq[[ct_name]] >= cell_frac_cutoff]
     
-    bprism_ct_filt <- bprism_ct[, colnames(bprism_ct) %in% aoi_with_ct]
-    colnames(bprism_ct_filt) <- paste0(colnames(bprism_ct_filt), '_', ct_name)
-    
-    return(bprism_ct_filt)
+    if(length(aoi_with_ct) > 0){
+      bprism_ct_filt <- bprism_ct[, colnames(bprism_ct) %in% aoi_with_ct]
+      # add ct name to dcc colname
+      colnames(bprism_ct_filt) <- paste0(colnames(bprism_ct_filt), '_', ct_name)
+      
+      return(bprism_ct_filt)
+    } else(
+      return()
+    )
   })
   
   cbind.fill <- function(df_list){
@@ -218,6 +223,9 @@ create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna
     do.call(cbind, lapply(nm, function (x) 
       rbind(x, matrix(, n-nrow(x), ncol(x))))) 
   }
+  
+  # clean list from ct for which vst was not computed 
+  bprism_res_filtered[sapply(bprism_res_filtered, is.null)] <- NULL
   
   bprism_res_filtered <- cbind.fill(bprism_res_filtered)
   
