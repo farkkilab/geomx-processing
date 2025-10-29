@@ -22,7 +22,7 @@ cell_types_selected <- NULL
 
 # parameters for Cellchat
 # TODO rerun with 0.01
-cell_frac_cutoff = 0.005 # 0.01 or 0.005
+cell_frac_cutoff = 0.01 # 0.01 or 0.005
 min_cells = 10 # Number of minimum cells in each cell group
 
 thresh_fc = 0.1 # min FC between cell types to count as diff expr
@@ -131,11 +131,19 @@ for(group in unique(meta_data_sel$comparison_group)) {
   meta_data_sel_group <- meta_data_sel[meta_data_sel$comparison_group == group, ]
   bprism_res_sel_group <- bprism_res_sel[, meta_data_sel_group$dcc_ct]
   
-  # return error if not enough cells for comparison
-  # TODO if too little cells in a group - remove this ct + omit it while plotting
+  # remove ct if not enough cells for comparison
   if(any(as.vector(table(meta_data_sel_group$ct_label)) < min_cells)){
     print(table(meta_data_sel_group$ct_label))
-    next(paste0('nr of cells in comparison group smaller than min_cells'))
+  
+    ct_freq <- as.data.frame(table(meta_data_sel_group$ct_label))
+    too_little_ct <- as.character(ct_freq$Var1[ct_freq$Freq < min_cells])
+    
+    print(paste('min number of cells are', min_cells, 'the following cell types will be removed:'))
+    print(too_little_ct)
+    
+    # filtering out ct
+    meta_data_sel_group <- meta_data_sel_group[!(meta_data_sel_group$ct_label %in% too_little_ct), ]
+    bprism_res_sel_group <- bprism_res_sel_group[, !grepl(paste(too_little_ct, collapse = '|'), colnames(bprism_res_sel_group))]
   }
 
   cellchat_results[[group]] <- cellchat_predict_prob(

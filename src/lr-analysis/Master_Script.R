@@ -74,44 +74,44 @@ source(file.path(proj_dir, 'geomx-processing', 'src','lr-analysis', 'cellChat_ut
 
 # define params -----------------------------------------------------------
 
-#TODO move to the main script
-# column name of cell type label in scRNAseq metadata
-scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
-
-# common parameters
-grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
-
-# TODO BSR - handled with code - check for NN and CC
-# define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre_stroma","pre_tumor") order matters. 
-# Can compare only two groups at a time
-comparison <- c("stroma","tumor") 
-
-# parameters for CellChat and MultiNicheNet : Single cell approaches
-# names of cells to fin
-cell_types = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
-
-
-# parameters for MultiNicheNet only
-
-# covariates for EdgeR DEGs calculated by MultiNicheNet. 
-# How to define the covariate: If the defined covaraite id not present in both groups of interest EdgeR will not run.
-# therefore in such case leave the covariate to "NA" 
-covariates =  "Sample"
-
+# #TODO move to the main script
+# # column name of cell type label in scRNAseq metadata
+# scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+# 
+# # common parameters
+# grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
+# 
+# # TODO BSR - handled with code - check for NN and CC
+# # define the groups from  "grouping_var_col_ids" that needed to be compared eg: c("pre_stroma","pre_tumor") order matters. 
+# # Can compare only two groups at a time
+# comparison <- c("stroma","tumor") 
+# 
+# # parameters for CellChat and MultiNicheNet : Single cell approaches
+# # names of cells to fin
+# cell_types = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
+# 
+# 
+# # parameters for MultiNicheNet only
+# 
+# # covariates for EdgeR DEGs calculated by MultiNicheNet. 
+# # How to define the covariate: If the defined covaraite id not present in both groups of interest EdgeR will not run.
+# # therefore in such case leave the covariate to "NA" 
+# covariates =  "Sample"
+# 
 
 # load data ----------------------------------------------
 
 # TODO move to low-lvl scripts
-geomx_obj <<- readRDS(geomx_norm_batch_eff_rm_path) # batch effect corrected Geomx Object
-
-bprism_res <<- readRDS(file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                               paste0('bp_res_', scrna_anno, '.RDS'))) # raw BayesPrism result Object
-
-cell_fractions_df <<- read.csv(file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                       paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))) # cell fractions from BayesPrism
-
-ligand_target_matrix <<- readRDS(file.path(nichenet_data_dir,"ligand_target_matrix_nsga2r_final.rds")) # NicheNet model
-lr_network_all <<- readRDS(file.path(nichenet_data_dir,"lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network
+# geomx_obj <<- readRDS(geomx_norm_batch_eff_rm_path) # batch effect corrected Geomx Object
+# 
+# bprism_res <<- readRDS(file.path(output_dir, 'deconvolution', 'bayes_prism', 
+#                                paste0('bp_res_', scrna_anno, '.RDS'))) # raw BayesPrism result Object
+# 
+# cell_fractions_df <<- read.csv(file.path(output_dir, 'deconvolution', 'bayes_prism', 
+#                                        paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))) # cell fractions from BayesPrism
+# 
+# ligand_target_matrix <<- readRDS(file.path(nichenet_data_dir,"ligand_target_matrix_nsga2r_final.rds")) # NicheNet model
+# lr_network_all <<- readRDS(file.path(nichenet_data_dir,"lr_network_human_allInfo_30112033.rds")) # NicheNetR LR network
 
 # set up metadata variables names -----------------------------------------
 # already defined in a main script
@@ -175,10 +175,11 @@ grouping_var_col_ids <- c("Segment") # define the meta data column names of the 
 
 # parameters for CellChat and MultiNicheNet : Single cell approaches
 # names of cells to fin
-cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
+#cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
+cell_types_selected <- NULL
 
 # parameters for Cellchat
-cell_frac_cutoff = 0.005 # 0.01 or 0.005
+cell_frac_cutoff = 0.01 # 0.01 or 0.005
 min_cells = 10 # Number of minimum cells in each cell group
 
 outct <- ifelse(!is.null(cell_types_selected), paste(cell_types_selected, collapse = '_'), 'all')
