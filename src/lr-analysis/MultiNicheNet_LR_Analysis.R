@@ -1,5 +1,9 @@
 # Ligand Receptor Analysis  by CellChat : Geomx Deconvoluted data
-
+# TODO NicheNet code is absolutely dreadful
+# TODO the whole concept is based on the ideas of comparing 2 conditions
+# TODO for DGE theres an assumption that 1 sample belongs to 1 condition 
+# TODO in general it might not be useful for the future - abandoned for now
+# TODO maybe with adding externally calculated DGE..
 
 # define params -----------------------------------------------------------
 
@@ -109,6 +113,7 @@ meta_data_ct$ct_label <- gsub('^[^_]*', '', meta_data_ct$dcc_ct)
 meta_data_ct$ct_label <- gsub('^_', '', meta_data_ct$ct_label)
 rownames(meta_data_ct) <- meta_data_ct$dcc_ct
 meta_data_ct$samples <- meta_data_ct[[sample_name]]
+meta_data_ct$celltype_id <- meta_data_ct$ct_label
 
 # hacking NichenetR - 1 sample can only be in 1 group
 if(is.null(grouping_var_col_ids_within_sample)){
@@ -287,8 +292,6 @@ abundance_expression_info = process_abundance_expression_info(
 
 # NicheNet Analysis 04 Differential Expression ----------------------------
 
-#TODO 
-# IF there are externally provided DEGS
 
 if(!is.null(celltype_de_external_path)){
   celltype_de = readRDS(celltype_de_external_path)
@@ -300,7 +303,7 @@ if(!is.null(celltype_de_external_path)){
     group_id = 'comparison_group',
     celltype_id = 'ct_label', 
     batches = main_batch_var, 
-    covariates = sample_name, 
+    covariates = 'sample_id', 
     contrasts_oi = contrasts_oi, 
     min_cells = min_cells, 
     expressed_df = frq_list$expressed_df)
