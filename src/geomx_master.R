@@ -19,7 +19,8 @@
 # TODO move loading pck to certain scripts
 # main packages for all scripts
 library(plyr, quietly =T)
-library(dplyr, quietly =T)
+library(dplyr, quietly =T)# geomx_pcg_list <- c('devtools','BiocManager', 'plyr', 'dplyr', 'data.table', 'tibble', 'tools', 'parallel',
+#                     'ggforce', 'ggplot2', 'cowplot', 'ggrepel', 'reshape2', 
 library(data.table, quietly =T)
 library(tibble, quietly =T)
 library(tools, quietly = T)
@@ -125,16 +126,17 @@ if(batch == 'batch1'){
 
 # input data
 dcc_path <<- dir(file.path(data_dir, "dcc"), pattern = ".dcc$",
-                full.names = TRUE, recursive = TRUE)
+                 full.names = TRUE, recursive = TRUE)
 pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name in metadata
+scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE165897_qc_downsampled_10k.RDS')
 scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE266577_qc_downsampled_keepfreq.RDS')
 
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-                              'ct_markers.csv')
+                               'ct_markers.csv')
 
 
 # set up metadata variables names -----------------------------------------
@@ -208,10 +210,10 @@ run_unless_exists('Batch effect removal', geomx_norm_batch_eff_rm_path,
 # conditionally run deconvolution -----------------------------------------
 
 # column name of cell type label in scRNAseq metadata
-scrna_anno <<- 'low_lvl_ct' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
+scrna_anno <<- 'mid_lvl_ct_updated' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 deconv_logs_path <<- file.path(output_dir,'deconvolution', 
-                             paste0('deconv_', scrna_anno, '_logs.txt'))
+                               paste0('deconv_', scrna_anno, '_logs.txt'))
 
 run_unless_exists('Deconvolution', deconv_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
@@ -221,7 +223,7 @@ run_unless_exists('Deconvolution', deconv_logs_path,
 
 scrna_anno <<- 'mid_lvl_ct_updated' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
-pathway_inp_data_type <<- c('bp') # within c('all', 'bp')
+pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
@@ -231,7 +233,8 @@ pathway_inp_data_type <<- c('bp') # within c('all', 'bp')
 
 # mid_lvl_ct_updated
 ct_of_interest <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
-                     "Macrophages_Monocytes", "DCs", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor")
+                    "Macrophages_Monocytes", "DCs", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor")
+ct_of_interest <- NULL
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types

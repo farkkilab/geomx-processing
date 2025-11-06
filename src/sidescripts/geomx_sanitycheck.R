@@ -43,7 +43,7 @@ if(batch == 'batch1'){
 } else if(batch == 'batch23'){
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch23
 } else if(batch == 'batch123'){
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-1710') # batch123
 }else{
   stop('wrong batch nr')
 }
@@ -71,10 +71,15 @@ if(scrna_anno == 'mid_lvl_ct'){
   #               "Macrophages_Monocytes", "DCs", "Mast_cells", "Fibroblasts", "Endothelial_cells", "tumor")
   # cells_immune <- c("Tcells_reg","Tcells_CD8","Tcells_CD4", "Tcells_other", "Bcells", 
   #                   "Macrophages", "Monocytes", "DCs", "Mast_cells")
-  ct_names <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
-                "Macrophages_Monocytes", "DCs", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor")
-  cells_immune <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
-                "Macrophages_Monocytes", "DCs")
+  # ct_names <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
+  #               "Macrophages_Monocytes", "DCs", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor")
+  # cells_immune <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
+  #               "Macrophages_Monocytes", "DCs")
+  
+  ct_names <- c("tumor", "Fibroblasts", "Mesothelial", "Endothelial", "T_cells", "Plasma_cells",
+                "NK", "DC", "B_cells", "Macrophages", "pDC", "Mast_cells", "ILC")
+  cells_immune <- c("T_cells", "Plasma_cells", "NK", "DC", "B_cells", "Macrophages", "pDC", "Mast_cells", "ILC")
+  
 } else if(scrna_anno == 'low_lvl_ct'){
   ct_names <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells", "Fibroblasts_Endothelial", "tumor")
   cells_immune <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells")
@@ -323,8 +328,11 @@ colnames(cell_fraq_sd) <- c('dcc_filename', paste0(ct_names, '_sd'))
 
 cell_fraq_both <- left_join(cell_fraq_bp, cell_fraq_sd)
 
-cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_Mesothelial_bp + cell_fraq_both$Endothelial_cells_bp
-cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_Mesothelial_sd + cell_fraq_both$Endothelial_cells_sd
+cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_bp + cell_fraq_both$Mesothelial_bp + cell_fraq_both$Endothelial_bp
+cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_sd + cell_fraq_both$Mesothelial_sd + cell_fraq_both$Endothelial_sd
+
+# cell_fraq_both$stroma_bp <- cell_fraq_both$Fibroblasts_Mesothelial_bp + cell_fraq_both$Endothelial_cells_bp
+# cell_fraq_both$stroma_sd <- cell_fraq_both$Fibroblasts_Mesothelial_sd + cell_fraq_both$Endothelial_cells_sd
 
 cell_fraq_both_long <- melt(cell_fraq_both, id.vars = c('dcc_filename', 'Segment', 'Annotation_cell'),
                             variable.name = 'cell_type', value.name = 'fraction')

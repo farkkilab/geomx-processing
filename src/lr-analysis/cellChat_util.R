@@ -186,11 +186,71 @@
 # 
 # }
 
-# create pseudo scRNaseq dataset from all deconvolution results
-
-create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna_anno, cell_frac_cutoff, bp_pseudosc_path){
+do_normalisation <- function(expr_mtx, meta_data, 
+                             norm_type = c('q3_norm', 'log_norm', 'deseq2', 'deseq2_vst', 'libsize_log'),
+                             aoi_segment_var = 'Segment', main_experimental_condition = 'NACT_status'){
   
-  # load and filter raw bayesprism results
+  # remove genes with only 0 counts
+  expr_mtx <- expr_mtx[rowSums(expr_mtx) != 0, ]
+  
+  if(norm_type == 'deseq2_vst'){
+    #add pseudocount 1 to avoid vst error with log geo means
+    # https://help.galaxyproject.org/t/error-with-deseq2-every-gene-contains-at-least-one-zero/564/2
+    expr_mtx <- expr_mtx + 1
+    
+    # do vst normalisation
+    # before it was wrapped in trycatch, may be needed to comeback
+    expr_mtx_norm <- varianceStabilizingTransformation(round(expr_mtx))
+    
+  } else if(norm_type == 'q3_norm'){
+    # upper quartile normalisation from sourcecode of GeoMxTools normalize() function
+    qs <- apply(expr_mtx, 2, function(x) stats::quantile(x, 0.75))
+    expr_mtx_norm <- sweep(expr_mtx, 2L, qs / ngeoMean(qs), FUN = "/")
+    
+    #qs_norm_factors <- qs / ngeoMean(qs)     # may be needed for additional validation
+  } else if(norm_type == 'log_norm'){
+    # try with log_norm but as bad as q3
+    expr_mtx_norm <- NormalizeData(expr_mtx, normalization.method = "LogNormalize", scale.factor = 10000)
+  } else if(norm_type == 'deseq2'){
+    # normalization with DESeq
+    
+    # make metadata with dcc_cell type
+    dcc_ct <- data.frame('dcc_filename' = gsub('_.*', '', colnames(expr_mtx)), 
+                         'dcc_ct' = colnames(expr_mtx))
+    meta_data_ct <- left_join(dcc_ct, meta_data)
+    meta_data_ct$ct_label <- gsub('^[^_]*', '', meta_data_ct$dcc_ct)
+    meta_data_ct$ct_label <- gsub('^_', '', meta_data_ct$ct_label)
+
+    # Create DESeq2Dataset object
+    design_formula <- as.formula(paste("~", aoi_segment_var, "+", main_experimental_condition))
+    
+    expr_int <- apply(expr_mtx, c(1, 2), function(x) {(as.integer(x))})
+    expr_int <- expr_int + 1 # add pseudocount
+    
+    dds <- DESeqDataSetFromMatrix(countData = expr_int,
+                                  colData = meta_data_ct,
+                                  design = design_formula) # TODO check the warning message
+    
+    dds <- estimateSizeFactors(dds) # did not work
+    expr_mtx_norm <- counts(dds, normalized=TRUE)
+    
+  } else if (norm_type == 'libsize_log'){
+    # do library size normalisation + log transformation 
+    expr_mtx_norm <- normalizeData(expr_mtx, do.log = T, do.sparse = T)
+  } else{ 
+    stop(print('choose either q3_norm log_norm deseq2 deseq2_vst libsize_log as norm_type'))
+  }
+  
+  return(expr_mtx_norm)
+}
+
+# create pseudo scRNaseq dataset from all deconvolution results
+#TODO change in cellchat script - new params
+create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna_anno, cell_frac_cutoff, bp_pseudosc_path, 
+                                             norm_type = c('q3_norm', 'log_norm', 'deseq2', 'deseq2_vst', 'libsize_log'),
+                                             meta_data = NULL, aoi_segment_var = 'Segment', main_experimental_condition = 'NACT_status'){
+  
+  # load and filter raw bayesprism results and metadata
   bprism_res <<- readRDS(bp_res_path) # raw bp results
   ct_names <- colnames(get.fraction (bp=bprism_res, which.theta="final", state.or.type="type"))
   
@@ -224,55 +284,31 @@ create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna
       rbind(x, matrix(, n-nrow(x), ncol(x))))) 
   }
   
-  # clean list from ct for which vst was not computed 
+  # clean list from ct with no cells 
   bprism_res_filtered[sapply(bprism_res_filtered, is.null)] <- NULL
   
   bprism_res_filtered <- cbind.fill(bprism_res_filtered)
   
   fwrite(bprism_res_filtered, file.path(dirname(bp_pseudosc_path), 
-                                        paste0('bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '.csv')),
+                                        paste0('bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_raw.csv')),
          row.names = TRUE)
   
   # plot distributions
   plot_expr_distribution(bprism_res_filtered, paste('pseudo scRNAseq from deconv ct raw'), 
                          file.path(dirname(bp_pseudosc_path), 
                                    paste0('expr_hist_bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_raw.png')), is_log = F)
+  
 
-  # normalisation 
-  # from Cellchat vignette: (e.g., library-size normalization and then log-transformed with a pseudocount of 1)
-  
-  # remove genes with only 0 counts
-  bprism_res_filtered <- bprism_res_filtered[rowSums(bprism_res_filtered) != 0, ]
-  
-  # do library size normalisation + log transformation 
-  bprism_res_norm <- normalizeData(bprism_res_filtered, do.log = T, do.sparse = T)
+  bprism_res_norm <- do_normalisation(bprism_res_filtered, meta_data, 
+                               norm_type, aoi_segment_var, main_experimental_condition)
 
   fwrite(bprism_res_norm, bp_pseudosc_path, row.names = TRUE)
   
   plot_expr_distribution(bprism_res_norm, paste('pseudo scRNAseq from deconv ct norm'), 
                          file.path(dirname(bp_pseudosc_path), 
-                                   paste0('expr_hist_bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_normlog2.png')), is_log = T)
-  
-  # # normalization with DESeq
-  # # maybe it looks better than standard - hard to say..
-  # 
-  # # Create DESeq2Dataset object
-  # design_formula <- as.formula(paste("~", aoi_segment_var, "+", main_experimental_condition))
-  # 
-  # expr_int <- apply(bprism_res_filtered, c(1, 2), function(x) {(as.integer(x))})
-  # expr_int <- expr_int + 1 # add pseudocount
-  # 
-  # dds <- DESeqDataSetFromMatrix(countData = expr_int,
-  #                               colData = meta_data_ct,
-  #                               design = design_formula) # TODO check the warning message
-  # 
-  # dds <- estimateSizeFactors(dds) # did not work
-  # deseq2_norm_counts <- counts(dds, normalized=TRUE)
-  # 
-  # plot_expr_distribution(deseq2_norm_counts, paste('pseudo scRNAseq from deconv ct deseq2 norm'), 
-  #                        file.path(output_dir, 'lr_interactions', 
-  #                                  paste0('expr_hist_bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_deseq2_norm.png')), is_log = F)
-  # 
+                                   paste0('expr_hist_bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_', norm_type, '.png')), 
+                         is_log = ifelse(norm_type %in% c('q3_norm', 'deseq2'), FALSE, TRUE))
+  return(bprism_res_norm)
 }
 
 ########################################################################

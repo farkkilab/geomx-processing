@@ -19,7 +19,7 @@ low_complex_rmv <- TRUE
 adj_synonym <- T # whether or not adjust synonyms genes
 # around 300 genes can be rescued this way but ensembl does not always work
 # if there are issues, turn it off
-min_sign_gene_nr <- 5 # signatures with less nr of genes will be removed, 5 is min in msigdb
+min_sign_gene_nr <- 10 # signatures with less nr of genes will be removed, 5 is min in msigdb
 
 compute_hallmark <- T
 # should GSEA for msigdb hallmark be computed
@@ -32,14 +32,19 @@ msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG','CP:KEGG_MEDICUS', 'GO:BP')
 dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, recursive = T)
 
-norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
+norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2'), FALSE, TRUE)
 norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) #TODO is it needed?
 
 
 # path to deconvolution mtx
+# deconv_bp_path <- file.path(output_dir,'deconvolution', 'bayes_prism', 
+#                             paste0('bp_res_', scrna_anno,'_expr_mtx_cleaned_', 
+#                                    deconv_norm_type, '_', deconv_batch_rm_type, '_corr.RDS'))
+
+
 deconv_bp_path <- file.path(output_dir,'deconvolution', 'bayes_prism', 
-                            paste0('bp_res_', scrna_anno,'_expr_mtx_cleaned_', 
-                                   deconv_norm_type, '_', deconv_batch_rm_type, '_corr.RDS'))
+                            paste0('bp_res_pseudosc_', scrna_anno,'_ct_frac_0.005_', 
+                                   deconv_norm_type, '_', deconv_batch_rm_type, '.csv'))
 
 #TODO move somewhere else - before normalisation? 
 # path to cleaned scrna which should be calculated in deconvolution step - for low complex gene rmv 
@@ -50,15 +55,16 @@ raw_counts_layer <- 'counts'
 
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 
-if(low_complex_rmv){
-  # removing low complexity genes as it was done before bp deconvolution
-  scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
-  geomx_obj <-   remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
-} 
-
 expr_list <- list()
 
 if('all' %in% pathway_inp_data_type){
+  
+  if(low_complex_rmv){
+    # removing low complexity genes as it was done before bp deconvolution
+    scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+    geomx_obj <-   remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
+  } 
+  
   # make log expression mtx if needed
   if(!norm_is_log){
     # make log2 transformed normalised counts if norm_type not in log scale
@@ -74,16 +80,25 @@ if('all' %in% pathway_inp_data_type){
 # load deconvoluted signal ------------------------------------------------
 
 if('bp' %in% pathway_inp_data_type){
-  deconv_ct_list <- readRDS(deconv_bp_path)
-  
+  # deconv_ct_list <- readRDS(deconv_bp_path)
+  # 
+  # # filter to cell types of interest
+  # if(!is.null(ct_of_interest)){
+  #   deconv_ct_list <- deconv_ct_list[ct_of_interest]
+  # }
+  # 
+  # names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
+  deconv_res <- as.matrix(fread(deconv_bp_path), rownames = 1)
+
   # filter to cell types of interest
   if(!is.null(ct_of_interest)){
-    deconv_ct_list <- deconv_ct_list[ct_of_interest]
+    deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
   }
   
-  names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
-  
-  expr_list <- c(expr_list, deconv_ct_list)
+  deconv_list <- list(deconv_res)
+  names(deconv_list) <- 'deconv'
+
+  expr_list <- c(expr_list, deconv_list)
 }
 
 # prepare signatures list -------------------------------------------------
