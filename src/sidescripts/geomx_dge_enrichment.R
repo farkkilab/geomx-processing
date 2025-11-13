@@ -14,7 +14,6 @@ library(RColorBrewer)
 # signature_type <<- 'msigdb' # c('msigdb', 'custom')
 # custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
 #                                'ct_markers.csv')
-# signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(custom_sign_path)), '')
 # 
 # dge_name <- 'dge_within_slide_Segment_bin_FALSE__NACT_status'
 # 
@@ -45,9 +44,9 @@ adj_synonym <- T # whether or not adjust synonyms genes
 
 # signatures and DEG results with less nr of genes will be removed
 min_sign_gene_nr <- 10
-compute_hallmark <- T # should GSEA for msigdb hallmark be computed
+#compute_hallmark <- T # should GSEA for msigdb hallmark be computed
 #msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
-msigdb_subcat <- c('GO:BP', 'CP:KEGG_MEDICUS')
+#msigdb_subcat <- c('GO:BP', 'CP:KEGG_MEDICUS')
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
@@ -60,9 +59,11 @@ geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path) # only mtx with rownames need
 
 if(signature_type == 'msigdb'){
   # signatures from all Hallmark + selected CP from msigDB 
-  sign_list <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, hal = compute_hallmark, 
-                                        db_subcat_list = msigdb_subcat)
-  out_name <- 'msigdb'
+  # sign_list <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, hal = compute_hallmark, 
+  #                                       db_subcat_list = msigdb_subcat)
+  
+  sign_list <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, msigdb_subcat = msigdb_subcat)
+  out_name <- paste0('msigdb', '_', msigdb_subcat)
 } else if(signature_type == 'custom'){
   # signatures from custom file
   sign_list <- prepare_custom_sign_list(fread(custom_sign_path), adjust_synonym = F,
@@ -120,7 +121,7 @@ for(dge_df_path in dge_df_list){
   
   if(!is.null(gsea_res_all)){
     fwrite(gsea_res_all, file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
-                                   paste0('gsea_dge_', signature_type, '_', signature_name, 
+                                   paste0('gsea_dge_', out_name, 
                                           '_', dge_inp_data, '_fc', as.character(fc_thr),'_nofiltering.csv')))
     
     
@@ -148,8 +149,7 @@ for(dge_df_path in dge_df_list){
           # only clustering more than 1 pathways makes sense
           if(nrow(gsea_subset) > 1){
             hmap_outpath <- file.path(dge_dir_path, 'gsea_enrichment',dge_inp_data,
-                                      paste0('hmap_',gsea_subset_name, '_', signature_type,
-                                             '_', signature_name, '_', dge_inp_data, 
+                                      paste0('hmap_',gsea_subset_name, '_', out_name, '_', dge_inp_data, 
                                              '_fc', as.character(fc_thr), '.png'))
             
             # cluster pathways by jaccard idx and make heatmap
@@ -170,7 +170,7 @@ for(dge_df_path in dge_df_list){
     
     if(!is.null(gsea_res_clust_all)){
     fwrite(gsea_res_clust_all, file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
-                                         paste0('gsea_dge_clust_', signature_type, '_', signature_name,
+                                         paste0('gsea_dge_clust_', out_name,
                                                 '_', dge_inp_data, '_fc', as.character(fc_thr), '.csv')))
     }
     

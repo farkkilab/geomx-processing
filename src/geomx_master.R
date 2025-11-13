@@ -266,11 +266,13 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
 dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
+
+#dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
 #ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells", "DCs")
-ct_of_interest <<- c("Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Bcells", "Fibroblasts")
+ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Bcells", "Fibroblasts_Mesothelial")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
@@ -283,10 +285,10 @@ ct_of_interest <<- c("Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs",
 custom_metadt_path <<- NULL
 
 # DGE parameters
-comparison_type <<- 'within' 
+comparison_type <<- 'between' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'Segment' # main variable to make comparison between
+main_var_name <<- 'NACT_status' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -294,7 +296,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c()
+dge_categories <<- c('Segment', 'paired_status')
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 
@@ -303,19 +305,22 @@ dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name,
 
 dge_logs_path <<- file.path(output_dir, 'dge', dge_name, 'dge_logs.txt')
 
-#TODO no padding for deconvoluted data, filter when ct freq too low
+
 run_unless_exists('Differential Gene Expression', dge_logs_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_dge.R'))
 
 
 ################
 # GSEA on DGE
+#TODO make it loop over many msigdb subdbs
+#TODO check if clustering is done separately for each data group
+# 'HALLMARK', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'GO:BP'
 
-signature_type <<- 'msigdb' # c('msigdb', 'custom')
-# msigdb - on all pathways from msigdb (Hallmark + CP)
+signature_type <<- 'msigdb' # c('custom','msigdb') 
+msigdb_subcat <<- 'HALLMARK' # if signature type is msigdb, which subdatabase to use. one of: c('HALLMARK', 'CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')
+  # if signature_type == 'custom' set to NULL
+# msigdb - on msigdb db specified in 'msigdb_subcat
 # custom - on custom signatures list specified in custom_sign_path
-
-signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(custom_sign_path)), '')
 
 # run DGE enrichment
 # TODO make a proper pipeline step
