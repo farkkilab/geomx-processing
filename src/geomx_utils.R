@@ -684,16 +684,24 @@ adjust_synonym_genes <- function(geomx_gene_names, gene_vector){
 #   db_subcat_list: (vector) List of database subcategories to filter
 # Return value:
 #   (list) list of vectors with pathway signatures with adjusted genes.
-prepare_msigdb_sign_list <- function(adjust_synonym = T, geomx_obj = NULL, hal = T, 
+prepare_msigdb_sign_list <- function(adjust_synonym = T, geomx_obj = NULL, msigdb_subcat, hal = T, 
                                       db_subcat_list = c('CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')){
+  
+  stopifnot(msigdb_subcat %in% c('HALLMARK', 'CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP'))
   
   # prepare msigdb signatures list
   msigdb_df <- msigdbr(species = "Homo sapiens")
-  if(hal){
-    msigdb_df <- filter(msigdb_df, gs_collection == 'H' | gs_subcollection %in% db_subcat_list)
+  
+  if(msigdb_subcat == 'HALLMARK'){
+    msigdb_df <- filter(msigdb_df, gs_collection == 'H')
   } else{
-    msigdb_df <- filter(msigdb_df, gs_subcollection %in% db_subcat_list)
+    msigdb_df <- filter(msigdb_df, gs_subcollection == msigdb_subcat)
   }
+  # if(hal){
+  #   msigdb_df <- filter(msigdb_df, gs_collection == 'H' | gs_subcollection %in% db_subcat_list)
+  # } else{
+  #   msigdb_df <- filter(msigdb_df, gs_subcollection %in% db_subcat_list)
+  # }
   
   if(adjust_synonym){
     msigdb_df$gene_symbol_adj <- adjust_synonym_genes(rownames(geomx_obj), msigdb_df$gene_symbol)

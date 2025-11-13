@@ -21,13 +21,14 @@
 
 # best on batch-effect corrected data: 'limma_batch_corr' or 'harmony_batch_corr' (both log)
 # q3 also ok but its not batch corrected
-norm_type <- 'harmony_batch_corr' 
+# TODO adjust to new naming from normalise function
+norm_type <- 'harmony_batch_corr_q3_norm' 
 
 cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
 
 # remove samples with <2 nr of each AOI comparison group (not enough to compare, only adds noise)
 #TODO thr 2 or 1?
-min_aoi_nr <- 1
+min_aoi_nr <- 2
 
 # make dirs and source functions ------------------------------------------
 
@@ -42,15 +43,45 @@ scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_
 # path to deconvolution mtx
 deconv_bp_path <- ifelse(grepl('harmony', norm_type), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS')), 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_deseq2_vst_harmony_corr.RDS')), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_', 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_deseq2_vst_limma_corr_', 
                                           primary_batch_var, secondary_batch_var,
                                           '_cov_', covname, '.RDS'))) 
+
+deconv_bp_pulled_path <- file.path(output_dir, 'deconvolution', 'bayes_prism',
+                            paste0('bp_res_pseudosc_mid_lvl_ct_updated_ct_frac_0.005_deseq2_vst_harmony.csv'))
 
 # load geomx obj from rds -------------------------------------------------
 
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
+
+# TODO move it somewhere
+geomx_obj@phenoData$PFS_median_b123 <- ifelse(geomx_obj@phenoData$PFS_quartile_b123 %in% c(1, 2), 1, 2)
+geomx_obj@phenoData$OS_median_b123 <- ifelse(geomx_obj@phenoData$OS_quartile_b123 %in% c(1, 2), 1, 2)
+
+geomx_obj@phenoData$OS_quartile_paired <- mapvalues(geomx_obj@phenoData$Patient, 
+                                                     from=c("S015", "S027", "S032", "S069", "S084", "S139",
+                                                            "S229", "S333"), 
+                                                     to=c(4, 3, 4, 2, 1, 1, 3, 2))
+
+geomx_obj@phenoData$OS_quartile_paired <- ifelse(geomx_obj@phenoData$OS_quartile_paired %in% c(1, 2, 3, 4), 
+                                                 geomx_obj@phenoData$OS_quartile_paired, 0)
+
+geomx_obj@phenoData$PFS_quartile_paired <- mapvalues(geomx_obj@phenoData$Patient, 
+                                         from=c("S015", "S027", "S032", "S069", "S084", "S139",
+                                                "S229", "S333"), 
+                                         to=c(3, 2, 4, 2, 1, 1, 4, 3))
+
+geomx_obj@phenoData$PFS_quartile_paired <- ifelse(geomx_obj@phenoData$PFS_quartile_paired %in% c(1, 2, 3, 4), 
+                                                 geomx_obj@phenoData$PFS_quartile_paired, 0)
+
+geomx_obj@phenoData$PFS_median_paired <- ifelse(geomx_obj@phenoData$PFS_quartile_paired %in% c(1, 2), 1,
+                                                ifelse(geomx_obj@phenoData$PFS_quartile_paired %in% c(3, 4), 2, 0))
+
+geomx_obj@phenoData$OS_median_paired <- ifelse(geomx_obj@phenoData$OS_quartile_paired %in% c(1, 2), 1,
+                                                ifelse(geomx_obj@phenoData$OS_quartile_paired %in% c(3, 4), 2, 0))
+
 
 # merge geomx metadata with custom metadata
 if(!is.null(custom_metadt_path)){
@@ -63,14 +94,22 @@ if(!is.null(custom_metadt_path)){
 }
 
 low_complex_rmv <- ifelse(file.exists(scrna_ref_cleaned_path), TRUE, FALSE)
-norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type))
+norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) # TODO needed?
+
+if(low_complex_rmv){
+  scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+}
 
 expr_list <- list()
 
 if('all' %in% dge_inp_data_type){
   # remove low complexity genes and change to log if needed
-  expr_mtx <- prepare_expr_mtx(geomx_norm_batch_eff_rm_path, norm_type, norm_is_log, 
-                               scrna_ref_cleaned_path)
+  geomx_filt <- remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
+  expr_mtx <- geomx_filt@assayData[[norm_type]]
+  
+  if(!norm_is_log){
+    expr_mtx <- log2(expr_mtx + 1)
+  }
   
   expr_list[[length(expr_list) + 1]] <- expr_mtx
   names(expr_list) <- 'dge_all'
@@ -87,29 +126,27 @@ if('bp' %in% dge_inp_data_type){
   if(!is.null(ct_of_interest)){
     deconv_ct_list <- deconv_ct_list[ct_of_interest]
   }
+  # TODO add error if name not in names from deconv list
+  #TODO parse if norm is not log
   
-  # artificially add missing AOIs to prevent issues with geomx object
-  # TODO better to avoid it and fix within geomx object 
-  deconv_ct_list_padded <- lapply(deconv_ct_list, function(expr){
-
-    if(!identical(colnames(expr), colnames(geomx_obj@assayData[[norm_type]]))){
-      expr <- as.data.frame(expr)
-      # add empty columns
-      expr[, setdiff(colnames(geomx_obj@assayData[[norm_type]]), colnames(expr))] <- NA
-
-      # merge with expr and ensure order
-      expr <- as.matrix(expr[, colnames(geomx_obj@assayData[[norm_type]])])
-
-      stopifnot(identical(colnames(expr), colnames(geomx_obj@assayData[[norm_type]])))
-    }
-
-    return(expr)
-  })
-
-  names(deconv_ct_list_padded) <- paste0('dge_deconv_', names(deconv_ct_list))
+  names(deconv_ct_list) <- paste0('dge_deconv_', names(deconv_ct_list))
+  expr_list <- c(expr_list, deconv_ct_list)
   
-  expr_list <- c(expr_list, deconv_ct_list_padded)
+} else if('bp_pulled' %in% dge_inp_data_type){
+  
+  deconv_res <- as.matrix(fread(deconv_bp_pulled_path), rownames = 1)
+  
+  # filter to cell types of interest
+  if(!is.null(ct_of_interest)){
+    deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
+  }
+  
+  deconv_list <- list(deconv_res)
+  names(deconv_list) <- 'dge_deconv'
+  
+  expr_list <- c(expr_list, deconv_list)
 }
+
 
 # DGE with main variable comparison ---------------------------------------
 
@@ -138,7 +175,10 @@ lapply(names(expr_list), function(expr_name){
   geomx_obj_dge <- geomx_obj
   geomx_obj_dge@assayData <- newassay
   
-  pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj), main_var_name, main_var_is_bin, main_var_main_val,
+  # filter to cells and genes which remained after deconvolution
+  geomx_obj_dge <- geomx_obj_dge[rownames(expr_list[[expr_name]]),  colnames(expr_list[[expr_name]])]
+  
+  pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj_dge), main_var_name, main_var_is_bin, main_var_main_val,
                                                dge_categories, cofounder_name) 
   
   dge_results <- data.frame()
