@@ -8,6 +8,10 @@ template_meta <- read_xlsx('/home/iganiemi/Documents/phd/st/data/geomx/geomx_bat
 
 meta_dir <- '/home/iganiemi/Documents/phd/st/data/geomx/geomx_batch3_0525/metadata'
 
+meta_b123_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metadata/dcc_metadata_batch123.xlsx'
+meta_b123_out_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metadata/dcc_metadata_batch123_cleaned.csv'
+meta_b123_out_no_tls_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metadata/dcc_metadata_batch123_no_tls_cleaned.csv'
+clin_path <- '/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_patient_clinical_data.csv'
 
 # combine worksheets
 worksheets_list <- list.files(file.path(meta_dir, 'lab_worksheets'), full.names = T, pattern = "csv")
@@ -239,11 +243,52 @@ template_cols <- colnames(template_meta)[-c(1,44)]
 worksheet_roi_all <- as.data.frame(worksheet_roi_all)[, c(template_cols, "Roi_original", 
                              "tls_id", "tls_status", "Annotation_cell_nk")]
 
-fwrite(worksheet_roi_all, file.path(meta_dir, 'dcc_metadata_batch3_0525.csv'))
+fwrite(worksheet_roi_all, file.path(meta_dir, 'dcc_metadata_all_batch3_0525.csv'))
 
 
 # TODO add negative probe name
 
+
+
+# examine an unify for all batches df -------------------------------------
+
+b1 <- read_excel('/home/iganiemi/Documents/phd/st/data/geomx/geomx_batch1_0823/metadata/dcc_metadata_batch1_0823.xlsx')
+b2 <- read_excel('/home/iganiemi/Documents/phd/st/data/geomx/geomx_batch2_1124/metadata/dcc_metadata_batch2_1124.xlsx')
+b3 <- read_excel('/home/iganiemi/Documents/phd/st/data/geomx/geomx_batch3_0525/metadata/dcc_metadata_all_batch3_0525.xlsx')
+# load all batches df
+meta <- as.data.frame(read_xlsx(meta_b123_path))
+
+meta$Roi_geomx <- meta$Roi # just to have it saved while loading geomx_obj
+meta$ROI_Coordinate_Y <- ifelse(is.na(meta$ROI_Coordinate_Y), meta$ROI.Coordinate.Y, meta$ROI_Coordinate_Y) #b1 has wrong name
+
+# fix nk annotations for b2
+meta$Annotation_cell_nk <- ifelse(meta$main_batch_nr != 3, meta$Annotation_cell, meta$Annotation_cell_nk)
+meta$Annotation_cell_nk <- ifelse(meta$main_batch_nr == 2 & grepl('NK', meta$Correct_label), paste0(meta$Annotation_cell_nk, '_NK'), meta$Annotation_cell_nk)
+
+meta <- dplyr::rename(meta, tCycIF_preselection_ROI_Start_X = Start_X, tCycIF_preselection_ROI_End_X = End_X, 
+                      tCycIF_preselection_ROI_Start_Y = Start_Y, tCycIF_preselection_ROI_End_Y = End_Y, 
+                      tCycIF_preselection_ROI_Height = Height, tCycIF_preselection_ROI_Width = Width,
+                      tCycIF_preselection_ROI_Index = ROI_Index_tCycIF,
+                      ROI_Coordinate_X_geomx = ROI_Coordinate_X, ROI_Coordinate_Y_geomx = ROI_Coordinate_Y,
+                      tCycIF_preselection_Note = Note_tCycIF, tCycIF_preselection_Manual_selection = Manual_selection,
+                      tCycIF_preselection_initial_label = Label, Roi_geomx_original = Roi_original) %>%
+  dplyr::select(!c(CD8, IBA1, Annotation, Tags, ROI.Coordinate.Y, Notes,
+                   Clinical_Notes, PanCK_positive, Correct_label, Annotation_cell_first_labels, HRP_status,
+                   BRCA_status, PFS_quartile_b123, OS_quartile_b123))
+
+# merge once again with clinical data (some NAs previously..)
+clin <- fread(clin_path) %>%
+  filter(Patient %in% meta$Patient) %>%
+  select(Patient, HRP_status, BRCA_status, PFS_quartile_b123, OS_quartile_b123) %>%
+  distinct()
+
+meta <- left_join(meta, clin)
+
+fwrite(meta, meta_b123_out_path)
+
+# remove TLS
+meta_no_tls <- meta[!(meta$tls_status %in% c('GC', 'S', 'TB')), ]
+fwrite(meta_no_tls, meta_b123_out_no_tls_path)
 
 # check empty DCC files ---------------------------------------------------
 
