@@ -4,21 +4,17 @@ library(plyr)
 library(dplyr)
 library(umap)
 library(Rtsne)
+library(biomaRt)
 
 #TODO copied from reference_scrnaseq_exploration - remove one of the scripts later
-
+proj_dir <- '~/Documents/phd/st'
 output_dir <- '/home/iganiemi/Documents/phd/st/data/scrna/'
 
-mtx_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_UMIcounts_HGSOC.tsv'
-meta_path <-  '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_cellInfo_HGSOC.tsv'
+ct_markers_path <- '/home/iganiemi/Documents/phd/st/geomx-processing/data/signatures/ct_markers.csv'
 
-
-sc_ref_full_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_full.RDS'
-sc_ref_down_5k_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_downsampled_5k.RDS'
-sc_ref_down_10k_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_downsampled_10k.RDS'
-
-
+source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 ########################
+# Vaharautio lab scRNAseq ref from Erdogan
 
 mtx_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_counts_raw.mtx'
 bar_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_barcodes.txt'
@@ -29,6 +25,20 @@ meta_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_metadata.txt'
 sc_ref_full_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_qc_full.RDS'
 sc_ref_down_5k_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_qc_downsampled_5k.RDS'
 sc_ref_down_keepfreq_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_qc_downsampled_keepfreq.RDS'
+
+
+#####################################
+# Hautaniemi lab scRNAseq ref from Kaiyang
+
+mtx_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_UMIcounts_HGSOC.tsv'
+meta_path <-  '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_cellInfo_HGSOC.tsv'
+tcell_sub_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_Tcell_subtypes.tsv'
+
+
+sc_ref_full_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_full.RDS'
+sc_ref_down_5k_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_downsampled_5k.RDS'
+sc_ref_down_10k_outpath <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_downsampled_10k.RDS'
+
 
 # from Seurat vignette
 # https://satijalab.org/seurat/articles/pbmc3k_tutorial.html
@@ -59,6 +69,7 @@ sc_ref <- CreateSeuratObject(
   min.features = 200)
 
 dim(sc_ref)
+gc()
 
 # basic QC ----------------------------------------------------------------
 
@@ -97,7 +108,6 @@ saveRDS(sc_ref, sc_ref_full_outpath)
 
 ##########################################
 ##########################################
-
 # for GSE165897
 sc_ref@meta.data$cell_type_main <- sc_ref@meta.data$cell_type
 sc_ref@meta.data$cell_type <- sc_ref@meta.data$cell_subtype
@@ -108,12 +118,40 @@ sc_ref@meta.data$mid_lvl_ct_updated <- ifelse(grepl('tumor', sc_ref@meta.data$ce
 sc_ref@meta.data$mid_lvl_ct_updated <- ifelse(grepl('CAF', sc_ref@meta.data$mid_lvl_ct_updated), 'Fibroblasts', sc_ref@meta.data$mid_lvl_ct_updated)
 sc_ref@meta.data$mid_lvl_ct_updated <- ifelse(grepl('DC_', sc_ref@meta.data$mid_lvl_ct_updated), 'DC', sc_ref@meta.data$mid_lvl_ct_updated)
 
+# add Tcell subtypes
+tsub <- fread(tcell_sub_path, select = c('cell', 'T.cell.subtype'))
+tsub$T.cell.subtype <- ifelse(tsub$T.cell.subtype %in% c('Tfh', 'Th1'), paste0('CD4_', tsub$T.cell.subtype), tsub$T.cell.subtype)
+tsub$T.cell_mid_lvl <- paste0('Tcells_', gsub('_.*', '', tsub$T.cell.subtype))
+tsub$T.cell.subtype <- paste0('Tcells_', tsub$T.cell.subtype)
+
+# merge with original metadata and ensure row ordering (any left_join to meta crush Seurat obj)
+tsub <- left_join(sc_ref@meta.data[, c('cell', 'cell_type')], tsub)
+# fix ones which are not in the table
+tsub$T.cell.subtype <- ifelse(tsub$cell_type == 'T_cells' & is.na(tsub$T.cell.subtype), 'Tcells_other', tsub$T.cell.subtype)
+tsub$T.cell_mid_lvl <- ifelse(tsub$cell_type == 'T_cells' & is.na(tsub$T.cell_mid_lvl), 'Tcells_other', tsub$T.cell_mid_lvl) 
+
+# merge with metadata
+stopifnot(identical(tsub$cell, sc_ref@meta.data$cell))
+
+sc_ref@meta.data$T.cell.subtype <- tsub$T.cell.subtype
+sc_ref@meta.data$T.cell_mid_lvl <- tsub$T.cell_mid_lvl
+
+sc_ref@meta.data$cell_type <- ifelse(sc_ref@meta.data$cell_type == 'T_cells', 
+                                     sc_ref@meta.data$T.cell.subtype, sc_ref@meta.data$cell_type)
+sc_ref@meta.data$mid_lvl_ct_updated <- ifelse(sc_ref@meta.data$mid_lvl_ct_updated == 'T_cells', 
+                                              sc_ref@meta.data$T.cell_mid_lvl, sc_ref@meta.data$mid_lvl_ct_updated)
+
+
+
 sc_ref@meta.data$low_lvl_ct <- mapvalues(sc_ref@meta.data$mid_lvl_ct_updated, 
-                                                 from=c("tumor", "Fibroblasts", "Mesothelial", "Endothelial", "T_cells", "Plasma_cells",
-                                                        "NK", "DC", "B_cells", "Macrophages", "pDC", "Mast_cells", "ILC"), 
+                                                 from=c("tumor", "Fibroblasts", "Mesothelial", "Endothelial", 
+                                                        "Tcells_CD4","Tcells_CD8", "Tcells_Treg","Tcells_other", "NK", "ILC",
+                                                        "Plasma_cells", "B_cells", "pDC",
+                                                        "DC",  "Macrophages",  "Mast_cells"), 
                                                  to=c("tumor", "stroma", "stroma", "stroma",
-                                                      "Tcells_NK", "B_cells", "Tcells_NK", "Myeloids", "B_cells", 
-                                                      "Myeloids", "B_cells", "Mast_cells", "Tcells_NK"))
+                                                      "Tcells_NK", "Tcells_NK", "Tcells_NK", "Tcells_NK", "Tcells_NK", "Tcells_NK",
+                                                      "B_cells", "B_cells", "B_cells", 
+                                                      "Myeloids", "Myeloids", "Mast_cells"))
 
 table(sc_ref@meta.data$cell_type, sc_ref@meta.data$mid_lvl_ct_updated)
 table(sc_ref@meta.data$cell_type, sc_ref@meta.data$low_lvl_ct)
@@ -212,10 +250,10 @@ gc()
 
 # make umap ---------------------------------------------------------------
 
-sc_ref_path <- "/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_downsampled_5k.RDS"
+sc_ref_path <- "/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_downsampled_10k.RDS"
 
 sc_ref <- readRDS(sc_ref_path)
-down_name <- '5k'
+down_name <- '10k'
 
 sc_ref <- NormalizeData(sc_ref)
 
@@ -249,3 +287,17 @@ pdf(file= file.path(output_dir, paste0('umap_GSE165897_qc_downsampled_', down_na
 plot(u3)
 dev.off()
 
+# plot ct specific markers on UMAP ----------------------------------------
+
+ct_markers <- prepare_custom_sign_list(fread(ct_markers_path), adjust_synonym = F)
+
+for(ct in names(ct_markers)){
+  
+  ct_sign <- ct_markers[[ct]]
+  
+  ct_plot <- FeaturePlot(sc_ref, features = ct_sign)
+  
+  pdf(file= file.path(output_dir, paste0('umap_GSE165897_qc_downsampled_', down_name, '_', ct,  '_markers.pdf')), width=15, height=15)
+  plot(ct_plot)
+  dev.off()
+}

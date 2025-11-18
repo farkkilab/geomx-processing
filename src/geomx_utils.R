@@ -589,7 +589,7 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
                             plot_title, output_path, ymin=-1, ymax=1.4,
                             manual_colours = c("#F8766D", "#00BA38", "#619CFF", "#C77CFF")){
   # per Anno cell type
-  gsva_boxpl <- ggplot(data = df, aes(x = get(pathway_colname), y = get(score_colname), fill = get(color_colname))) +
+  gsva_boxpl <- ggplot(data = df, aes(x = get(pathway_colname), y = get(score_colname), fill = as.factor(get(color_colname)))) +
     #geom_boxplot() +
     geom_violin() +
     # geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
