@@ -276,13 +276,48 @@ meta <- dplyr::rename(meta, tCycIF_preselection_ROI_Start_X = Start_X, tCycIF_pr
                    Clinical_Notes, PanCK_positive, Correct_label, Annotation_cell_first_labels, HRP_status,
                    BRCA_status, PFS_quartile_b123, OS_quartile_b123))
 
-# merge once again with clinical data (some NAs previously..)
+# add clinical data
 clin <- fread(clin_path) %>%
   filter(Patient %in% meta$Patient) %>%
+  select(Patient, Sample, NACT_status, HRP_status, BRCA_status, PFS_quartile_b123, OS_quartile_b123)
+
+# add paired status
+paired <- distinct(clin, Patient, NACT_status) %>%
+  group_by(Patient) %>%
+  summarise(n = n()) %>%
+  filter(n == 2)
+
+meta$paired_status <- ifelse(meta$Patient %in% paired$Patient, 'paired', 'unpaired')
+
+# merge once again with clinical data (some NAs previously..)
+clin_per_pt <- clin %>% 
   select(Patient, HRP_status, BRCA_status, PFS_quartile_b123, OS_quartile_b123) %>%
   distinct()
 
 meta <- left_join(meta, clin)
+
+# calculate additional PFS/OS quartiles
+
+meta$PFS_median_b123 <- ifelse(meta$PFS_quartile_b123 %in% c(1, 2), 1, 2)
+meta$OS_median_b123 <- ifelse(meta$OS_quartile_b123 %in% c(1, 2), 1, 2)
+
+meta$PFS_quartile_paired <- mapvalues(meta$Patient, from=c("S015", "S027", "S032", "S069", "S084", "S139",
+                                                            "S229", "S333"), 
+                                                     to=c(3, 2, 4, 2, 1, 1, 4, 3))
+
+meta$PFS_quartile_paired <- ifelse(meta$paired_status == 'paired', meta$PFS_quartile_paired, NA)
+
+meta$OS_quartile_paired <- mapvalues(meta$Patient, from=c("S015", "S027", "S032", "S069", "S084", "S139",
+                                                          "S229", "S333"), 
+                                     to=c(4, 3, 4, 2, 1, 1, 3, 2))
+
+meta$OS_quartile_paired <- ifelse(meta$paired_status == 'paired', meta$OS_quartile_paired, NA)
+
+meta$PFS_median_paired <- ifelse(meta$PFS_quartile_paired %in% c(1, 2), 1,
+                                                ifelse(meta$PFS_quartile_paired %in% c(3, 4), 2, NA))
+
+meta$OS_median_paired <- ifelse(meta$OS_quartile_paired %in% c(1, 2), 1,
+                                               ifelse(meta$OS_quartile_paired %in% c(3, 4), 2, NA))
 
 fwrite(meta, meta_b123_out_path)
 
