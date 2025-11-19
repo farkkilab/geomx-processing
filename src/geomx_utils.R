@@ -184,6 +184,75 @@ plot_gene_detection_rate <- function(gene_data, output_name){
   ggsave(output_name, width = 2000, height = 1500, unit='px')
 }
 
+############################################
+# Description:
+#   performs different kind of normalisation on counts matrix (gene in rows, cells/samples in columns)
+# Parameters:
+
+# Return value:
+#   
+
+do_normalisation <- function(expr_mtx, 
+                             norm_type = c('q3', 'deseq2', 'deseq2_vst','deseq2_vst_onestep', 'log_norm', 'libsize_log'),
+                             meta_data = NULL, 
+                             aoi_segment_var = 'Segment', main_experimental_condition = 'NACT_status'){
+  
+  # remove genes with only 0 counts
+  expr_mtx <- expr_mtx[rowSums(expr_mtx) != 0, ]
+  
+  # for normalising whole mtx this gives more neg values than vst from deseq2 dds
+  # not connected to pseudocount
+  if(norm_type == 'deseq2_vst_onestep'){
+    #add pseudocount 1 to avoid vst error with log geo means
+    # https://help.galaxyproject.org/t/error-with-deseq2-every-gene-contains-at-least-one-zero/564/2
+    expr_mtx <- expr_mtx + 1
+    
+    # do vst normalisation
+    # before it was wrapped in trycatch, may be needed to comeback
+    expr_mtx_norm <- varianceStabilizingTransformation(round(expr_mtx))
+    
+  } else if(norm_type == 'q3'){
+    # upper quartile normalisation from sourcecode of GeoMxTools normalize() function
+    qs <- apply(expr_mtx, 2, function(x) stats::quantile(x, 0.75))
+    expr_mtx_norm <- sweep(expr_mtx, 2L, qs / ngeoMean(qs), FUN = "/")
+    
+    #qs_norm_factors <- qs / ngeoMean(qs)     # may be needed for additional validation
+  } else if(norm_type == 'log_norm'){
+    # try with log_norm but as bad as q3
+    expr_mtx_norm <- NormalizeData(expr_mtx, normalization.method = "LogNormalize", scale.factor = 10000)
+  } else if(norm_type %in% c('deseq2', 'deseq2_vst')){
+    # normalization with DESeq
+    
+    # Create DESeq2Dataset object
+    design_formula <- as.formula(paste("~", aoi_segment_var, "+", main_experimental_condition))
+    
+    expr_int <- apply(expr_mtx, c(1, 2), function(x) {(as.integer(x))})
+    # TODO this is needed for normalisation of deconv results, otherwise error
+    #expr_int <- expr_int + 1 # add pseudocount
+    
+    dds <- DESeqDataSetFromMatrix(countData = expr_int,
+                                  colData = meta_data,
+                                  design = design_formula) # TODO check the warning message
+    
+    dds <- estimateSizeFactors(dds) 
+    
+    if(norm_type == 'deseq2'){
+      expr_mtx_norm <- counts(dds, normalized=TRUE)
+    } else{
+      dds_vst <- vst(dds, blind = FALSE)
+      expr_mtx_norm <- assay(dds_vst)
+    }
+    
+  } else if (norm_type == 'libsize_log'){
+    # do library size normalisation + log transformation 
+    expr_mtx_norm <- normalizeData(expr_mtx, do.log = T, do.sparse = T)
+  } else{ 
+    stop(print('choose either q3_norm deseq2 deseq2_vst log_norm libsize_log as norm_type'))
+  }
+  
+  return(expr_mtx_norm)
+}
+
 #######################################################
 # plot_q3_stats
 # Description:
