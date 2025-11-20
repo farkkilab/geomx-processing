@@ -118,8 +118,8 @@ if(batch == 'batch1'){
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch23.xlsx') #batch1 and 2
 } else if(batch == 'batch123'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
-  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls.xlsx') #batch1 and 2
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-1811') # batch123
+  anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
 }else{
   stop('wrong batch nr')
 }
@@ -131,8 +131,8 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name in metadata
-scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE165897_qc_downsampled_10k.RDS')
-scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE266577_qc_downsampled_keepfreq.RDS')
+scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE165897_qc_downsampled_5k.RDS')
+#scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE266577_qc_downsampled_keepfreq.RDS')
 
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
@@ -142,7 +142,7 @@ custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures
 # set up metadata variables names -----------------------------------------
 
 aoi_id <<- 'dcc_filename'
-roi_id <<- 'Roi'
+roi_id <<- 'Roi_geomx'
 
 main_batch_var <- 'main_batch_nr'
 batch_var <<- 'batch_nr'
@@ -153,7 +153,7 @@ main_roi_label <<- "Annotation_cell"
 main_experimental_condition <<- 'NACT_status'
 sample_name <<- 'Sample'
 
-other_vars_bio <<- c("Segment_geomx", "Patient", "Site") # 'PFS_months', 'PFS' , "tls_status"
+other_vars_bio <<- c("Segment_geomx", "Patient", "Site") #
 other_vars_tech <<- c('Slide_Name')
 
 # variables for batch effect removal
