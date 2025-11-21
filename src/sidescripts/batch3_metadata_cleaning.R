@@ -341,3 +341,16 @@ duplicates <- b3_size$name[which(duplicated(b3_size$name))]
 # 1 file almost empty wo duplicate DSP-1001660039812-B-A01.dcc
 table(b3_size$empty)
 length(which(b3_size$name[b3_size$empty == T] %in% duplicates))
+
+######
+meta_all <- fread(meta_b123_out_path)
+meta_all <- meta_all[, c('dcc_filename','Slide_Name', 'Scan_Name', 'Roi', 'Segment', 'Sample', 'main_batch_nr', 'batch_nr')]
+meta_all3 <- meta_all[meta_all$main_batch_nr == 3, ]
+meta_all3 <- meta_all3[meta_all3$Sample != '', ]
+
+for(sample in unique(meta_all3$Sample)){
+  print(sample)
+  print(unique(meta_all3$Roi[meta_all3$Sample == sample]))
+  print('$$$$$$$$$$')
+}
+
