@@ -186,6 +186,14 @@
 # 
 # }
 
+############################################
+# Description:
+#   performs different kind of normalisation on counts matrix (gene in rows, cells/samples in columns)
+# Parameters:
+
+# Return value:
+#   
+
 do_normalisation <- function(expr_mtx, meta_data, 
                              norm_type = c('q3_norm', 'log_norm', 'deseq2', 'deseq2_vst', 'libsize_log'),
                              aoi_segment_var = 'Segment', main_experimental_condition = 'NACT_status'){
@@ -220,7 +228,7 @@ do_normalisation <- function(expr_mtx, meta_data,
     meta_data_ct <- left_join(dcc_ct, meta_data)
     meta_data_ct$ct_label <- gsub('^[^_]*', '', meta_data_ct$dcc_ct)
     meta_data_ct$ct_label <- gsub('^_', '', meta_data_ct$ct_label)
-
+    
     # Create DESeq2Dataset object
     design_formula <- as.formula(paste("~", aoi_segment_var, "+", main_experimental_condition))
     
@@ -243,6 +251,7 @@ do_normalisation <- function(expr_mtx, meta_data,
   
   return(expr_mtx_norm)
 }
+
 
 # create pseudo scRNaseq dataset from all deconvolution results
 #TODO change in cellchat script - new params

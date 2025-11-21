@@ -27,7 +27,7 @@ if(length(outliers_to_rm) > 0){
 # this plot only makes sense for Q3 norm since it explores q3 value against NegGeoMean 
 plot_q3_stats(geomx_obj, aoi_segment_var, file.path(output_dir,'qc', 'q3_stats.png'))
 
-expr_q3_norm <- do_normalisation(geomx_obj@assayData$exprs, norm_type = 'q3')
+expr_q3_norm <- do_normalisation(geomx_obj@assayData$exprs, norm_type = 'q3_norm')
 
 # DESeq2 normalisation ----------------------------------------------------
 

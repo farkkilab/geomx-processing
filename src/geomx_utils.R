@@ -193,7 +193,7 @@ plot_gene_detection_rate <- function(gene_data, output_name){
 #   
 
 do_normalisation <- function(expr_mtx, 
-                             norm_type = c('q3', 'deseq2', 'deseq2_vst','deseq2_vst_onestep', 'log_norm', 'libsize_log'),
+                             norm_type = c('q3_norm', 'deseq2', 'deseq2_vst','deseq2_vst_onestep', 'log_norm', 'libsize_log'),
                              meta_data = NULL, 
                              aoi_segment_var = 'Segment', main_experimental_condition = 'NACT_status'){
   
@@ -211,7 +211,7 @@ do_normalisation <- function(expr_mtx,
     # before it was wrapped in trycatch, may be needed to comeback
     expr_mtx_norm <- varianceStabilizingTransformation(round(expr_mtx))
     
-  } else if(norm_type == 'q3'){
+  } else if(norm_type == 'q3_norm'){
     # upper quartile normalisation from sourcecode of GeoMxTools normalize() function
     qs <- apply(expr_mtx, 2, function(x) stats::quantile(x, 0.75))
     expr_mtx_norm <- sweep(expr_mtx, 2L, qs / ngeoMean(qs), FUN = "/")
@@ -359,7 +359,7 @@ plot_expr_distribution <- function(expr_data, norm_name, output_name, is_log = F
   colnames(expr_df) <- 'expr'
 
   #minval <- ifelse(min(expr_df$expr) < 0, min(expr_df$expr), 0)
-  minval <- min(expr_df$expr)
+  minval <- min(expr_df$expr, na.rm = T)
   
   ggplot(data = expr_df) +
     geom_histogram(aes(x = expr), bins = 100) +
@@ -895,6 +895,145 @@ prepare_dge_metadata <- function(metadt, main_var_name, main_var_is_bin, main_va
   return(metadt)
 }
 
+
+###########################################################33
+############################################################
+# Description:
+#   Prepares refewrence scRNAseq dataset for deconvolution
+# removes low complexity and non-coding genes, unify cell_types and cell_states
+# Parameters:
+# TODO
+# Return value:
+# TODO
+
+adjust_scrna_ref <- function(scrna_ref_path, scrna_ref_cleaned_path, raw_counts_layer = "counts", 
+                             tumor_ct_name = 'Epithelial cells', ct_nr_thr = 50,
+                             pt_colname = 'publication_patient_code_final', 
+                             adjust_synonym_gene_names = F, geomx_norm_batch_eff_rm_path = NULL){
+  
+  scrna_ref_obj <- readRDS(scrna_ref_path)
+  raw_counts_mtx <- GetAssayData(object = scrna_ref_obj[["RNA"]], layer = raw_counts_layer)
+  
+  # check genes outliers
+  scrna_stat <- plot.scRNA.outlier(
+    input=t(raw_counts_mtx), #make sure the colnames are gene symbol or ENSMEBL ID
+    cell.type.labels=scrna_ref_obj@meta.data$cell_type,
+    species="hs", 
+    return.raw=TRUE, #return the data used for plotting.
+    pdf.prefix= gsub('.RDS', '', scrna_ref_cleaned_path) # specify pdf.prefix if need to output to pdf
+  )
+  
+  # filter out outlier genes
+  # this mtx is t()
+  scrna_filt <- cleanup.genes (input=t(raw_counts_mtx),
+                               input.type="count.matrix",
+                               species="hs", 
+                               gene.group=c( "Rb","Mrp","other_Rb","chrM","MALAT1","chrX","chrY") ,
+                               exp.cells=5)
+  
+  # geomx doesn't have to be filtered since later on they took only intersection of genes
+  
+  # subset to protein coding genes and t() back
+  scrna_filt_pc <-  t(select.gene.type(scrna_filt, gene.type = "protein_coding"))
+  
+  dim(raw_counts_mtx)
+  dim(t(scrna_filt))
+  dim(scrna_filt_pc)
+  
+  # subset initial object to filtered genes (before names adjustment)
+  scrna_ref_obj_filt <- subset(scrna_ref_obj, features = rownames(scrna_filt_pc))
+  
+  if(adjust_synonym_gene_names){
+    
+    geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
+    # repair synonymuous gene names
+    length(rownames(geomx_obj@assayData$exprs))
+    length(rownames(scrna_filt_pc))
+    
+    adjusted_genes_rna <- adjust_synonym_genes(rownames(geomx_obj@assayData$exprs), rownames(scrna_filt_pc))
+    
+    print(paste0('initial number of intersected genes between scRNAseq and geomx_object: ', 
+                 length(intersect(rownames(geomx_obj@assayData$exprs), rownames(scrna_filt_pc)))))
+    print(paste0('number of intersected genes after adjustment: ', 
+                 length(intersect(rownames(geomx_obj@assayData$exprs), adjusted_genes_rna))))
+    print(which(!(rownames(scrna_filt_pc) == adjusted_genes_rna)))
+    
+    # change rownames to adjusted gene names
+    rownames(scrna_filt_pc) <- adjusted_genes_rna
+  }
+  
+  which(!(rownames(scrna_filt_pc) == rownames(scrna_ref_obj_filt))) # double check
+  
+  # adjust gene names in the main object
+  rownames(scrna_ref_obj_filt) <- rownames(scrna_filt_pc)
+  
+  # make new counts slot with filtered and adjusted mtx (Warning is expected since gene names are adjusted)
+  scrna_ref_obj_filt <- SetAssayData(
+    object = scrna_ref_obj_filt,
+    layer = raw_counts_layer,
+    new.data = scrna_filt_pc,
+    assay = "RNA"
+  )
+  
+  scrna_ref_obj_filt@meta.data$cell_state <- scrna_ref_obj_filt@meta.data$cell_type
+  # change cell_type name to tumor
+  scrna_ref_obj_filt@meta.data$cell_type <- ifelse(grepl(tumor_ct_name, scrna_ref_obj_filt@meta.data$cell_type), 
+                                                   'tumor', scrna_ref_obj_filt@meta.data$cell_type)
+  
+  # TODO uncomment for GSE 77
+  # TODO if cell state for tumor is only tumor, do that
+  # cell states - clustering tumor cells by patient
+  # scrna_ref_obj_filt@meta.data$cell_state <- ifelse(scrna_ref_obj_filt@meta.data$cell_type == 'tumor', 
+  #                                              paste0('tumor_', scrna_ref_obj_filt@meta.data[[pt_colname]]), 
+  #                                              scrna_ref_obj_filt@meta.data$cell_state)
+  
+  print('reference scRNAseq contains following cell types and states:')
+  table(scrna_ref_obj_filt@meta.data$cell_state, scrna_ref_obj_filt@meta.data$cell_type)
+  
+  # remove cells from cell states with nr < thr 
+  ct_freq <- as.data.frame(table(scrna_ref_obj_filt@meta.data$cell_state))
+  cells_above_ct_thr <- scrna_ref_obj_filt@meta.data$cell_name[scrna_ref_obj_filt@meta.data$cell_state %in% 
+                                                                 as.character(ct_freq$Var1[ct_freq$Freq > ct_nr_thr])]
+  
+  scrna_ref_obj_filt <- subset(scrna_ref_obj_filt, cells = cells_above_ct_thr)
+  
+  # TODO find solution not connected with seurat version
+  # set up correct dimnames in slot (bug in seurat v5 and its lost)
+  scrna_ref_obj_filt@assays$RNA@layers[[raw_counts_layer]]@Dimnames <- dimnames(scrna_ref_obj_filt)
+  
+  print(paste0('dim of the original scRNAseq reference dataset: ', dim(scrna_ref_obj)))
+  print(paste0('dim of the final cleaned scRNAseq reference dataset: ', dim(scrna_ref_obj_filt)))
+  
+  # save adjusted scRNAseq file
+  saveRDS(scrna_ref_obj_filt, file = scrna_ref_cleaned_path)
+  
+  print(paste0("cleaned reference scRNAseq dataset made from ", scrna_ref_path,
+               " have been saved under the path: ", scrna_ref_cleaned_path))
+  
+  ########################################
+  # QC of cell states
+  
+  # plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
+  #               input.labels=scrna_ref_obj@meta.data$cell_state,
+  #               title="cell state correlation",
+  #               #specify pdf.prefix if need to output to pdf
+  #               #pdf.prefix="gbm.cor.cs",
+  #               cexRow=0.6, cexCol=0.6,
+  #               margins=c(6,6))
+  # 
+  # dev.off()
+  # 
+  # plot.cor.phi (input=t(scrna_ref_obj@assays$RNA@data),
+  #               input.labels=scrna_ref_obj@meta.data$mid_lvl_ct,
+  #               title="cell type correlation",
+  #               #specify pdf.prefix if need to output to pdf
+  #               #pdf.prefix="gbm.cor.ct",
+  #               cexRow=0.5, cexCol=0.5,
+  # )
+  # 
+  # dev.off()
+}
+
 ###########################################################33
 ############################################################
 # Description:
@@ -907,6 +1046,7 @@ prepare_dge_metadata <- function(metadt, main_var_name, main_var_is_bin, main_va
 #   comparison_type: (string) Type of comparison, either 'within' or 'between' (for 'between' no group removal)
 # Return value:
 #   (S4 object) The cleaned GeoMx object with small groups removed.
+
 rm_too_small_groups <- function(geomx_obj_dge_group, min_aoi_nr, main_var_is_bin, comparison_type){
   samples_freq <- data.frame(table(pData(geomx_obj_dge_group)$main_var_factor,
                                    pData(geomx_obj_dge_group)$cofounder_factor))

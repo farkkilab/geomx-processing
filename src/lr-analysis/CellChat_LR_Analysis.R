@@ -81,6 +81,7 @@ gc()
 
 # create normalised pseudo scRNAseq dataset -------------------------------
 
+# TODO adjust - now create_norm_pseudosc_from_deconv() for deseq2 normal metadata
 # create a combined 'artificial pseudo-bulk scRNAseq' dataset with all ct specific counts 
 if(file.exists(bp_pseudosc_path)){
   bprism_res_norm <- as.matrix(fread(bp_pseudosc_path), rownames=1)
