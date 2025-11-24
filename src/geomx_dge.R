@@ -27,7 +27,6 @@ norm_type <- 'harmony_batch_corr_q3_norm'
 cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
 
 # remove samples with <2 nr of each AOI comparison group (not enough to compare, only adds noise)
-#TODO thr 2 or 1?
 min_aoi_nr <- 2
 
 # make dirs and source functions ------------------------------------------
@@ -49,39 +48,12 @@ deconv_bp_path <- ifelse(grepl('harmony', norm_type),
                                           primary_batch_var, secondary_batch_var,
                                           '_cov_', covname, '.RDS'))) 
 
-deconv_bp_pulled_path <- file.path(output_dir, 'deconvolution', 'bayes_prism',
-                            paste0('bp_res_pseudosc_mid_lvl_ct_updated_ct_frac_0.005_deseq2_vst_harmony.csv'))
+# deconv_bp_pulled_path <- file.path(output_dir, 'deconvolution', 'bayes_prism',
+#                             paste0('bp_res_pseudosc_mid_lvl_ct_updated_ct_frac_0.005_deseq2_vst_harmony.csv'))
 
 # load geomx obj from rds -------------------------------------------------
 
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
-
-# TODO move it somewhere
-geomx_obj@phenoData$PFS_median_b123 <- ifelse(geomx_obj@phenoData$PFS_quartile_b123 %in% c(1, 2), 1, 2)
-geomx_obj@phenoData$OS_median_b123 <- ifelse(geomx_obj@phenoData$OS_quartile_b123 %in% c(1, 2), 1, 2)
-
-geomx_obj@phenoData$OS_quartile_paired <- mapvalues(geomx_obj@phenoData$Patient, 
-                                                     from=c("S015", "S027", "S032", "S069", "S084", "S139",
-                                                            "S229", "S333"), 
-                                                     to=c(4, 3, 4, 2, 1, 1, 3, 2))
-
-geomx_obj@phenoData$OS_quartile_paired <- ifelse(geomx_obj@phenoData$OS_quartile_paired %in% c(1, 2, 3, 4), 
-                                                 geomx_obj@phenoData$OS_quartile_paired, 0)
-
-geomx_obj@phenoData$PFS_quartile_paired <- mapvalues(geomx_obj@phenoData$Patient, 
-                                         from=c("S015", "S027", "S032", "S069", "S084", "S139",
-                                                "S229", "S333"), 
-                                         to=c(3, 2, 4, 2, 1, 1, 4, 3))
-
-geomx_obj@phenoData$PFS_quartile_paired <- ifelse(geomx_obj@phenoData$PFS_quartile_paired %in% c(1, 2, 3, 4), 
-                                                 geomx_obj@phenoData$PFS_quartile_paired, 0)
-
-geomx_obj@phenoData$PFS_median_paired <- ifelse(geomx_obj@phenoData$PFS_quartile_paired %in% c(1, 2), 1,
-                                                ifelse(geomx_obj@phenoData$PFS_quartile_paired %in% c(3, 4), 2, 0))
-
-geomx_obj@phenoData$OS_median_paired <- ifelse(geomx_obj@phenoData$OS_quartile_paired %in% c(1, 2), 1,
-                                                ifelse(geomx_obj@phenoData$OS_quartile_paired %in% c(3, 4), 2, 0))
-
 
 # merge geomx metadata with custom metadata
 if(!is.null(custom_metadt_path)){
@@ -177,6 +149,9 @@ lapply(names(expr_list), function(expr_name){
   
   # filter to cells and genes which remained after deconvolution
   geomx_obj_dge <- geomx_obj_dge[rownames(expr_list[[expr_name]]),  colnames(expr_list[[expr_name]])]
+  
+  # add back pData which was removed during filtering.. geomxtools bug
+  pData(geomx_obj_dge) <- pData(geomx_obj)[pData(geomx_obj)$dcc_filename %in% colnames(expr_list[[expr_name]]), ]
   
   pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj_dge), main_var_name, main_var_is_bin, main_var_main_val,
                                                dge_categories, cofounder_name) 
