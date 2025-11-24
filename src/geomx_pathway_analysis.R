@@ -21,10 +21,10 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # if there are issues, turn it off
 min_sign_gene_nr <- 10 # signatures with less nr of genes will be removed, 5 is min in msigdb
 
-compute_hallmark <- T
+#compute_hallmark <- T
 # should GSEA for msigdb hallmark be computed
 
-msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG','CP:KEGG_MEDICUS', 'GO:BP')
+msigdb_subcat <- c('CP:BIOCARTA', 'CP:REACTOME','CP:KEGG_MEDICUS', 'GO:BP', 'HALLMARK')
 # subcategories ('gs_subcat') of msigdb database for GSEA calculation
 
 # make dirs and set additional vars ---------------------------------------
@@ -37,14 +37,14 @@ norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) #TODO is 
 
 
 # path to deconvolution mtx
+deconv_bp_path <- file.path(output_dir,'deconvolution', 'bayes_prism',
+                            paste0('bp_res_', scrna_anno,'_expr_mtx_cleaned_',
+                                   deconv_norm_type, '_', deconv_batch_rm_type, '_corr.RDS'))
+
+
 # deconv_bp_path <- file.path(output_dir,'deconvolution', 'bayes_prism', 
-#                             paste0('bp_res_', scrna_anno,'_expr_mtx_cleaned_', 
-#                                    deconv_norm_type, '_', deconv_batch_rm_type, '_corr.RDS'))
-
-
-deconv_bp_path <- file.path(output_dir,'deconvolution', 'bayes_prism', 
-                            paste0('bp_res_pseudosc_', scrna_anno,'_ct_frac_0.005_', 
-                                   deconv_norm_type, '_', deconv_batch_rm_type, '.csv'))
+#                             paste0('bp_res_pseudosc_', scrna_anno,'_ct_frac_0.005_', 
+#                                    deconv_norm_type, '_', deconv_batch_rm_type, '.csv'))
 
 #TODO move somewhere else - before normalisation? 
 # path to cleaned scrna which should be calculated in deconvolution step - for low complex gene rmv 
@@ -80,33 +80,39 @@ if('all' %in% pathway_inp_data_type){
 # load deconvoluted signal ------------------------------------------------
 
 if('bp' %in% pathway_inp_data_type){
-  # deconv_ct_list <- readRDS(deconv_bp_path)
-  # 
-  # # filter to cell types of interest
-  # if(!is.null(ct_of_interest)){
-  #   deconv_ct_list <- deconv_ct_list[ct_of_interest]
-  # }
-  # 
-  # names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
-  deconv_res <- as.matrix(fread(deconv_bp_path), rownames = 1)
+  deconv_ct_list <- readRDS(deconv_bp_path)
 
   # filter to cell types of interest
   if(!is.null(ct_of_interest)){
-    deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
+    deconv_ct_list <- deconv_ct_list[ct_of_interest]
   }
-  
-  deconv_list <- list(deconv_res)
-  names(deconv_list) <- 'deconv'
 
-  expr_list <- c(expr_list, deconv_list)
+  names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
+  
+  # for pseudosc - deprecated
+  # deconv_res <- as.matrix(fread(deconv_bp_path), rownames = 1)
+  # 
+  # # filter to cell types of interest
+  # if(!is.null(ct_of_interest)){
+  #   deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
+  # }
+  # 
+  # deconv_list <- list(deconv_res)
+  # names(deconv_list) <- 'deconv'
+
+  expr_list <- c(expr_list, deconv_ct_list)
 }
 
 # prepare signatures list -------------------------------------------------
 
 if(signature_type == 'msigdb'){
   # signatures from all Hallmark + selected CP from msigDB 
-  sign_list <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, hal = compute_hallmark, 
-                                               db_subcat_list = msigdb_subcat)
+  sign_list <- lapply(msigdb_subcat, function(subcat){
+    print(subcat)
+    sign <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, msigdb_subcat = subcat)
+  })
+  
+  sign_list <- do.call(c, sign_list_all)
   out_name <- 'msigdb'
 } else if(signature_type == 'custom'){
   # signatures from custom file
