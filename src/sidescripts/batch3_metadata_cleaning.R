@@ -319,6 +319,13 @@ meta$PFS_median_paired <- ifelse(meta$PFS_quartile_paired %in% c(1, 2), 1,
 meta$OS_median_paired <- ifelse(meta$OS_quartile_paired %in% c(1, 2), 1,
                                                ifelse(meta$OS_quartile_paired %in% c(3, 4), 2, NA))
 
+# add _1 to S309_S225 slide with _1 run
+
+
+meta$Roi <- ifelse(meta$Scan_Name == 'S309_S225_130325_1', paste0(meta$Roi, '_1'), meta$Roi)
+meta$Roi_geomx <- meta$Roi
+
+
 fwrite(meta, meta_b123_out_path)
 
 # remove TLS
