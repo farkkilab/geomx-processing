@@ -43,7 +43,7 @@ if(batch == 'batch1'){
 } else if(batch == 'batch23'){
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch23
 } else if(batch == 'batch123'){
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-1710') # batch123
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-1811') # batch123
 }else{
   stop('wrong batch nr')
 }
@@ -76,9 +76,17 @@ if(scrna_anno == 'mid_lvl_ct'){
   # cells_immune <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
   #               "Macrophages_Monocytes", "DCs")
   
-  ct_names <- c("tumor", "Fibroblasts", "Mesothelial", "Endothelial", "T_cells", "Plasma_cells",
-                "NK", "DC", "B_cells", "Macrophages", "pDC", "Mast_cells", "ILC")
-  cells_immune <- c("T_cells", "Plasma_cells", "NK", "DC", "B_cells", "Macrophages", "pDC", "Mast_cells", "ILC")
+  ct_names <- c("tumor", "Fibroblasts", "Mesothelial", "Endothelial", 
+                "Tcells_CD4","Tcells_CD8", "Tcells_Treg","Tcells_other", "NK", "ILC",
+                "Plasma_cells", "B_cells", "pDC",
+                "DC",  "Macrophages",  "Mast_cells")
+  cells_immune <- c("Tcells_CD4","Tcells_CD8", "Tcells_Treg","Tcells_other", "NK", "ILC",
+                    "Plasma_cells", "B_cells", "DC",  "Macrophages",  "Mast_cells")
+  cells_stroma <- c("Fibroblasts", "Mesothelial", "Endothelial")
+  
+  cells_with_ct_sign <- c("tumor", "Fibroblasts", "Endothelial", 
+                          "Tcells_CD4","Tcells_CD8", "Tcells_Treg","Tcells_other", "NK",
+                          "B_cells", "Macrophages") #TODO add for DC
   
 } else if(scrna_anno == 'low_lvl_ct'){
   ct_names <- c("Tcells_NK", "Bcells", "Myeloids","Mast_cells", "Fibroblasts_Endothelial", "tumor")
@@ -240,6 +248,7 @@ ct_gsea_all$pathway <- gsub(' ', '_', ct_gsea_all$pathway)
 ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'Nkcells', 'NKcells', ct_gsea_all$pathway)
 ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'CD8_Tcells', 'Tcells_CD8', ct_gsea_all$pathway)
 ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'Mast cells', 'Mast_cells', ct_gsea_all$pathway)
+ct_gsea_all$pathway <- ifelse(ct_gsea_all$pathway == 'Dcs', 'DC', ct_gsea_all$pathway)
 
 
 # tum/stromal markers in tum/stromal AOIs
@@ -282,18 +291,16 @@ ct_boxpl_deconv <- pathway_boxplot(ct_gsea_deconv,'pathway', 'ssgsea_score', 'ex
 ########################
 # ct markers activity in full signal correlated with nr of cells sd-bp
 cell_fraq <- list(bp = fread(bp_cellcounts_path), sd = fread(sd_cellcounts_path))
-colnames(cell_fraq$sd) <- gsub('.', ' ', colnames(cell_fraq$sd), fixed = T)
+#colnames(cell_fraq$sd) <- gsub('.', ' ', colnames(cell_fraq$sd), fixed = T)
 
 sapply(1:length(cell_fraq), function(x){
   print(x)
   cell_fraq_res <- as.data.frame(cell_fraq[[x]])
-  #TODO manual change here
-  cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts_Mesothelial + cell_fraq_res$Endothelial_cells
-  #cell_fraq_res$stroma <- cell_fraq_res$Fibroblasts_Endothelial
+  cell_fraq_res$stroma <- rowSums(cell_fraq_res[, cells_stroma])
   
   ct_gsea_all_fraq <- left_join(ct_gsea_all, cell_fraq_res[, c('dcc_filename', c(ct_names, 'stroma'))])
   
-  for(ct_name in c(ct_names[!(ct_names %in% c('DCs', 'Mast_cells'))], 'stroma')){ #TODO find markers for all ct incl DC
+  for(ct_name in c(cells_with_ct_sign, 'stroma')){ #TODO find markers for all ct 
     print(ct_name)
     
     #ct_gsea_all_fraq_ct <- ct_gsea_all_fraq[ct_gsea_all_fraq$pathway %in% ct_to_pathway[[ct_name]], ]
