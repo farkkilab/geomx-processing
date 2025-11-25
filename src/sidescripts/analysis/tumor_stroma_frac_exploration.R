@@ -52,6 +52,17 @@ plot_ly(x=ct_frac_str$tumor, y=ct_frac_str$stroma, z=ct_frac_str$immune, type="s
 plot_ly(x=ct_frac_tum$tumor, y=ct_frac_tum$stroma, z=ct_frac_tum$immune, type="scatter3d", mode="markers", color=ct_frac_tum$Segment_geomx, size = 0.5)
 
 
+#################3
+# annotate stroma segments with highest tumor fractions
+ct_frac$Segment_hitumor06 <- ifelse(ct_frac$Segment == 'stroma' & ct_frac$tumor >= 0.6, 'stroma_hitumor', ct_frac$Segment)
+
+top20prc <- as.numeric(quantile(ct_frac$tumor[ct_frac$Segment == 'stroma'], probs = c(0.8))) 
+
+ct_frac$Segment_hitumor20perc <- ifelse(ct_frac$Segment == 'stroma' & ct_frac$tumor >= top20prc, 'stroma_hitumor', ct_frac$Segment)
+
+
+fwrite(ct_frac[, c('dcc_filename', 'Segment_hitumor06', 'Segment_hitumor20perc')], 
+       '/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
 ############################################33
 # comparison kay vs erd reference scRNAseq bp ct fractions
 
