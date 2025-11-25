@@ -1,3 +1,7 @@
+# integrates geomx and cycif roi coordinates
+# integrates cycif cell counts
+# integrates hubs 
+
 library(data.table)
 library(plyr)
 library(dplyr)
@@ -5,14 +9,79 @@ library(reshape2)
 library(ComplexHeatmap)
 library(ggplot2)
 library(tibble)
+library(GeomxTools)
+library(readxl)
+library(tools)
 
-roi_coords_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT/CyciF_GeoMx_alignment/CyciF_batch2_ROIs"
-cycif_cell_count_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT/9_EyeMT_Cycif/batch2_adjacent_slides/subsetting_stardist"
+# define paths ------------------------------------------------------------
+# from master script
+batch <- 'batch123'
+proj_dir <<- '~/Documents/phd/st'
+data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
+anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
+output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
-output_dir <- "~/Documents/phd/st/geomx-processing/results/batch2-1903/cycif_cell_count"
-output_path <- "~/Documents/phd/st/geomx-processing/results/batch2-1903/cycif_cell_count/batch2_cycif_cell_count_per_roi_stardist.csv"
+# coordinates, cell count and hubs pathways for cycif images
+eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT/"
+roi_coords_dir <- file.path(eyemt_pdrive_dir, "Data/geomx/batch2/rois_from_tcycif/cyciF_batch2_ROIs_arrays")
+cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
+hubs_path <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_interaction_hubs")
 
-patient_names <- sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(list.files(roi_coords_dir)))
+# output dirs and paths 
+dir.create(file.path(output_dir, "cycif_integration"))
+out_path_coords <- file.path(output_dir, "cycif_integration", "batch2_cycif_coordinates.csv")
+out_path_cell_count <- file.path(output_dir, "cycif_integration", "batch2_cycif_cell_count_per_roi_stardist.csv")
+
+# load geomx, merge with cleaned metadata ---------------------------------
+# TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
+meta_geomx <- pData(readRDS(geomx_norm_batch_eff_rm_path))
+meta_cleaned <- read_excel(anno_path)
+
+metadt <- left_join(meta_geomx[, c('dcc_filename', 'Slide_Name')], meta_cleaned) # join ensuring order
+
+# subset to batch2
+metadt <- metadt[metadt$main_batch_nr == 2, ]
+
+
+# clean and calculate cycif coordinates -----------------------------------
+
+#patient_names <- sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(list.files(roi_coords_dir)))
+sample_names <- file_path_sans_ext(basename(list.files(roi_coords_dir)))
+
+roi_coords_all <- lapply(sample_names, function(sample_name){
+  
+  # clean roi coords df
+  roi_coords <- as.data.frame(fread(file.path(roi_coords_dir, paste0(sample_name, '.csv')), drop = c(6, 11)))
+  colnames(roi_coords) <- c('roi_name', 'c1_X', 'c2_X', 'c3_X', 'c4_X', 'c1_Y', 'c2_Y', 'c3_Y', 'c4_Y')
+  roi_coords$c1_X <- gsub('\\[|\\]', '', roi_coords$c1_X)
+  roi_coords$c1_Y <- gsub('\\[|\\]', '', roi_coords$c1_Y)
+  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), function(x){gsub(" ", "", x)})
+  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
+  roi_coords$roi_name <- as.character(roi_coords$roi_name)
+  
+  #calculate additional dimentions
+  roi_coords <-  apply(roi_coords, 1, function(row){
+    row$roi_width <- round(as.numeric(max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) - min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']]))),3)
+    row$roi_height <- round(as.numeric(max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])) - min(as.numeric(row[['c3_Y']]), as.numeric(row[['c4_Y']]))),3)
+    row$roi_center_X <- round(as.numeric(min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) + (row$roi_width * 0.5)),3)
+    row$roi_center_Y <- round(as.numeric(min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) + (row$roi_height * 0.5)),3)
+    return(as.data.frame(row))
+  })
+  
+  roi_coords <- as.data.frame(do.call(rbind, roi_coords))
+  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
+  roi_coords$Sample <- sample_name
+  
+  # TODO save per sample - not sure if needed
+  return(roi_coords)
+})
+
+roi_coords_all <- do.call(rbind, roi_coords_all)
+roi_coords_all <- roi_coords_all[, c(ncol(roi_coords_all), 1:(ncol(roi_coords_all)-1))]
+fwrite(roi_coords_all, out_path_coords)
+
+# subset cells to the ones in ROIs ----------------------------------------
 
 
 cells_in_roi_all_pt <- lapply(patient_names, function(pt_name){
@@ -21,14 +90,34 @@ cells_in_roi_all_pt <- lapply(patient_names, function(pt_name){
   
   cell_count <- fread(file.path(cycif_cell_count_dir, pt_name,  paste0(pt_name, '_updated.csv')))
   
-  # clean roi coords df
-  roi_coords <- fread(file.path(roi_coords_dir, paste0(pt_name, '.csv')), drop = c(6, 11))
-  colnames(roi_coords) <- c('roi_name', 'c1_X', 'c2_X', 'c3_X', 'c4_X', 'c1_Y', 'c2_Y', 'c3_Y', 'c4_Y')
-  roi_coords$c1_X <- gsub('\\[|\\]', '', roi_coords$c1_X)
-  roi_coords$c1_Y <- gsub('\\[|\\]', '', roi_coords$c1_Y)
-  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), function(x){gsub(" ", "", x)})
-  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
-  roi_coords$roi_name <- as.character(roi_coords$roi_name)
+  # # clean roi coords df
+  # roi_coords <- as.data.frame(fread(file.path(roi_coords_dir, paste0(pt_name, '.csv')), drop = c(6, 11)))
+  # colnames(roi_coords) <- c('roi_name', 'c1_X', 'c2_X', 'c3_X', 'c4_X', 'c1_Y', 'c2_Y', 'c3_Y', 'c4_Y')
+  # roi_coords$c1_X <- gsub('\\[|\\]', '', roi_coords$c1_X)
+  # roi_coords$c1_Y <- gsub('\\[|\\]', '', roi_coords$c1_Y)
+  # roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), function(x){gsub(" ", "", x)})
+  # roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
+  # roi_coords$roi_name <- as.character(roi_coords$roi_name)
+  # 
+  # roi_coords <-  apply(roi_coords, 1, function(row){
+  #   
+  #   # find cells within range
+  #   # coordinates are not longer rectangles, they're a bit rotated
+  #   # the cells are found inside longer edges of rectangle
+  #   print(row[["roi_name"]])
+  # 
+  #   row$roi_width <- round(as.numeric(max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) - min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']]))),3)
+  #   row$roi_height <- round(as.numeric(max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])) - min(as.numeric(row[['c3_Y']]), as.numeric(row[['c4_Y']]))),3)
+  #   row$roi_center_X <- round(as.numeric(min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) + (row$roi_width * 0.5)),3)
+  #   row$roi_center_Y <- round(as.numeric(min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) + (row$roi_height * 0.5)),3)
+  #   return(as.data.frame(row))
+  # })
+  # 
+  # roi_coords <- as.data.frame(do.call(rbind, roi_coords))
+  # roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
+  
+  ############################################33
+  #############################################
   
   # count cells within all ROIs in the sample
   
