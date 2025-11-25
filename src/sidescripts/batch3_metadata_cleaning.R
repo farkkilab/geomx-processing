@@ -258,7 +258,6 @@ b3 <- read_excel('/home/iganiemi/Documents/phd/st/data/geomx/geomx_batch3_0525/m
 # load all batches df
 meta <- as.data.frame(read_xlsx(meta_b123_path))
 
-meta$Roi_geomx <- meta$Roi # just to have it saved while loading geomx_obj
 meta$ROI_Coordinate_Y <- ifelse(is.na(meta$ROI_Coordinate_Y), meta$ROI.Coordinate.Y, meta$ROI_Coordinate_Y) #b1 has wrong name
 
 # fix nk annotations for b2
@@ -288,6 +287,7 @@ paired <- distinct(clin, Patient, NACT_status) %>%
   filter(n == 2)
 
 meta$paired_status <- ifelse(meta$Patient %in% paired$Patient, 'paired', 'unpaired')
+meta$paired_status <- ifelse(is.na(meta$Patient), NA, meta$paired_status)
 
 # merge once again with clinical data (some NAs previously..)
 clin_per_pt <- clin %>% 
@@ -319,12 +319,19 @@ meta$PFS_median_paired <- ifelse(meta$PFS_quartile_paired %in% c(1, 2), 1,
 meta$OS_median_paired <- ifelse(meta$OS_quartile_paired %in% c(1, 2), 1,
                                                ifelse(meta$OS_quartile_paired %in% c(3, 4), 2, NA))
 
+
+# clean Roi names
 # add _1 to S309_S225 slide with _1 run
-
-
 meta$Roi <- ifelse(meta$Scan_Name == 'S309_S225_130325_1', paste0(meta$Roi, '_1'), meta$Roi)
-meta$Roi_geomx <- meta$Roi
+meta$Roi_geomx_original <- ifelse(is.na(meta$Roi_geomx_original), meta$Roi, meta$Roi_geomx_original)
 
+# change to deliberate char to avoid wrong loading by read_excel
+meta$Roi <- ifelse(!is.na(meta$Roi), paste0('roi-', meta$Roi), NA)
+meta$Roi_geomx <- meta$Roi # just to have it saved while loading geomx_obj
+
+
+# rearrange columns
+meta <- meta[, c(2:5, 20:22, 10, 24, 23, 25, 44, 7, 55, 40, 8, 27, 9, 41, 42, 26, 43, 13, 29, 11, 12, 6, 14:19, 28, 30:39, 45:54)]
 
 fwrite(meta, meta_b123_out_path)
 
