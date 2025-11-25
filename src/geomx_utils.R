@@ -870,7 +870,7 @@ prepare_dge_metadata <- function(metadt, main_var_name, main_var_is_bin, main_va
     metadt$main_var <- ifelse(grepl(main_var_main_val, metadt[, main_var_name]),
                               main_var_main_val, 'other_roi_type')
   } else{
-    metadt$main_var <- metadt[, main_var_name]
+    metadt$main_var <- metadt[[main_var_name]]
   }
   
   print('groups which will be compared:')

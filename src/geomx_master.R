@@ -118,7 +118,7 @@ if(batch == 'batch1'){
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch23.xlsx') #batch1 and 2
 } else if(batch == 'batch123'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-1811') # batch123
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
 }else{
   stop('wrong batch nr')
@@ -131,8 +131,8 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 
 # path to reference scRNAseq dataset for deconvolution
 # have to contain 'cell_type' column name in metadata
-scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE165897_qc_downsampled_5k.RDS')
-#scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE266577_qc_downsampled_keepfreq.RDS')
+#scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE165897_qc_downsampled_5k.RDS') # hautaniemi 
+scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE266577_qc_downsampled_keepfreq.RDS') # vaharautio
 
 # path to csv file with custom gene signatures
 custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
@@ -219,7 +219,6 @@ run_unless_exists('Deconvolution', deconv_logs_path,
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_deconvolution.R'))
 
 # conditionally run pathway analysis --------------------------------------
-# TODO add limma fry calculation - another algorithm for pathway analysis not super important
 
 scrna_anno <<- 'mid_lvl_ct_updated' # either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
@@ -258,9 +257,8 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # conditionally run differential gene expression --------------------------
 # TODO compute voom() weights for dge - not so important
 # (voom computes precision weights for the downstream dge)
-# TODO anova(full model, reduced model) - check if significantly improves the effect for interesting genes
-# TODO add limma voom - not so important
 # https://davislaboratory.github.io/GeoMXAnalysisWorkflow/articles/GeoMXAnalysisWorkflow.html#batch-correction
+# TODO anova(full model, reduced model) - check if significantly improves the effect for interesting genes
 
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
@@ -282,13 +280,13 @@ ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4
 # if more column names are identical to the existing ones, columns from the custom dt will be used
 # if not needed, set to NULL
 #custom_metadt_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'b12_dcc_clinical_data.csv')
-custom_metadt_path <<- NULL
+custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
 
 # DGE parameters
-comparison_type <<- 'between' 
+comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'NACT_status' # main variable to make comparison between
+main_var_name <<- 'Segment_hitumor06' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -296,7 +294,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('Segment', 'paired_status')
+dge_categories <<- c('NACT_status')
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 
@@ -317,7 +315,7 @@ run_unless_exists('Differential Gene Expression', dge_logs_path,
 # 'HALLMARK', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'GO:BP'
 
 signature_type <<- 'msigdb' # c('custom','msigdb') 
-msigdb_subcat <<- 'HALLMARK' # if signature type is msigdb, which subdatabase to use. one of: c('HALLMARK', 'CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')
+msigdb_subcat <<- 'GO:BP' # if signature type is msigdb, which subdatabase to use. one of: c('HALLMARK', 'CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')
   # if signature_type == 'custom' set to NULL
 # msigdb - on msigdb db specified in 'msigdb_subcat
 # custom - on custom signatures list specified in custom_sign_path
