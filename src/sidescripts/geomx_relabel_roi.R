@@ -1,4 +1,5 @@
 # relabel ROI based on deconvolution results
+# plot distributions, cluster etc
 
 # TODO check if all packages are needed
 # library(NanoStringNCTools)
