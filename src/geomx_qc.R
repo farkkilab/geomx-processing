@@ -107,7 +107,7 @@ plot_sankey(count_segments, imp_vars, main_roi_label,
 # set and plot basic qc parameters ----------------------------------------
 # Shift 0 counts to one - needed for  NegGeoMean
 # TODO !! shifting all by 1 and only 0s gives different results
-# shifting all to 1 (useDALogic = T) seems to be more reasonable and it rescues about 5% of segments
+# shifting all to 1 (useDALogic = F) seems to be more reasonable and it rescues about 5% of segments
 # so it seems ok to stick to it
 geomx_obj <- shiftCountsOne(geomx_obj, useDALogic = FALSE)
 
@@ -402,18 +402,3 @@ print(paste("mean gene nr is: ", as.character(mean(pData(geomx_obj)$GenesDetecte
 print(paste("median gene detection rate is: ", as.character(median(pData(geomx_obj)$GeneDetectionRate))))
 
 saveRDS(geomx_obj, file = geomx_qc_path)
-
-# metadt <- data.frame(batchnr = sData(geomx_obj)$batch_nr, 
-#                      loq = unlist(as.vector(sData(geomx_obj)$LOQ)), 
-#                      gdr = sData(geomx_obj)$GeneDetectionRate, 
-#                      raw = sData(geomx_obj)$Raw, 
-#                      aligned = unlist(as.vector(sData(geomx_obj)$`Aligned (%)`)), 
-#                      saturated = unlist(as.vector(sData(geomx_obj)$`Saturated (%)`)), 
-#                      ntc = sData(geomx_obj)$NTC)
-# 
-# boxplot(loq ~ batchnr, data = metadt)
-# boxplot(gdr ~ batchnr, data = metadt)
-# boxplot(raw ~ batchnr, data = metadt)
-# boxplot(aligned ~ batchnr, data = metadt)
-# boxplot(saturated ~ batchnr, data = metadt)
-# boxplot(ntc ~ batchnr, data = metadt)
