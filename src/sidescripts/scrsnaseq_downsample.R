@@ -251,9 +251,10 @@ gc()
 # make umap ---------------------------------------------------------------
 
 sc_ref_path <- "/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_qc_downsampled_10k.RDS"
+sc_ref_path <- "/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_qc_downsampled_keepfreq.RDS"
 
 sc_ref <- readRDS(sc_ref_path)
-down_name <- '10k'
+down_name <- 'keepfreq'
 
 sc_ref <- NormalizeData(sc_ref)
 
@@ -301,3 +302,19 @@ for(ct in names(ct_markers)){
   plot(ct_plot)
   dev.off()
 }
+
+
+# plot cycif markers with UMAP --------------------------------------------
+
+#AIF1 = Iba1
+#ITGAX = CD11c
+#KLRC = NKG2a
+cycif_markers <- c('KRT1','KRT2','KRT5', 'KRT8', 'KRT10', 'KRT14', 'KRT17', 'KRT18', 'VIM', 'AIF1', 'ITGAX', 'CD4', 'CD8A', 'KLRC1')
+
+which(cycif_markers %in% rownames(sc_ref))
+
+cycif_markers_plot <- FeaturePlot(sc_ref, features = cycif_markers)
+
+pdf(file= file.path(output_dir, paste0('umap_GSE266577_qc_downsampled_', down_name, '_cycif_markers.pdf')), width=15, height=15)
+plot(cycif_markers_plot)
+dev.off()
