@@ -26,7 +26,7 @@ geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_
 eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT/"
 roi_coords_dir <- file.path(eyemt_pdrive_dir, "Data/geomx/batch2/rois_from_tcycif/cyciF_batch2_ROIs_arrays")
 cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
-hubs_path <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_interaction_hubs")
+hubs_dir <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_interaction_hubs")
 
 # output dirs and paths 
 dir.create(file.path(output_dir, "cycif_integration"))
@@ -40,9 +40,11 @@ meta_cleaned <- read_excel(anno_path)
 
 metadt <- left_join(meta_geomx[, c('dcc_filename', 'Slide_Name')], meta_cleaned) # join ensuring order
 
+rm(meta_geomx)
+rm(meta_cleaned)
+
 # subset to batch2
 metadt <- metadt[metadt$main_batch_nr == 2, ]
-
 
 # clean and calculate cycif coordinates -----------------------------------
 
@@ -83,68 +85,89 @@ fwrite(roi_coords_all, out_path_coords)
 
 # subset cells to the ones in ROIs ----------------------------------------
 
-
-cells_in_roi_all_pt <- lapply(patient_names, function(pt_name){
+cells_in_roi_all_sample <- lapply(unique(roi_coords_all$Sample), function(sample_name){
   
-  print(pt_name)
+  print(sample_name)
   
-  cell_count <- fread(file.path(cycif_cell_count_dir, pt_name,  paste0(pt_name, '_updated.csv')))
-  
-  # # clean roi coords df
-  # roi_coords <- as.data.frame(fread(file.path(roi_coords_dir, paste0(pt_name, '.csv')), drop = c(6, 11)))
-  # colnames(roi_coords) <- c('roi_name', 'c1_X', 'c2_X', 'c3_X', 'c4_X', 'c1_Y', 'c2_Y', 'c3_Y', 'c4_Y')
-  # roi_coords$c1_X <- gsub('\\[|\\]', '', roi_coords$c1_X)
-  # roi_coords$c1_Y <- gsub('\\[|\\]', '', roi_coords$c1_Y)
-  # roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), function(x){gsub(" ", "", x)})
-  # roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
-  # roi_coords$roi_name <- as.character(roi_coords$roi_name)
-  # 
-  # roi_coords <-  apply(roi_coords, 1, function(row){
-  #   
-  #   # find cells within range
-  #   # coordinates are not longer rectangles, they're a bit rotated
-  #   # the cells are found inside longer edges of rectangle
-  #   print(row[["roi_name"]])
-  # 
-  #   row$roi_width <- round(as.numeric(max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) - min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']]))),3)
-  #   row$roi_height <- round(as.numeric(max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])) - min(as.numeric(row[['c3_Y']]), as.numeric(row[['c4_Y']]))),3)
-  #   row$roi_center_X <- round(as.numeric(min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) + (row$roi_width * 0.5)),3)
-  #   row$roi_center_Y <- round(as.numeric(min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) + (row$roi_height * 0.5)),3)
-  #   return(as.data.frame(row))
-  # })
-  # 
-  # roi_coords <- as.data.frame(do.call(rbind, roi_coords))
-  # roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
-  
-  ############################################33
-  #############################################
+  cell_count <- fread(file.path(cycif_cell_count_dir, sample_name,  paste0(sample_name, '_updated.csv')))
   
   # count cells within all ROIs in the sample
+  roi_coords_sample <- roi_coords_all[roi_coords_all$Sample == sample_name, ]
   
-  cells_in_roi_all <- apply(roi_coords, 1, function(row){
+  
+  cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
     
     # find cells within range
     # coordinates are not longer rectangles, they're a bit rotated
     # the cells are found inside longer edges of rectangle
     print(row[["roi_name"]])
-    # print(min(row[['c1_X']], row[['c4_X']]))
-    # print(max(row[['c2_X']], row[['c3_X']]))
-    # print(min(row[['c4_Y']], row[['c3_Y']]))
-    # print(max(row[['c1_Y']], row[['c2_Y']]))
-    row$roi_width <- as.numeric(max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) - min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])))
-    row$roi_height <- as.numeric(max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])) - min(as.numeric(row[['c3_Y']]), as.numeric(row[['c4_Y']])))
-    row$roi_center_X <- as.numeric(min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) + (row$roi_width * 0.5))
-    row$roi_center_Y <- as.numeric(min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) + (row$roi_height * 0.5))
-    
+
     cells_in_roi <- dplyr::filter(cell_count,
                            as.numeric(X_centroid) >= min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) &
                              as.numeric(X_centroid) <= max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) &
                              as.numeric(Y_centroid) >= min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) &
                              as.numeric(Y_centroid) <= max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])))
+  
+    print(nrow(cells_in_roi))
     
+    cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
+    
+    return(cells_in_roi)
+  })
+  
+  cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
+  
+  rm(cell_count)
+  return(cells_in_roi_all)
+})
+
+cells_in_roi_all_sample <- do.call(rbind, cells_in_roi_all_sample)
 
 
+
+
+# integrate ROIs and hubs -------------------------------------------------
+# hubs_inter <- fread(file.path(hubs_dir, "eyemt_batch2_interactions_dt15171517_ct15.csv"))
+# hubs_cells <- fread(file.path(hubs_dir, "eyemt_batch2_cells_dt15171517_ct15.csv"))
+hubs_inter <- fread(file.path(hubs_dir, "eyemt_batch2_interactions_dt20222022_ct15_mt20.csv"))
+hubs_cells <- fread(file.path(hubs_dir, "eyemt_batch2_cells_dt20222022_ct15_mt20.csv"))
+hubs_cells$interaction_hub_ids <- gsub("['", "", hubs_cells$interaction_hub_ids, fixed = T)
+hubs_cells$interaction_hub_ids <- gsub("']", "", hubs_cells$interaction_hub_ids, fixed = T)
+hubs_cells$interaction_hub_ids <- gsub("',.*", "", hubs_cells$interaction_hub_ids, fixed = F)
+# TODO it might be changed back to pix in the original files
+hubs_cells$X_centroid_px <- hubs_cells$X_centroid / 0.325
+hubs_cells$Y_centroid_px <- hubs_cells$Y_centroid / 0.325
+
+hubs_cells <- left_join(hubs_cells, hubs_inter[, c('hub_id', 'hub_type')], by = c('interaction_hub_ids' = 'hub_id'))
+
+length(unique(hubs_cells$interaction_hub_ids))
+length(unique(hubs_inter$hub_id))
+length(intersect(hubs_cells$interaction_hub_ids, hubs_inter$hub_id))
+setdiff(hubs_cells$interaction_hub_ids, hubs_inter$hub_id)
+setdiff(hubs_inter$hub_id, hubs_cells$interaction_hub_ids)
+# "S100_iOme_hub_328" "S131_iOme_hub_50"  "S083_iOme2_hub_86"
+
+hubs_cells_in_roi_all <- lapply(unique(roi_coords_all$Sample), function(sample_name){
+  print(sample_name)
+  
+  hubs_cells_sample <- hubs_cells[hubs_cells$imageid == sample_name, ]
+  
+  # count cells within all ROIs in the sample
+  roi_coords_sample <- roi_coords_all[roi_coords_all$Sample == sample_name, ]
+  
+  
+  cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
     
+    # find cells within range
+    # coordinates are not longer rectangles, they're a bit rotated
+    # the cells are found inside longer edges of rectangle
+    print(row[["roi_name"]])
+    
+    cells_in_roi <- dplyr::filter(hubs_cells_sample,
+                                  as.numeric(X_centroid_px) >= min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) &
+                                    as.numeric(X_centroid_px) <= max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) &
+                                    as.numeric(Y_centroid_px) >= min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) &
+                                    as.numeric(Y_centroid_px) <= max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])))
     
     print(nrow(cells_in_roi))
     
@@ -159,9 +182,56 @@ cells_in_roi_all_pt <- lapply(patient_names, function(pt_name){
   return(cells_in_roi_all)
 })
 
-cells_in_roi_all_pt <- do.call(rbind, cells_in_roi_all_pt)
+hubs_cells_in_roi_all <- do.call(rbind, hubs_cells_in_roi_all)
+hubs_cells_in_roi_all$interaction_hub_ids <- ifelse(hubs_cells_in_roi_all$interaction_hub_ids == '', 'notinhub', 
+                                                    hubs_cells_in_roi_all$interaction_hub_ids)
+hubs_cells_in_roi_all$sample_roi <- paste0(hubs_cells_in_roi_all$Sample, '_', as.character(hubs_cells_in_roi_all$roi_name))
 
-########################
+
+table(hubs_cells_in_roi_all$Sample, hubs_cells_in_roi_all$roi_name)
+######################################################################
+######################################################################
+# explore hubs vs ROI
+
+hubs_cells_in_roi_inhub <- hubs_cells_in_roi_all[hubs_cells_in_roi_all$interaction_hub_ids != 'notinhub', ]
+
+table(hubs_cells_in_roi_all$Sample, hubs_cells_in_roi_all$roi_name)
+table(hubs_cells_in_roi_inhub$Sample, hubs_cells_in_roi_inhub$roi_name)
+
+# how many rois does not have any hubs?
+hubs_unique <- distinct(hubs_cells_in_roi_all, sample_roi, interaction_hub_ids, hub_type)
+length(unique(hubs_unique$sample_roi))
+
+# nr of unique hubs in each ROI
+hubs_unique_roi <- distinct(hubs_cells_in_roi_inhub, sample_roi, interaction_hub_ids, hub_type)
+sort(table(hubs_unique_roi$sample_roi))
+length(unique(hubs_unique_roi$sample_roi))
+
+sort(table(hubs_unique_roi$hub_type))
+
+#######################################################
+# for sample
+sname <- 'S098_iOme'
+# % of cells in each roi which belongs to the hub
+hubs_cells_sample <- hubs_cells_in_roi_all[hubs_cells_in_roi_all$imageid == sname, ]
+cells_sample <- hubs_cells[hubs_cells$imageid == sname, ]
+
+roi_coords_sample <- roi_coords_all[roi_coords_all$Sample == sname, ]
+
+apply(roi_coords_sample,1, function(row){
+  print(row[['roi_name']])
+  print(as.numeric(row[['c1_X']])*0.325)
+  print(as.numeric(row[['c1_Y']])*0.325)
+  print(as.numeric(row[['c2_X']])*0.325)
+  print(as.numeric(row[['c2_Y']])*0.325)
+  print(as.numeric(row[['c3_X']])*0.325)
+  print(as.numeric(row[['c3_Y']])*0.325)
+  print(as.numeric(row[['c4_X']])*0.325)
+  print(as.numeric(row[['c4_Y']])*0.325)
+})
+######################################################################
+######################################################################
+# clustering and relabeling based on the cell counts in roi
 
 # cleaning labels
 cells_in_roi_all_pt$sample_roi <- paste0(cells_in_roi_all_pt$Sample, '_', cells_in_roi_all_pt$roi_name)
