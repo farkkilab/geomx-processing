@@ -80,7 +80,7 @@ library(clusterProfiler, quietly =T)
 
 #all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
 batch <<- 'batch123' # for correct paths and batch eff vars 
-
+merge_per_roi <- TRUE # whether or not signal from all AOIs within ROI should be added
 
 # define variables and paths ----------------------------------------------
 
@@ -118,7 +118,7 @@ if(batch == 'batch1'){
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch23.xlsx') #batch1 and 2
 } else if(batch == 'batch123'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2711-roibased') # batch123
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
 }else{
   stop('wrong batch nr')
@@ -182,6 +182,7 @@ dir.create(output_dir, recursive = T, showWarnings = F)
 # define intermediate output paths ----------------------------------------
 
 geomx_qc_path <<- file.path(output_dir, 'geomx_qc.RDS')
+geomx_qc_roibased_path <<- file.path(output_dir, 'geomx_qc_roibased.RDS')
 geomx_norm_path <<- file.path(output_dir, 'geomx_qc_norm.RDS')
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
@@ -195,6 +196,18 @@ print('#############')
 
 run_unless_exists('Preprocessing', geomx_qc_path, 
                   file.path(proj_dir, 'geomx-processing', 'src', 'geomx_qc.R'))
+
+
+# conditionally run merging signal per ROI --------------------------------
+
+if(merge_per_roi){
+  run_unless_exists('Merging signal per roi', geomx_qc_roibased_path, 
+                    file.path(proj_dir, 'geomx-processing', 'src', 'geomx_merge_per_roi.R'))
+  
+  # change paths and main sample parameter
+  geomx_qc_path <- geomx_qc_roibased_path
+  aoi_id <<- 'sample_roi'
+}
 
 # conditionally run normalisation -----------------------------------------
 
