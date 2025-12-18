@@ -275,6 +275,7 @@ plot_q3_stats <- function(geomx_obj, ann_of_interest, output_name){
                Q3 = unlist(apply(exprs(geomx_obj), 2,
                                  quantile, 0.75, na.rm = TRUE)),
                NegProbe = exprs(geomx_obj)[neg_probes, ])
+  colnames(Stat_data) <- c('Segment', 'Annotation', 'Q3', 'NegProbe')
   
   Stat_data_m <- melt(Stat_data, measure.vars = c("Q3", "NegProbe"),
                       variable.name = "Statistic", value.name = "Value")
@@ -413,6 +414,7 @@ make_umap_tsne <- function(geomx, assay_name, assay_is_log = F, top_var = NULL, 
   if(!is.null(top_var)){
     inp_expr <- pca(inp_expr)
     inp_expr <- t(inp_expr$rotated)
+    top_PCA <- min(top_PCA, nrow(inp_expr)) # if not enough PCA
     inp_expr <- inp_expr[1:top_PCA, ]
   }
 
@@ -451,18 +453,18 @@ make_umap_tsne <- function(geomx, assay_name, assay_is_log = F, top_var = NULL, 
 # Return value:
 #   None. The plot is saved to output_name.
 plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'), 
-                           norm_type, color_var, shape_var = 'Segment',
+                           assay_name, color_var, shape_var = 'Segment',
                            output_name, output_type = 'pdf'){
   
   pheno_data[[color_var]] <- as.character(pheno_data[[color_var]])
   
   ggplot(pheno_data,
-         aes(x = get(paste0(method_type, '1_', norm_type)), 
-             y = get(paste0(method_type, '2_', norm_type)), 
+         aes(x = get(paste0(method_type, '1_', assay_name)), 
+             y = get(paste0(method_type, '2_', assay_name)), 
              color = get(color_var), shape = get(shape_var))) +
     geom_point(size = 3) +
-    xlab(paste0(method_type, '1_', norm_type)) +
-    ylab(paste0(method_type, '2_', norm_type)) +
+    xlab(paste0(method_type, '1_', assay_name)) +
+    ylab(paste0(method_type, '2_', assay_name)) +
     scale_color_discrete(name = color_var) + 
     scale_shape_discrete(name = shape_var) + 
     theme_bw()

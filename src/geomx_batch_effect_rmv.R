@@ -9,18 +9,18 @@ exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_cond
 #exp_design <- as.formula(paste('~', 'tls_status'))
 
 # all variables to check for variance
-batch_vars <- c(primary_batch_var, secondary_batch_var, other_vars_tech, 
+batch_vars <- unique(c(primary_batch_var, secondary_batch_var, other_vars_tech, 
                 aoi_segment_var, main_roi_label, sample_name, main_experimental_condition, 
-                other_vars_bio)
+                other_vars_bio))
 
 # batch_vars <- c(primary_batch_var, secondary_batch_var, other_vars_tech, 
 #                 sample_name,  "Segment_geomx", "Patient", 'tls_status')
 
-# normalisation used for batch effect correction calculation
+# normalisation used for batch effect correction calculation best: 'deseq2_vst_norm' / 'q3_norm'
 norm_type <- 'deseq2_vst_norm' 
+batch_rm_type <- 'harmony' # either 'limma' or 'harmony'
 
-
-# whether or not compute pvca - it takes awful amount of time (no paralell option)
+# whether or not compute pvca - it takes awful amount of time
 # and is needed only 1nce in a given batch
 calculate_pvca <- FALSE
 # PVCA threshold
@@ -38,7 +38,7 @@ norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE
 
 # load geomx object and create expression set -----------------------------
 
-geomx_obj <- readRDS(geomx_norm_path)
+geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 
 # change vars into factors and remove vars with only 1 unique value
 batch_vars_filt <- c()
@@ -66,92 +66,69 @@ featureData <- new("AnnotatedDataFrame", data=geomx_obj@featureData@data,
 # check initial batch effect with PVCA ------------------------------------
 
 if(calculate_pvca){
+  phenoData <- as.data.frame(geomx_obj@phenoData@data)
+  rownames(phenoData) <- phenoData[[aoi_id]]
+  
   # make expression sets for PVCA
-  exprset_norm <- ExpressionSet(assayData=geomx_obj@assayData[[norm_type]], 
-                                phenoData = phenoData,
-                                featureData = featureData)
+  exprset_norm = ExpressionSet(assayData=geomx_obj@assayData[[norm_type]],
+                                phenoData = AnnotatedDataFrame(phenoData),
+                                featureData = AnnotatedDataFrame(as.data.frame(geomx_obj@featureData@data)))
   
   pvcaObj_ini <- pvcaBatchAssess(exprset_norm, batch_factors_names, pct_threshold) 
   
-  plot_pvca(pvcaObj_ini, paste0('before_correction_', norm_type), file.path(output_dir, 'batch_correction'))
+  plot_pvca(pvcaObj_ini, paste0('pvca_before_correction_', norm_type), file.path(output_dir, 'batch_correction'))
 }
 
 
-# remove batch effect with limma ------------------------------------------
+# remove batch effect with limma or harmony -------------------------------
 
-design <- model.matrix(exp_design, data = sData(geomx_obj))
-prim_batch <-  sData(geomx_obj)[[primary_batch_var]]
-
-if(!is.null(secondary_batch_var)){
-  second_batch <- sData(geomx_obj)[[secondary_batch_var]]
-}else{second_batch <- NULL} 
-
-limma_res <- limma::removeBatchEffect(expr_norm_log, batch = prim_batch, batch2 = second_batch,
-                                      design = design)
-
-##########################
-# https://portals.broadinstitute.org/harmony/articles/quickstart.html
-# remove batch effect with harmony
-meta_dt <- pData(geomx_obj)[, unique(c(batch_vars_filt, aoi_segment_var, aoi_id))]
-
-harmony_res <- t(HarmonyMatrix(expr_norm_log, 
-                               meta_data = meta_dt,
-                               vars_use = c(primary_batch_var, secondary_batch_var)))
-
-# additional scaling and PCA before harmony -------------------------------
-# https://htmlpreview.github.io/?https://github.com/immunogenomics/harmony/blob/master/doc/detailedWalkthrough.html
-# TODO for now we want to keep all genes, not PCA
-# may be important in the future for clustering etc
-# expr_norm_log_scaled <- scale(expr_norm_log)
-# expr_norm_log_scaled_pca <- prcomp(t(expr_norm_log_scaled))
-# expr_norm_log_scaled_pca_top20 <- t(expr_norm_log_scaled_pca$x)[1:20, ]
-# 
-# 
-# harmony_res_scaledpca <- t(HarmonyMatrix(expr_norm_log_scaled_pca_top20, 
-#                                          meta_data = meta_dt,
-#                                          vars_use = main_batch_var))
-
-
-
-# check PVCA after batch effect removal -----------------------------------
-
-
-if(calculate_pvca){
-  exprset_after_limma <- ExpressionSet(assayData=limma_res, 
-                                       phenoData = phenoData,
-                                       featureData = featureData)
+if(batch_rm_type == 'limma'){
+  # remove batch effect with limma
+  design <- model.matrix(exp_design, data = sData(geomx_obj))
+  prim_batch <-  sData(geomx_obj)[[primary_batch_var]]
   
-  exprset_after_harmony <- ExpressionSet(assayData=harmony_res, 
-                                         phenoData = phenoData,
-                                         featureData = featureData)
+  if(!is.null(secondary_batch_var)){
+    second_batch <- sData(geomx_obj)[[secondary_batch_var]]
+  }else{second_batch <- NULL} 
   
-  pvcaObj_limma <- pvcaBatchAssess(exprset_after_limma, batch_factors_names, pct_threshold) 
-  pvcaObj_harmony <- pvcaBatchAssess(exprset_after_harmony, batch_factors_names, pct_threshold) 
+  batch_rm_res <- limma::removeBatchEffect(expr_norm_log, batch = prim_batch, batch2 = second_batch,
+                                        design = design)
   
-  plot_pvca(pvcaObj_limma, paste0('after_correction_limma_', primary_batch_var, secondary_batch_var), 
-            file.path(output_dir, 'batch_correction'))
+} else if(batch_rm_type == 'harmony'){
+  # remove batch effect with harmony
+  # https://portals.broadinstitute.org/harmony/articles/quickstart.html
+  meta_dt <- pData(geomx_obj)[, unique(c(batch_vars_filt, aoi_segment_var, aoi_id))]
   
-  plot_pvca(pvcaObj_harmony, paste0('after_correction_harmony_', primary_batch_var, secondary_batch_var), 
-            file.path(output_dir, 'batch_correction'))
+  batch_rm_res <- t(HarmonyMatrix(expr_norm_log, 
+                                 meta_data = meta_dt,
+                                 vars_use = c(primary_batch_var, secondary_batch_var)))
+} else{
+  stop("batch_rm_type can be either limma or harmony")
 }
 
-# add limma and harmony res to umap object --------------------------------
+# add batch effect rm res to umap object --------------------------------
 
-geomx_obj@assayData[[paste0('limma_batch_corr_', norm_type)]] <- limma_res
-geomx_obj@assayData[[paste0('harmony_batch_corr_', norm_type)]] <- harmony_res
+geomx_obj@assayData[[paste0(batch_rm_type, '_', norm_type)]] <- batch_rm_res
 
 # plot counts distribution ------------------------------------------------
 
-plot_expr_distribution(geomx_obj@assayData[[paste0('limma_batch_corr_', norm_type)]], paste0('limma_batch_corr_', norm_type), 
+plot_expr_distribution(geomx_obj@assayData[[paste0(batch_rm_type, '_', norm_type)]], paste0(batch_rm_type, '_', norm_type), 
                        file.path(output_dir, 'batch_correction', 
-                                 paste0('expr_hist_limma_batch_corr_', 
-                                        norm_type, '.png')), is_log = T)
+                                 paste0('expr_hist_', batch_rm_type, '_', norm_type, '.png')), is_log = T)
 
+# check PVCA after batch effect removal -----------------------------------
 
-plot_expr_distribution(geomx_obj@assayData[[paste0('harmony_batch_corr_', norm_type)]], paste0('harmony_batch_corr_', norm_type), 
-                       file.path(output_dir, 'batch_correction',
-                                 paste0('expr_hist_harmony_batch_corr_', 
-                                        norm_type, '.png')), is_log = T)
+if(calculate_pvca){
+  exprset_after_batch_rm <- ExpressionSet(assayData=batch_rm_res,
+                                       phenoData = AnnotatedDataFrame(phenoData),
+                                       featureData = AnnotatedDataFrame(as.data.frame(geomx_obj@featureData@data)))
+
+  pvcaObj_after_batch_rm <- pvcaBatchAssess(exprset_after_batch_rm, batch_factors_names, pct_threshold) 
+  
+  plot_pvca(pvcaObj_after_batch_rm, paste0('pvca_after_correction_', batch_rm_type, '_', norm_type), 
+            file.path(output_dir, 'batch_correction'))
+}
+
 
 # make UMAP and visualise batch-corrected results -------------------------
 # TODO simplify code (as in sanity_check)
@@ -175,26 +152,22 @@ dir.create(file.path(output_dir, 'batch_correction', 'all'), showWarnings = T, r
 geomx_list_dim_red <- lapply(1:length(geomx_list), function(n){
   geomx <- geomx_list[[n]]
   
-  # run UMAP and tSNE on limma and harmony batch effect correction
-  geomx <- make_umap_tsne(geomx, paste0('limma_batch_corr_', norm_type), assay_is_log = T, top_var = top_var, top_PCA = top_pca)
-  geomx <- make_umap_tsne(geomx, paste0('harmony_batch_corr_', norm_type), assay_is_log = T, top_var = top_var, top_PCA = top_pca)
-  
+  # run UMAP and tSNE on batch effect correction
+  geomx <- make_umap_tsne(geomx, paste0(batch_rm_type, '_', norm_type), assay_is_log = T, top_var = top_var, top_PCA = top_pca)
+
   # generate umap and tsne plots and color by variables
-  for(corr_type in c(paste0('limma_batch_corr_', norm_type), paste0('harmony_batch_corr_', norm_type))){
-    for(method in c('UMAP', 'tSNE')){
-      for(color_var in batch_vars_filt){
-        print(color_var)
-        
-        plot_umap_tsne(pData(geomx), method_type = method, 
-                       norm_type = corr_type, color_var = color_var,
-                       output_name = file.path(output_dir, 'batch_correction', names(geomx_list)[n], 
-                                               paste0(method, '_', corr_type, '_', color_var, 
-                                                      '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
-                                                      '_toppca_', ifelse(is.null(top_var), 'NULL', as.character(top_pca)), '.pdf')))
-      }
+  for(method in c('UMAP', 'tSNE')){
+    for(color_var in batch_vars_filt){
+      print(color_var)
+      
+      plot_umap_tsne(pData(geomx), method_type = method, 
+                     assay_name = paste0(batch_rm_type, '_', norm_type), color_var = color_var, shape_var = aoi_segment_var,
+                     output_name = file.path(output_dir, 'batch_correction', names(geomx_list)[n], 
+                                             paste0(method, '_', batch_rm_type, '_', norm_type, '_', color_var, 
+                                                    '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
+                                                    '_toppca_', ifelse(is.null(top_var), 'NULL', as.character(top_pca)), '.pdf')))
     }
   }
-  
   return(geomx)
 })
 
@@ -204,8 +177,6 @@ geomx_obj <- geomx_list_dim_red[[1]]
 rm(geomx_list)
 rm(geomx_list_dim_red)
 
-
-
 # save geomx_obj with batch eff correction --------------------------------
 
 saveRDS(geomx_obj, file = geomx_norm_batch_eff_rm_path)
@@ -213,6 +184,7 @@ saveRDS(geomx_obj, file = geomx_norm_batch_eff_rm_path)
 # save logs
 writeLines(c('batch effect rmv logs:',
              '; normalisation type : ', norm_type,
+             '; batch effect removal type : ', batch_rm_type,
              '; primary batch effect variable : ', primary_batch_var,
              '; secondary batch effect variable : ', secondary_batch_var,
              '; limma experimental design : ', as.character(exp_design)[2]), 

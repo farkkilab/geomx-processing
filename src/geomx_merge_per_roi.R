@@ -54,7 +54,7 @@ mt_per_roi <- mt %>% group_by(sample_roi) %>%
   distinct()
 
 # create new geomx object
-newassay <- new.env(parent=geomx_obj@assayData)
+newassay <- new.env()
 newassay$exprs <- roi_sum_dcc_signal_mtx
 
 geomx_obj_roibased <- geomx_obj
