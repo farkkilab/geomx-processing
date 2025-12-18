@@ -76,7 +76,7 @@ if(calculate_pvca){
   
   pvcaObj_ini <- pvcaBatchAssess(exprset_norm, batch_factors_names, pct_threshold) 
   
-  plot_pvca(pvcaObj_ini, paste0('pvca_before_correction_', norm_type), file.path(output_dir, 'batch_correction'))
+  plot_pvca(pvcaObj_ini, paste0('before_correction_', norm_type), file.path(output_dir, 'batch_correction'))
 }
 
 
@@ -125,7 +125,7 @@ if(calculate_pvca){
 
   pvcaObj_after_batch_rm <- pvcaBatchAssess(exprset_after_batch_rm, batch_factors_names, pct_threshold) 
   
-  plot_pvca(pvcaObj_after_batch_rm, paste0('pvca_after_correction_', batch_rm_type, '_', norm_type), 
+  plot_pvca(pvcaObj_after_batch_rm, paste0('after_correction_', batch_rm_type, '_', norm_type), 
             file.path(output_dir, 'batch_correction'))
 }
 
