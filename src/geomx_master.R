@@ -19,8 +19,7 @@
 # TODO move loading pck to certain scripts
 # main packages for all scripts
 library(plyr, quietly =T)
-library(dplyr, quietly =T)# geomx_pcg_list <- c('devtools','BiocManager', 'plyr', 'dplyr', 'data.table', 'tibble', 'tools', 'parallel',
-#                     'ggforce', 'ggplot2', 'cowplot', 'ggrepel', 'reshape2', 
+library(dplyr, quietly =T)
 library(data.table, quietly =T)
 library(tibble, quietly =T)
 library(tools, quietly = T)

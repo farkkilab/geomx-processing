@@ -982,12 +982,13 @@ adjust_scrna_ref <- function(scrna_ref_path, scrna_ref_cleaned_path, raw_counts_
   scrna_ref_obj_filt@meta.data$cell_type <- ifelse(grepl(tumor_ct_name, scrna_ref_obj_filt@meta.data$cell_type), 
                                                    'tumor', scrna_ref_obj_filt@meta.data$cell_type)
   
-  # TODO uncomment for GSE 77
-  # TODO if cell state for tumor is only tumor, do that
-  # cell states - clustering tumor cells by patient
-  # scrna_ref_obj_filt@meta.data$cell_state <- ifelse(scrna_ref_obj_filt@meta.data$cell_type == 'tumor', 
-  #                                              paste0('tumor_', scrna_ref_obj_filt@meta.data[[pt_colname]]), 
-  #                                              scrna_ref_obj_filt@meta.data$cell_state)
+  # if cell state for tumor is only tumor - clustering tumor cells by patient 
+  if(length(unique(scrna_ref_obj_filt@meta.data$cell_state[scrna_ref_obj_filt@meta.data$cell_type == 'tumor'])) == 1){
+    scrna_ref_obj_filt@meta.data$cell_state <- ifelse(scrna_ref_obj_filt@meta.data$cell_type == 'tumor',
+                                                 paste0('tumor_', scrna_ref_obj_filt@meta.data[[pt_colname]]),
+                                                 scrna_ref_obj_filt@meta.data$cell_state)
+  }
+
   
   print('reference scRNAseq contains following cell types and states:')
   table(scrna_ref_obj_filt@meta.data$cell_state, scrna_ref_obj_filt@meta.data$cell_type)

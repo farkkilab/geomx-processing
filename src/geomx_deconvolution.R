@@ -11,22 +11,30 @@
 
 # variables for reference scRNAseq dataset
 ct_nr_thr <- 50 # min recommended is 20 - rmv cell states lower than thr in scrnaseq
-#tumor_ct_name <- 'Epithelial cells' # tumor ct label in scrna_anno
-tumor_ct_name <- 'tumor'
-pt_colname <- 'patient_id' # patient col name in reference seq
+# tumor ct label in scrna_anno
+tumor_ct_name <- 'Epithelial cells' #vaharautio
+#tumor_ct_name <- 'tumor' #hautaniemi
+# patient col name in reference seq
+pt_colname <- 'publication_patient_code_final' #vaharautio
+#pt_colname <- 'patient_id' #hautaniemi
+# single cell id colname in scrnaseq ref
+cell_id <- 'cell_name' #vaharautio
+#cell_id <- 'cell' #hautaiemi
+
 adjust_synonym_gene_names <- T # whether or not to adjust synonymical gene names between scRNAsea and GeoMX
 # that help rescue typically around 300 genes with synonym names, but sometimes Ensembl not work
 raw_counts_layer <- "counts" # raw counts slot (layer) name in reference scRNAseq dataset
 
-deconv_norm_type <- 'q3_norm' # c('q3_norm', 'log_norm', 'deseq2', 'deseq2_vst', 'libsize_log') which norm should be used for bayesprism results
+# which norm should be used for bayesprism results
+deconv_norm_type <- 'q3_norm' # c('q3_norm', 'log_norm', 'deseq2', 'deseq2_vst', 'libsize_log')
 batch_rm_type <- 'harmony' # c('harmony', 'limma')
 #cell_frac_cutoff = 0.005 # aois with lower ct frec will be removed for given ct for bp results processing
 
 sd_norm_type <- 'q3_norm' # suggested normalisation type for SpatialDecon (CANNOT BE IN LOG FORM)
 
 # variables to merge the final csv with
-meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
-                main_roi_label, other_vars_bio)
+meta_names <- unique(c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
+                main_roi_label, other_vars_bio))
 
 # main experimental conditions for limma batch eff rmv
 exp_design <- as.formula(paste('~', aoi_segment_var, '+', main_experimental_condition))
@@ -41,9 +49,6 @@ dir.create(file.path(output_dir, 'deconvolution', 'bayes_prism', scrna_anno, 'hi
 scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
 bp_res_path <- file.path(output_dir,'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '.RDS'))
 bp_ct_frac_path <- file.path(output_dir,'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_ct_fraction.csv')) 
-# bp_pseudosc_path <- file.path(output_dir,'deconvolution', 'bayes_prism', 
-#                               paste0('bp_res_pseudosc_', scrna_anno, 'ct_frac_',
-#                                      cell_frac_cutoff, '_', deconv_norm_type, '.csv'))
 
 norm_is_log <- ifelse(deconv_norm_type %in%  c('q3_norm', 'deseq2_norm'), FALSE, TRUE)
 
@@ -112,9 +117,9 @@ ct_names <- colnames(ct_frac)
 # mask  unreliable results
 ct_frac[cell_frac_cv > 0.2] <- NA
 
-ct_frac <- rownames_to_column(as.data.frame(ct_frac), 'dcc_filename')
+ct_frac <- rownames_to_column(as.data.frame(ct_frac), aoi_id)
 ct_frac <- left_join(ct_frac, sData(geomx_obj)[, meta_names],
-                     by = 'dcc_filename')
+                     by = aoi_id)
 
 fwrite(ct_frac, bp_ct_frac_path)
 
@@ -177,7 +182,6 @@ saveRDS(deconv_ct_norm_list, file = file.path(output_dir,'deconvolution', 'bayes
 
 # # do batch effect correction ----------------------------------------------
 
-# do batch effect removal with harmony
 deconv_batch_rm_list <- lapply(names(deconv_ct_norm_list), function(ct_name){
   print(ct_name)
 
@@ -309,7 +313,7 @@ dim(geomx_filtered_pc)
 # prepare cell profile matrix from reference scRNAseq
 
 # format annotations
-scrna_anno_dt <- scrna_ref_obj@meta.data[, c('cell', scrna_anno)]
+scrna_anno_dt <- scrna_ref_obj@meta.data[, c(cell_id, scrna_anno)]
 rownames(scrna_anno_dt) <- NULL
 colnames(scrna_anno_dt) <- c('cell_name', 'cell_type')
 
@@ -329,27 +333,42 @@ custom_oc_mtx <- create_profile_matrix(mtx = scrna_ref_raw_counts_mtx,          
 # run extended SpatialDecon with custom oc mtx ----------------------------
 # TODO run with nuclei_counts when it will be counted reliably from cycif 
 
-# run spatial decon with bg estimated genes
 # estimate bcg for every segment based on neg probes (under the hood)
 patient_nr <- length(unique(sData(geomx_filtered_pc)$Patient))
 
-sd_res_custom <- runspatialdecon(object = geomx_filtered_pc,
-                                    norm_elt = sd_norm_type,                # normalized data
-                                    raw_elt = "exprs",                    
-                                    X = custom_oc_mtx,                            
-                                    #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
-                                    #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
-                                    n_tumor_clusters = patient_nr)               # how many distinct tumor profiles to append to safeTME
+# sd_res_custom <- runspatialdecon(object = geomx_filtered_pc,
+#                                     norm_elt = sd_norm_type,                # normalized data
+#                                     raw_elt = "exprs",                    
+#                                     X = custom_oc_mtx)
+#                                     #cell_counts = geomx_obj$Nuclei,      # nuclei counts, used to estimate total cells
+#                                     #is_pure_tumor = geomx_obj$istumor,   # identities of the Tumor segments/observations
+#                                     #n_tumor_clusters = patient_nr)               # how many distinct tumor profiles to append to safeTME
 
+# from inside of runspatialdecon()  to work also for ROI-merged
+# some stats are not computed
+# estimate background
+bg <- derive_GeoMx_background(norm = as.matrix(Biobase::assayDataElement(geomx_filtered_pc , elt = sd_norm_type)),
+                              # access the probe pool information from the feature metadata
+                              probepool = Biobase::fData(geomx_filtered_pc)$Module,
+                              # access the names of the negative control probes
+                              negnames = Biobase::fData(geomx_filtered_pc)$TargetName[Biobase::fData(geomx_filtered_pc)$Negative])
+
+sd_res_custom <- spatialdecon(norm = as.matrix(Biobase::assayDataElement(geomx_filtered_pc , elt = sd_norm_type)),
+                              raw = as.matrix(Biobase::assayDataElement(geomx_filtered_pc , elt = "exprs")),
+                              bg = bg,
+                              X = custom_oc_mtx)
 
 saveRDS(sd_res_custom, file = file.path(output_dir, 'deconvolution', 'spatial_decon', 
-                                        paste0('sd_res_', scrna_anno, '_geomxfiltpc.RDS')))
+                                        paste0('sd_res_', scrna_anno, '_geomxfiltpc_rawresults.RDS')))
 
 
 # extract and save ct fractions 
-ct_frac_st <- rownames_to_column(data.frame(pData(sd_res_custom)[, 'prop_of_all']), 'dcc_filename')
+# ct_frac_st <- rownames_to_column(data.frame(pData(sd_res_custom)[, 'prop_of_all']), aoi_id)
+
+ct_frac_st <- rownames_to_column(data.frame(t(sd_res_custom$prop_of_all)), aoi_id)
 ct_frac_st <- left_join(ct_frac_st, sData(geomx_obj)[, meta_names],
-                     by = 'dcc_filename')
+                     by = aoi_id)
+
 
 fwrite(ct_frac_st, file.path(output_dir,'deconvolution', 'spatial_decon', 
                              paste0('sd_res_', scrna_anno, 
