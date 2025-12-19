@@ -137,7 +137,7 @@ if(comparison_type == 'within'){
 runlogs <- c()
 
 # iterate through all + deconv matrices
-lapply(names(expr_list)[4:8], function(expr_name){
+lapply(names(expr_list), function(expr_name){
   print(paste0('########## ', expr_name, ' ###########'))
   
   # hacking GeoMx class object 

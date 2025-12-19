@@ -297,10 +297,10 @@ ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4
 #custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
 custom_metadt_path <- NULL
 # DGE parameters
-comparison_type <<- 'within' 
+comparison_type <<- 'between' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'Segment_geomx' # main variable to make comparison between
+main_var_name <<- 'NACT_status' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -308,7 +308,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('NACT_status')
+dge_categories <<- c('paired_status')
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 
