@@ -253,7 +253,7 @@ ct_of_interest <- NULL
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
-signature_type <<- 'msigdb' # c('msigdb', 'custom')
+signature_type <<- 'custom' # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
 # custom - on custom signatures list specified in custom_sign_path
 
@@ -294,14 +294,13 @@ ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4
 # must contain 'dcc_filename' column to merge with geomx_obj metadata
 # if more column names are identical to the existing ones, columns from the custom dt will be used
 # if not needed, set to NULL
-#custom_metadt_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'b12_dcc_clinical_data.csv')
-custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
-
+#custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
+custom_metadt_path <- NULL
 # DGE parameters
 comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'Segment_hitumor06' # main variable to make comparison between
+main_var_name <<- 'Segment_geomx' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 

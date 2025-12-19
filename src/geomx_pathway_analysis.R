@@ -5,12 +5,12 @@
 # get variables -----------------------------------------------------------
 
 # variables to merge the final csv with
-meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
-               main_roi_label, other_vars_bio)
+meta_names <- unique(c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
+               main_roi_label, other_vars_bio))
 
 # best to use batch effect corrected or at least vst data (all in log form) 
-norm_type <- 'harmony_batch_corr_q3_norm' # from geomx assays
-deconv_norm_type <- 'deseq2_vst' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
+norm_type <- 'harmony_q3_norm' # from geomx assays
+deconv_norm_type <- 'q3_norm' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
 deconv_batch_rm_type <- 'harmony' # c('harmony', 'limma')
 
 # whethr or not rmv low complexity and non-coding genes from full signal geomx obj  (as for bp deconvolution)
@@ -32,7 +32,7 @@ msigdb_subcat <- c('CP:BIOCARTA', 'CP:REACTOME','CP:KEGG_MEDICUS', 'GO:BP', 'HAL
 dir.create(file.path(output_dir, 'pathway_analysis'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'pathway_analysis', 'gsea'), showWarnings = T, recursive = T)
 
-norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2'), FALSE, TRUE)
+norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
 norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) #TODO is it needed?
 
 
@@ -112,7 +112,7 @@ if(signature_type == 'msigdb'){
     sign <- prepare_msigdb_sign_list(adjust_synonym = adj_synonym, geomx_obj = geomx_obj, msigdb_subcat = subcat)
   })
   
-  sign_list <- do.call(c, sign_list_all)
+  sign_list <- do.call(c, sign_list)
   out_name <- 'msigdb'
 } else if(signature_type == 'custom'){
   # signatures from custom file
@@ -120,7 +120,7 @@ if(signature_type == 'msigdb'){
                                                geomx_obj = geomx_obj)
   out_name <- paste0('custom_', gsub('//.csv', '', basename(custom_sign_path)))
 } else{
-  stop("signature_type parameter can only be 'msigb' or 'custom'")
+  stop("signature_type parameter can only be 'msigdb' or 'custom'")
 }
 
 sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
@@ -141,7 +141,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   
   # adjust df and save
   gsea_long <- melt(gsea)
-  colnames(gsea_long) <- c('pathway','dcc_filename', paste0(gsea_type, '_score'))
+  colnames(gsea_long) <- c('pathway', aoi_id, paste0(gsea_type, '_score'))
   gsea_long$expr_signal <- names(expr_list)[x]
   gsea_long <- left_join(gsea_long, sData(geomx_obj)[meta_names])
   
@@ -174,44 +174,44 @@ writeLines(c('GSEA logs:',
 #TODO progeny needs an updated Matrix package, while >1.7 does not work for DGE
 #TODO use pathway significance info from prog_perm[[2]] (nulldist)
 
-progeny_type <- NULL 
-# whether 'perm' or 'nonperm' - some quirks in progeny algorithm, results similar but perm is preferred
-# if NULL <- no progeny calculation
-
-if(!is.null(progeny_type)){
-  
-  dir.create(file.path(output_dir, 'progeny'), showWarnings = T, recursive = T)
-  
-  if(progeny_type == 'perm'){
-    prog_res <- progeny(
-      expr_list$all,
-      organism = "Human",
-      top = 100,
-      perm = 10,
-      z_scores = FALSE,
-      get_nulldist = TRUE
-    )
-    
-  } else if(progeny_type == 'noperm'){
-    prog_res <- progeny(
-      geomx_obj@assayData[[norm_type]],
-      scale = TRUE,
-      organism = "Human",
-      top = 100,
-    )
-  } else{
-    stop("progeny_type can be either 'perm' or 'noperm'")
-  }
-  
-  # adjust the table and save
-  prog_res[[1]] <- t(prog_res[[1]])
-  rownames(prog_res[[1]]) <- gsub('\\.', '\\-', rownames(prog_res[[1]]))
-  rownames(prog_res[[1]]) <- gsub('\\-dcc', '\\.dcc', rownames(prog_res[[1]]))
-  
-  prog_res <- melt(prog_res)
-  colnames(prog_res) <- c('dcc_filename', 'progeny_path', 'progeny_score')
-  prog_res <- left_join(prog_res, sData(geomx_obj)[meta_names])
-  
-  fwrite(prog_res, file.path(output_dir, 'progeny', paste0('progeny_', progeny_type, '.csv')))
-}
-
+# progeny_type <- NULL 
+# # whether 'perm' or 'nonperm' - some quirks in progeny algorithm, results similar but perm is preferred
+# # if NULL <- no progeny calculation
+# 
+# if(!is.null(progeny_type)){
+#   
+#   dir.create(file.path(output_dir, 'progeny'), showWarnings = T, recursive = T)
+#   
+#   if(progeny_type == 'perm'){
+#     prog_res <- progeny(
+#       expr_list$all,
+#       organism = "Human",
+#       top = 100,
+#       perm = 10,
+#       z_scores = FALSE,
+#       get_nulldist = TRUE
+#     )
+#     
+#   } else if(progeny_type == 'noperm'){
+#     prog_res <- progeny(
+#       geomx_obj@assayData[[norm_type]],
+#       scale = TRUE,
+#       organism = "Human",
+#       top = 100,
+#     )
+#   } else{
+#     stop("progeny_type can be either 'perm' or 'noperm'")
+#   }
+#   
+#   # adjust the table and save
+#   prog_res[[1]] <- t(prog_res[[1]])
+#   rownames(prog_res[[1]]) <- gsub('\\.', '\\-', rownames(prog_res[[1]]))
+#   rownames(prog_res[[1]]) <- gsub('\\-dcc', '\\.dcc', rownames(prog_res[[1]]))
+#   
+#   prog_res <- melt(prog_res)
+#   colnames(prog_res) <- c('dcc_filename', 'progeny_path', 'progeny_score')
+#   prog_res <- left_join(prog_res, sData(geomx_obj)[meta_names])
+#   
+#   fwrite(prog_res, file.path(output_dir, 'progeny', paste0('progeny_', progeny_type, '.csv')))
+# }
+# 

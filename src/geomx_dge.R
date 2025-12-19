@@ -20,9 +20,7 @@
 ###############
 
 # best on batch-effect corrected data: 'limma_batch_corr' or 'harmony_batch_corr' (both log)
-# q3 also ok but its not batch corrected
-# TODO adjust to new naming from normalise function
-norm_type <- 'harmony_batch_corr_q3_norm' 
+norm_type <- 'harmony_q3_norm' 
 
 cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
 
@@ -40,9 +38,10 @@ norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE
 scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
 
 # path to deconvolution mtx
+#TODO adjust to new naming and parse with deconv norm and batch corr
 deconv_bp_path <- ifelse(grepl('harmony', norm_type), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_deseq2_vst_harmony_corr.RDS')), 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_q3_norm_harmony_corr.RDS')), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
                                    paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_deseq2_vst_limma_corr_', 
                                           primary_batch_var, secondary_batch_var,
@@ -58,10 +57,10 @@ geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
 # merge geomx metadata with custom metadata
 if(!is.null(custom_metadt_path)){
   custom_metadt <- fread(custom_metadt_path)
-  if('dcc_filename' %in% colnames(custom_metadt)){
-    pData(geomx_obj) <- left_join(pData(geomx_obj), custom_metadt, by = 'dcc_filename', suffix = c("_orig", ""))
+  if(aoi_id %in% colnames(custom_metadt)){
+    pData(geomx_obj) <- left_join(pData(geomx_obj), custom_metadt, by = aoi_id, suffix = c("_orig", ""))
   } else{
-    stop('custom_metadt have to contain "dcc_filename" column to be merged with metadata')
+    stop('custom_metadt have to contain aoi_id column to be merged with metadata')
   }
 }
 
@@ -104,20 +103,21 @@ if('bp' %in% dge_inp_data_type){
   names(deconv_ct_list) <- paste0('dge_deconv_', names(deconv_ct_list))
   expr_list <- c(expr_list, deconv_ct_list)
   
-} else if('bp_pulled' %in% dge_inp_data_type){
-  
-  deconv_res <- as.matrix(fread(deconv_bp_pulled_path), rownames = 1)
-  
-  # filter to cell types of interest
-  if(!is.null(ct_of_interest)){
-    deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
-  }
-  
-  deconv_list <- list(deconv_res)
-  names(deconv_list) <- 'dge_deconv'
-  
-  expr_list <- c(expr_list, deconv_list)
-}
+  } 
+# else if('bp_pulled' %in% dge_inp_data_type){
+#   
+#   deconv_res <- as.matrix(fread(deconv_bp_pulled_path), rownames = 1)
+#   
+#   # filter to cell types of interest
+#   if(!is.null(ct_of_interest)){
+#     deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
+#   }
+#   
+#   deconv_list <- list(deconv_res)
+#   names(deconv_list) <- 'dge_deconv'
+#   
+#   expr_list <- c(expr_list, deconv_list)
+# }
 
 
 # DGE with main variable comparison ---------------------------------------
@@ -137,7 +137,7 @@ if(comparison_type == 'within'){
 runlogs <- c()
 
 # iterate through all + deconv matrices
-lapply(names(expr_list), function(expr_name){
+lapply(names(expr_list)[4:8], function(expr_name){
   print(paste0('########## ', expr_name, ' ###########'))
   
   # hacking GeoMx class object 
@@ -151,7 +151,7 @@ lapply(names(expr_list), function(expr_name){
   geomx_obj_dge <- geomx_obj_dge[rownames(expr_list[[expr_name]]),  colnames(expr_list[[expr_name]])]
   
   # add back pData which was removed during filtering.. geomxtools bug
-  pData(geomx_obj_dge) <- pData(geomx_obj)[pData(geomx_obj)$dcc_filename %in% colnames(expr_list[[expr_name]]), ]
+  pData(geomx_obj_dge) <- pData(geomx_obj)[pData(geomx_obj)[[aoi_id]] %in% colnames(expr_list[[expr_name]]), ]
   
   pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj_dge), main_var_name, main_var_is_bin, main_var_main_val,
                                                dge_categories, cofounder_name) 
@@ -159,7 +159,7 @@ lapply(names(expr_list), function(expr_name){
   dge_results <- data.frame()
   
   # iterate through data groups
-  for(data_group in unique(pData(geomx_obj_dge)[, 'dge_group'])){
+  for(data_group in unique(pData(geomx_obj_dge)[['dge_group']])){
     
     print(data_group)
     runlogs <- c(runlogs, paste('dge run info for', expr_name, data_group, ':'))
