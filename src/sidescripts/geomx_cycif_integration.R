@@ -27,11 +27,16 @@ eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT/"
 roi_coords_dir <- file.path(eyemt_pdrive_dir, "Data/geomx/batch2/rois_from_tcycif/cyciF_batch2_ROIs_arrays")
 cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
 hubs_dir <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_interaction_hubs")
+hubs_inter_path <- file.path(hubs_dir, "eyemt_batch2_interactions_dt17191719_ct15.csv")
+hubs_cells_path <- file.path(hubs_dir, "eyemt_batch2_cells_dt17191719_ct15.csv")
+hubs_single_path <- file.path(hubs_dir, "eyemt_batch2_network_hubs_dt17191719_ct15.csv")
 
 # output dirs and paths 
 dir.create(file.path(output_dir, "cycif_integration"))
 out_path_coords <- file.path(output_dir, "cycif_integration", "batch2_cycif_coordinates.csv")
 out_path_cell_count <- file.path(output_dir, "cycif_integration", "batch2_cycif_cell_count_per_roi_stardist.csv")
+out_path_hubs <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_dt17191719_ct15.csv")
+out_path_hubs_inroi <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt17191719_ct15.csv")
 
 # load geomx, merge with cleaned metadata ---------------------------------
 # TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
@@ -123,14 +128,15 @@ cells_in_roi_all_sample <- lapply(unique(roi_coords_all$Sample), function(sample
 
 cells_in_roi_all_sample <- do.call(rbind, cells_in_roi_all_sample)
 
-
+fwrite(cells_in_roi_all_sample, out_path_cell_count)
 
 
 # integrate ROIs and hubs -------------------------------------------------
-# hubs_inter <- fread(file.path(hubs_dir, "eyemt_batch2_interactions_dt15171517_ct15.csv"))
-# hubs_cells <- fread(file.path(hubs_dir, "eyemt_batch2_cells_dt15171517_ct15.csv"))
-hubs_inter <- fread(file.path(hubs_dir, "eyemt_batch2_interactions_dt20222022_ct15_mt20.csv"))
-hubs_cells <- fread(file.path(hubs_dir, "eyemt_batch2_cells_dt20222022_ct15_mt20.csv"))
+hubs_inter <- fread(hubs_inter_path)
+hubs_cells <- fread(hubs_cells_path)
+hubs_single <- fread(hubs_single_path)
+
+# for couple of cells >1 hub - keep one
 hubs_cells$interaction_hub_ids <- gsub("['", "", hubs_cells$interaction_hub_ids, fixed = T)
 hubs_cells$interaction_hub_ids <- gsub("']", "", hubs_cells$interaction_hub_ids, fixed = T)
 hubs_cells$interaction_hub_ids <- gsub("',.*", "", hubs_cells$interaction_hub_ids, fixed = F)
@@ -139,14 +145,17 @@ hubs_cells$X_centroid_px <- hubs_cells$X_centroid / 0.325
 hubs_cells$Y_centroid_px <- hubs_cells$Y_centroid / 0.325
 
 hubs_cells <- left_join(hubs_cells, hubs_inter[, c('hub_id', 'hub_type')], by = c('interaction_hub_ids' = 'hub_id'))
+hubs_cells <- left_join(hubs_cells, hubs_single[, c('hubid', 'type')], by = c('network_hub_id' = 'hubid'))
+hubs_cells <- dplyr::rename(hubs_cells, interaction_hub_type = hub_type, network_hub_type = type)
 
-length(unique(hubs_cells$interaction_hub_ids))
-length(unique(hubs_inter$hub_id))
-length(intersect(hubs_cells$interaction_hub_ids, hubs_inter$hub_id))
-setdiff(hubs_cells$interaction_hub_ids, hubs_inter$hub_id)
-setdiff(hubs_inter$hub_id, hubs_cells$interaction_hub_ids)
-# "S100_iOme_hub_328" "S131_iOme_hub_50"  "S083_iOme2_hub_86"
+fwrite(hubs_cells, out_path_hubs)
+# length(unique(hubs_cells$interaction_hub_ids))
+# length(unique(hubs_inter$hub_id))
+# length(intersect(hubs_cells$interaction_hub_ids, hubs_inter$hub_id))
+# setdiff(hubs_cells$interaction_hub_ids, hubs_inter$hub_id)
+# setdiff(hubs_inter$hub_id, hubs_cells$interaction_hub_ids)
 
+# filter to cells within ROIs
 hubs_cells_in_roi_all <- lapply(unique(roi_coords_all$Sample), function(sample_name){
   print(sample_name)
   
@@ -183,12 +192,25 @@ hubs_cells_in_roi_all <- lapply(unique(roi_coords_all$Sample), function(sample_n
 })
 
 hubs_cells_in_roi_all <- do.call(rbind, hubs_cells_in_roi_all)
-hubs_cells_in_roi_all$interaction_hub_ids <- ifelse(hubs_cells_in_roi_all$interaction_hub_ids == '', 'notinhub', 
+hubs_cells_in_roi_all$interaction_hub_ids <- ifelse(hubs_cells_in_roi_all$interaction_hub_ids == '', NA, 
                                                     hubs_cells_in_roi_all$interaction_hub_ids)
+hubs_cells_in_roi_all$network_hub_id <- ifelse(hubs_cells_in_roi_all$network_hub_id == '', NA, 
+                                                    hubs_cells_in_roi_all$network_hub_id)
+# hubs_cells_in_roi_all$interaction_hub_ids <- ifelse(hubs_cells_in_roi_all$interaction_hub_ids == '', 'notinhub', 
+#                                                     hubs_cells_in_roi_all$interaction_hub_ids)
 hubs_cells_in_roi_all$sample_roi <- paste0(hubs_cells_in_roi_all$Sample, '_', as.character(hubs_cells_in_roi_all$roi_name))
 
 
 table(hubs_cells_in_roi_all$Sample, hubs_cells_in_roi_all$roi_name)
+
+# merging with intumor/instroma labs
+cells_in_roi_all_sample$CellID <- paste0(cells_in_roi_all_sample$Sample, '_', cells_in_roi_all_sample$CellID)
+cells_in_roi_all_sample$phenotyping_segment <- ifelse(grepl('tumor|Tumor', cells_in_roi_all_sample$final_label), 'tumor', 
+                                                      ifelse(grepl('stroma|Stroma', cells_in_roi_all_sample$final_label), 'stroma', NA))
+hubs_cells_in_roi_all <- left_join(hubs_cells_in_roi_all, cells_in_roi_all_sample[, c('CellID', 'phenotyping_segment')], 
+                                   by =c('cell_id' = 'CellID'))
+
+fwrite(hubs_cells_in_roi_all, out_path_hubs_inroi)
 ######################################################################
 ######################################################################
 # explore hubs vs ROI
@@ -210,67 +232,60 @@ length(unique(hubs_unique_roi$sample_roi))
 sort(table(hubs_unique_roi$hub_type))
 
 #######################################################
-# for sample
-sname <- 'S098_iOme'
-# % of cells in each roi which belongs to the hub
-hubs_cells_sample <- hubs_cells_in_roi_all[hubs_cells_in_roi_all$imageid == sname, ]
-cells_sample <- hubs_cells[hubs_cells$imageid == sname, ]
 
-roi_coords_sample <- roi_coords_all[roi_coords_all$Sample == sname, ]
-
-apply(roi_coords_sample,1, function(row){
-  print(row[['roi_name']])
-  print(as.numeric(row[['c1_X']])*0.325)
-  print(as.numeric(row[['c1_Y']])*0.325)
-  print(as.numeric(row[['c2_X']])*0.325)
-  print(as.numeric(row[['c2_Y']])*0.325)
-  print(as.numeric(row[['c3_X']])*0.325)
-  print(as.numeric(row[['c3_Y']])*0.325)
-  print(as.numeric(row[['c4_X']])*0.325)
-  print(as.numeric(row[['c4_Y']])*0.325)
-})
 ######################################################################
 ######################################################################
 # clustering and relabeling based on the cell counts in roi
 
 # cleaning labels
-cells_in_roi_all_pt$sample_roi <- paste0(cells_in_roi_all_pt$Sample, '_', cells_in_roi_all_pt$roi_name)
+# cells_in_roi_all_pt$sample_roi <- paste0(cells_in_roi_all_pt$Sample, '_', cells_in_roi_all_pt$roi_name)
+# 
+# cells_in_roi_all_pt$final_label <-  transmute(cells_in_roi_all_pt, final_label = 
+#                                                 plyr::mapvalues(final_label, c('undefined_Intumor_CD4Tcells',
+#                                                          'undefined_Intumor_CD8Tcells',
+#                                                          'Stroma', 'Tumor',
+#                                                          'undefined_Instroma',
+#                                                          'undefined_Intumor'), 
+#                                           c('Intumor_CD4Tcells',
+#                                             'Intumor_CD8Tcells',
+#                                             'Instroma_Fibroblasts',
+#                                             'Intumor_Tumor',
+#                                             'Instroma_undefined',
+#                                             'Intumor_undefined')))
+# 
+# cells_in_roi_all_pt$final_label <- ifelse(cells_in_roi_all_pt$final_label == 'NK', 
+#                                           paste0(cells_in_roi_all_pt$Global, '_NK'), 
+#                                           cells_in_roi_all_pt$final_label)
+# 
+# # dropping undefined_Global_NK bcs there is just 3 of them
+# cells_in_roi_all_pt$final_label <- ifelse(cells_in_roi_all_pt$final_label %in% c('undefined_Global_NK', 'undefined_Global'), 
+#                                           'Global_undefined', cells_in_roi_all_pt$final_label)
+# 
+# cells_in_roi_all_pt$Segment <- gsub('_.*', '', cells_in_roi_all_pt$final_label)
+# cells_in_roi_all_pt$Segment <- gsub('In', '', cells_in_roi_all_pt$Segment)
+# 
+# cells_in_roi_all_pt$cell_type <- gsub('^.*_', '', cells_in_roi_all_pt$final_label)
+# cells_in_roi_all_pt$cell_type <-  transmute(cells_in_roi_all_pt, cell_type = 
+#                                                 plyr::mapvalues(cell_type, c('CD11c', 'CD4Tcells',
+#                                                                                'CD8Tcells', 'Macrophages',
+#                                                                                'NK', 'Tumor', 'undefined', 'Fibroblasts'), 
+#                                                                 c('DCs', 'Tcells_CD4',
+#                                                                   'Tcells_CD8', 'Macrophages_Monocytes',
+#                                                                   'NKs', 'tumor', 'other', 'Fibroblasts')))
+# 
+# 
+# fwrite(cells_in_roi_all_pt, output_path)
 
-cells_in_roi_all_pt$final_label <-  transmute(cells_in_roi_all_pt, final_label = 
-                                                plyr::mapvalues(final_label, c('undefined_Intumor_CD4Tcells',
-                                                         'undefined_Intumor_CD8Tcells',
-                                                         'Stroma', 'Tumor',
-                                                         'undefined_Instroma',
-                                                         'undefined_Intumor'), 
-                                          c('Intumor_CD4Tcells',
-                                            'Intumor_CD8Tcells',
-                                            'Instroma_Fibroblasts',
-                                            'Intumor_Tumor',
-                                            'Instroma_undefined',
-                                            'Intumor_undefined')))
 
-cells_in_roi_all_pt$final_label <- ifelse(cells_in_roi_all_pt$final_label == 'NK', 
-                                          paste0(cells_in_roi_all_pt$Global, '_NK'), 
-                                          cells_in_roi_all_pt$final_label)
-
-# dropping undefined_Global_NK bcs there is just 3 of them
-cells_in_roi_all_pt$final_label <- ifelse(cells_in_roi_all_pt$final_label %in% c('undefined_Global_NK', 'undefined_Global'), 
-                                          'Global_undefined', cells_in_roi_all_pt$final_label)
-
-cells_in_roi_all_pt$Segment <- gsub('_.*', '', cells_in_roi_all_pt$final_label)
-cells_in_roi_all_pt$Segment <- gsub('In', '', cells_in_roi_all_pt$Segment)
-
-cells_in_roi_all_pt$cell_type <- gsub('^.*_', '', cells_in_roi_all_pt$final_label)
-cells_in_roi_all_pt$cell_type <-  transmute(cells_in_roi_all_pt, cell_type = 
-                                                plyr::mapvalues(cell_type, c('CD11c', 'CD4Tcells',
-                                                                               'CD8Tcells', 'Macrophages',
-                                                                               'NK', 'Tumor', 'undefined', 'Fibroblasts'), 
-                                                                c('DCs', 'Tcells_CD4',
-                                                                  'Tcells_CD8', 'Macrophages_Monocytes',
-                                                                  'NKs', 'tumor', 'other', 'Fibroblasts')))
+###################################################################
 
 
-fwrite(cells_in_roi_all_pt, output_path)
+hubs_cells_in_roi_all$final_label <-  mapvalues(hubs_cells_in_roi_all$final_label, 
+                                                from = c("Macrophages", "CD4Tcells", "CD8Tcells",
+                                                         "Tumor", "CD11c", "undefined", "NK", "Stroma"),
+                                              to=c("Tcells_other","Tcells_CD8","Tcells_CD4",
+                                                     "NKcells", "Bcells", "Macrophages_Monocytes",
+                                                     "DCs", "Mast_cells", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor"))
 
 ########################################
 
