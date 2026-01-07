@@ -1,4 +1,4 @@
-# relabel ROI based on deconvolution results
+# relabel ROI based on deconvolution results + ct calling + hubs
 # plot distributions, cluster etc
 
 # TODO check if all packages are needed
@@ -33,47 +33,51 @@ library(ComplexHeatmap)
 
 # define variables --------------------------------------------------------
 
-batch <- 'batch12'
-
 proj_dir <<- '~/Documents/phd/st'
+data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
+anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
+output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
-if(batch == 'batch1'){
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch1-1903') # batch1
-} else if(batch == 'batch2'){
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch2-1903') # batch2
-} else if(batch == 'batch12'){
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch12-1205-no-counts-shift2') # batch12
-} else{
-  stop('wrong batch nr')
-}
+bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_updated_ct_fraction.csv')
+sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 'sd_res_mid_lvl_ct_updated_geomxfiltpc_ct_fraction.csv')
+hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt17191719_ct15.csv")
 
-#geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
 
-bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_ct_fraction.csv')
-sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 'sd_res_mid_lvl_ct_geomxfiltpc_ct_fraction.csv')
-
+##################################
 
 meta_names <- c('dcc_filename', 'Patient', 'Sample', 'Site', 'NACT_status', 'Annotation_cell', 'Roi', 
                 'Segment_geomx',  'Segment') # 'main_batch_nr'
 
+cell_types <- c("DCs", "stroma", "Macrophages_Monocytes", "NKcells", "other",
+                "Tcells_CD4", "Tcells_CD8", "tumor")
+cell_types_important <- c("DCs", "Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8")
+cell_types_immune <- c("DCs", "Macrophages_Monocytes", "NKcells", "Tcells_CD4", "Tcells_CD8")
 
+#####
 ct_names <- c('Bcells', 'DCs', 'Endothelial cells', 'Fibroblasts', 'Macrophages', 'NKcells', 'Tcells', 'tumor')
 cells_immune <- c('Bcells', 'DCs', 'Macrophages', 'NKcells', 'Tcells')
 
 label_ct_names <- c('Tcells', 'Macrophages', 'DCs')
-
+#####
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-outp_plot_dir <- file.path(output_dir, 'sanity_check', 'ct_fractions')
+outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_fractions')
 dir.create(outp_plot_dir, recursive = T)
 
-# make labels match
-unite_anno <- function(anno){
-  anno_united <- gsub('posCD8_posIBA1', 'CD8_Iba1', anno)
-  anno_united <- gsub('negCD8_posIBA1', 'Iba1', anno_united)
-  anno_united <- gsub('posCD8_negIBA1', 'CD8', anno_united)
-  anno_united <- gsub('negCD8_negIBA1', 'noimmune', anno_united)
-}
+# # make labels match
+# unite_anno <- function(anno){
+#   anno_united <- gsub('posCD8_posIBA1', 'CD8_Iba1', anno)
+#   anno_united <- gsub('negCD8_posIBA1', 'Iba1', anno_united)
+#   anno_united <- gsub('posCD8_negIBA1', 'CD8', anno_united)
+#   anno_united <- gsub('negCD8_negIBA1', 'noimmune', anno_united)
+# }
+
+
+# check hub labels per roi ------------------------------------------------
+
+hubs_inroi <- fread(hubs_inroi_path)
+hubs_w_labs <- filter(hubs_inroi, interaction_hub_type != '' | network_hub_type != '')
 
 # load bind and clean deconv ct fractions ---------------------------------
 
@@ -81,26 +85,26 @@ unite_anno <- function(anno){
 min_frac <- 0.005
 
 ct_frac_bp <- fread(bp_cellcounts_path)
-ct_frac_bp$Annotation_cell_united <- unite_anno(ct_frac_bp$Annotation_cell)
+#ct_frac_bp$Annotation_cell_united <- unite_anno(ct_frac_bp$Annotation_cell)
 ct_frac_sd <- fread(sd_cellcounts_path)
-ct_frac_sd$Annotation_cell_united <- unite_anno(ct_frac_sd$Annotation_cell)
+#ct_frac_sd$Annotation_cell_united <- unite_anno(ct_frac_sd$Annotation_cell)
 
 deconv_list <- list(bp = ct_frac_bp, sd = ct_frac_sd)
 
-# transform to long and bind
+# transform to long calculate ct fractions and bind
 ct_frac_long_all <- lapply(1:length(deconv_list), function(n){
-  ct_frac_long <- melt(setDT(deconv_list[[n]]), id.vars = c(meta_names, 'Annotation_cell_united'), variable.name = "cell_type")
+  ct_frac_long <- melt(setDT(deconv_list[[n]]), id.vars = meta_names, variable.name = "cell_type")
   
   ct_frac_long$deconv_type <- names(deconv_list[n])
-  ct_frac_long$Sample_Roi <- paste0(ct_frac_long$Sample, '_', ct_frac_long$Roi)
+  ct_frac_long$sample_roi <- paste0(ct_frac_long$Sample, '_', ct_frac_long$Roi)
   
   # move unreliable predictions to 0
   ct_frac_long$value_clean <- ifelse(ct_frac_long$value <= min_frac | is.na(ct_frac_long$value), 0, ct_frac_long$value)
-  ct_frac_long$cell_type <- gsub('Endothelial.cells', 'Endothelial cells', ct_frac_long$cell_type)
-  ct_frac_long <- ct_frac_long[ct_frac_long$cell_type %in% ct_names, ] # subset to interesting ct
+  #ct_frac_long$cell_type <- gsub('Endothelial.cells', 'Endothelial cells', ct_frac_long$cell_type)
+  #ct_frac_long <- ct_frac_long[ct_frac_long$cell_type %in% ct_names, ] # subset to interesting ct
   
   # add fractions per ROI
-  ct_frac_long <- group_by(ct_frac_long, Sample_Roi, cell_type) %>%
+  ct_frac_long <- group_by(ct_frac_long, sample_roi, cell_type) %>%
     mutate(value_roi_mean = sum(value_clean)/n())
   
   return(ct_frac_long)
@@ -109,7 +113,7 @@ ct_frac_long_all <- lapply(1:length(deconv_list), function(n){
 ct_frac_long <- do.call(rbind, ct_frac_long_all)
 
 # per roi
-ct_frac_long_roi <- distinct(ct_frac_long, Sample_Roi, NACT_status, Segment_geomx, Annotation_cell, Annotation_cell_united, deconv_type, cell_type, value_roi_mean)
+ct_frac_long_roi <- distinct(ct_frac_long, sample_roi, NACT_status, Segment_geomx, Annotation_cell, deconv_type, cell_type, value_roi_mean)
 
 # check fraction distribution across aois and rois ------------------------
 

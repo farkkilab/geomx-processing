@@ -37,6 +37,7 @@ out_path_coords <- file.path(output_dir, "cycif_integration", "batch2_cycif_coor
 out_path_cell_count <- file.path(output_dir, "cycif_integration", "batch2_cycif_cell_count_per_roi_stardist.csv")
 out_path_hubs <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_dt17191719_ct15.csv")
 out_path_hubs_inroi <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt17191719_ct15.csv")
+out_path_roi_cellnr <- file.path(output_dir, "cycif_integration", "batch2_roi_cellnr.csv")
 
 # load geomx, merge with cleaned metadata ---------------------------------
 # TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
@@ -277,41 +278,49 @@ sort(table(hubs_unique_roi$hub_type))
 # fwrite(cells_in_roi_all_pt, output_path)
 
 
-###################################################################
+########################################
+# rename cells
 
-
-hubs_cells_in_roi_all$final_label <-  mapvalues(hubs_cells_in_roi_all$final_label, 
+hubs_cells_in_roi_all$cell_type <-  mapvalues(hubs_cells_in_roi_all$final_label, 
                                                 from = c("Macrophages", "CD4Tcells", "CD8Tcells",
                                                          "Tumor", "CD11c", "undefined", "NK", "Stroma"),
-                                              to=c("Tcells_other","Tcells_CD8","Tcells_CD4",
-                                                     "NKcells", "Bcells", "Macrophages_Monocytes",
-                                                     "DCs", "Mast_cells", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor"))
+                                                to=c("Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8",
+                                                     "tumor", "DCs", "other", "NKcells", "stroma"))
+hubs_cells_in_roi_all$sample_roi <- gsub(" ", "", hubs_cells_in_roi_all$sample_roi)
 
-########################################
 
-cell_types <- c("DCs", "Fibroblasts", "Macrophages_Monocytes", "NKs", "other",
+cell_types <- c("DCs", "stroma", "Macrophages_Monocytes", "NKcells", "other",
                 "Tcells_CD4", "Tcells_CD8", "tumor")
 cell_types_important <- c("DCs", "Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8")
-cell_types_immune <- c("DCs", "Macrophages_Monocytes", "NKs", "Tcells_CD4", "Tcells_CD8")
+cell_types_immune <- c("DCs", "Macrophages_Monocytes", "NKcells", "Tcells_CD4", "Tcells_CD8")
 
 # count nr of cells per ROI and AOI
 
 # count cells per roi
-roi_ct <- dcast(cells_in_roi_all_pt, sample_roi ~ cell_type)
+roi_ct <- dcast(hubs_cells_in_roi_all, sample_roi ~ cell_type)
 roi_ct$total_cell_nr <- rowSums(roi_ct[, cell_types])
 roi_ct$immune_cell_nr <- rowSums(roi_ct[, cell_types_immune])
+roi_ct$immune_other_cell_nr <- rowSums(roi_ct[, c(cell_types_immune, "other")])
 
-roi_ct_long <- melt(roi_ct[, !(names(roi_ct) %in% c('total_cell_nr', 'immune_cell_nr'))], 
+fwrite(roi_ct, out_path_roi_cellnr)
+
+roi_ct_long <- melt(roi_ct[, !(names(roi_ct) %in% c('total_cell_nr', 'immune_cell_nr','immune_other_cell_nr'))], 
                                         id.vars = c("sample_roi"), variable.name = "cell_type")
 
 roi_ct_frac <- mutate_at(roi_ct, vars(cell_types), funs(. / total_cell_nr))
-roi_ct_frac_long <- melt(roi_ct_frac[, !(names(roi_ct_frac) %in% c('total_cell_nr', 'immune_cell_nr'))], 
+roi_ct_frac_long <- melt(roi_ct_frac[, !(names(roi_ct_frac) %in% c('total_cell_nr', 'immune_cell_nr', 'immune_other_cell_nr'))], 
                          id.vars = c("sample_roi"), variable.name = "cell_type")
 
 roi_ct_frac_immune <- mutate_at(roi_ct[, c("sample_roi", cell_types_immune, "immune_cell_nr")], 
                                 vars(cell_types_immune), funs(. / immune_cell_nr))
 roi_ct_frac_immune_long <- melt(roi_ct_frac_immune[, !(names(roi_ct_frac_immune) %in% c('immune_cell_nr'))], 
                          id.vars = c("sample_roi"), variable.name = "cell_type")
+
+roi_ct_frac_immune_other <- mutate_at(roi_ct[, c("sample_roi", cell_types_immune, "immune_other_cell_nr")], 
+                                vars(cell_types_immune), funs(. / immune_other_cell_nr))
+roi_ct_frac_immune_other_long <- melt(roi_ct_frac_immune_other[, !(names(roi_ct_frac_immune_other) %in% c('immune_other_cell_nr'))], 
+                                id.vars = c("sample_roi"), variable.name = "cell_type")
+
 
 #TODO merge with our labels
 
