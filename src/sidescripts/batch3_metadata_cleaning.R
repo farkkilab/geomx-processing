@@ -13,6 +13,8 @@ meta_b123_out_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metad
 meta_b123_out_no_tls_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metadata/dcc_metadata_batch123_no_tls_cleaned.csv'
 clin_path <- '/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_patient_clinical_data.csv'
 
+source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
+
 # combine worksheets
 worksheets_list <- list.files(file.path(meta_dir, 'lab_worksheets'), full.names = T, pattern = "csv")
 
@@ -98,16 +100,6 @@ roi_geomx$tls_id <- ifelse(roi_geomx$tls_status == 'Agg', NA, roi_geomx$tls_id)
 roi_geomx <- dplyr::rename(roi_geomx, tcycif_roi = `roi index`, geomx_roi = geomx_roi_fixed)
 
 # clean final label to our nomenclature
-clean_labs <- function(x, nk=F){
-  y <- ifelse(grepl('CD4', x), 'CD4', '')
-  y <- ifelse(grepl('CD8', x), paste(y, 'CD8', sep = '_'), y)
-  y <- ifelse(grepl('CD11', x), paste(y, 'CD11', sep = '_'), y)
-  y <- ifelse(grepl('Iba1', x), paste(y, 'Iba1', sep = '_'), y)
-  if(nk){y <- ifelse(grepl('NK|hub', x), paste(y, 'NK', sep = '_'), y)}
-  y <- gsub('^_', '', y)
-  return(y)
-}
-
 roi_geomx$nk_status <- ifelse(is.na(roi_geomx$nk_status) | roi_geomx$nk_status == '', FALSE, roi_geomx$nk_status)
 
 roi_geomx$final_label <- clean_labs(roi_geomx$final_label)

@@ -498,6 +498,19 @@ plot_pvca <- function(pvca_obj, plot_name, output_dir){
 
 ############################################################
 # Description:
+# clean final label to our nomenclature
+clean_labs <- function(x, nk=F){
+  y <- ifelse(grepl('CD4', x), 'CD4', '')
+  y <- ifelse(grepl('CD8', x), paste(y, 'CD8', sep = '_'), y)
+  y <- ifelse(grepl('CD11', x), paste(y, 'CD11', sep = '_'), y)
+  y <- ifelse(grepl('Iba1|Macrophages', x), paste(y, 'Iba1', sep = '_'), y)
+  if(nk){y <- ifelse(grepl('NK|hub', x), paste(y, 'NK', sep = '_'), y)}
+  y <- gsub('^_', '', y)
+  return(y)
+}
+
+############################################################
+# Description:
 #   Conducts an Over-Representation Analysis (ORA) for the given set of genes 
 #   against a background gene set library.
 # Parameters:
