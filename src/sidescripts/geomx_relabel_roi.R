@@ -55,8 +55,10 @@ cell_types_important <- c("DCs", "Macrophages_Monocytes", "Tcells_CD4", "Tcells_
 cell_types_immune <- c("DCs", "Macrophages_Monocytes", "NKcells", "Tcells_CD4", "Tcells_CD8")
 
 #####
-ct_names <- c('Bcells', 'DCs', 'Endothelial cells', 'Fibroblasts', 'Macrophages', 'NKcells', 'Tcells', 'tumor')
-cells_immune <- c('Bcells', 'DCs', 'Macrophages', 'NKcells', 'Tcells')
+ct_names <- c('Bcells', 'DCs', 'Endothelial_cells', 'Fibroblasts_Mesothelial', 'Macrophages_Monocytes',
+              'NKcells', 'Tcells_CD4','Tcells_CD8', 'Tcells_other','Mast_cells', 'tumor')
+cells_immune <- c('Bcells', 'DCs', 'Macrophages_Monocytes',
+                  'NKcells', 'Tcells_CD4','Tcells_CD8', 'Tcells_other','Mast_cells')
 
 label_ct_names <- c('Tcells', 'Macrophages', 'DCs')
 #####
@@ -118,6 +120,7 @@ ct_frac_long_roi <- distinct(ct_frac_long, sample_roi, NACT_status, Segment_geom
 # check fraction distribution across aois and rois ------------------------
 
 for(ct_name in ct_names){
+  print(ct_name)
   ct_frac_long_ct <- ct_frac_long[ct_frac_long$cell_type == ct_name, ]
   ct_frac_long_roi_ct <- ct_frac_long_roi[ct_frac_long_roi$cell_type == ct_name, ]
   

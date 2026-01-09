@@ -6,11 +6,13 @@ library(tibble)
 library(ComplexHeatmap)
 library(GeomxTools)
 library(readxl)
+library(ggpmisc)
 
 # TODO ensure # "S130_iOme_5" "S130_iOme_6" "S197_iOme_1" - everywhere in metadata - probably removed during QC
-
+# TODO compare with deconv made for ROI
 # define vars -------------------------------------------------------------
 
+# cell fraction from deconv below that lvl will be changed to 0 
 # max nr of cells = 300 so 0.005 cell fraction is 1 cell/200 cells 1,5 cell/300 cells
 min_frac <- 0.005
 
@@ -29,13 +31,13 @@ hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells
 ##############
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_fractions')
+outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_frac_comparison')
 dir.create(outp_plot_dir, recursive = T)
 
-output_ct_frac_deconv_path <- file.path(output_dir, 'batch2_ct_frac_deconv.csv')
-output_ct_frac_deconv_roi_path <- file.path(output_dir, 'batch2_ct_frac_deconv_roi.csv')
-output_ct_frac_cycif_roi_path <- file.path(output_dir, 'batch2_ct_frac_cycif_roi.csv')
-output_ct_frac_all_roi_path <- file.path(output_dir, 'batch2_ct_frac_all_roi.csv')
+output_ct_frac_deconv_path <- file.path(output_dir, 'cycif_integration', 'batch2_ct_frac_deconv.csv')
+output_ct_frac_deconv_roi_path <- file.path(output_dir, 'cycif_integration', 'batch2_ct_frac_deconv_roi.csv')
+output_ct_frac_cycif_roi_path <- file.path(output_dir, 'cycif_integration',  'batch2_ct_frac_cycif_roi.csv')
+output_ct_frac_all_roi_path <- file.path(output_dir, 'cycif_integration', 'batch2_ct_frac_all_roi.csv')
 
 ##############
 meta_names <- c('dcc_filename', 'Sample', 'Annotation_cell', 'Roi', 
@@ -57,6 +59,7 @@ ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "Macrophages_Monocytes",
 # additional cells from deconv not counted in phenotyping and should be treated as 'other'
 ct_names_other <- c("Bcells", "Tcells_other", "Mast_cells")
 
+
 # load geomx, merge with cleaned metadata ---------------------------------
 # TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
 meta_geomx <- pData(readRDS(geomx_norm_batch_eff_rm_path))
@@ -74,13 +77,6 @@ rm(meta_cleaned)
 
 # kk <- distinct(metadt[, c('sample_roi', 'sample_roi_orig')])
 # kkk <- kk[kk$sample_roi_orig %in% kk$sample_roi_orig[which(duplicated(kk$sample_roi_orig))], ]
-
-# TODO --------------------------------------------------------------------
-
-# TODO compare cell nr (from meta) with cells within roi
-# TODO compare sd/bp/pheno cell nr/fractions
-# TODO compare this with hubs labels
-# TODO compare with deconv made per roi
 
 # load deconv and transform to long format --------------------------------
 
@@ -113,8 +109,18 @@ ct_frac_deconv_long <- left_join(ct_frac_deconv_long, metadt[, c(meta_names, 'Nu
 ct_frac_deconv_long$ct_nr_bp <- round(ct_frac_deconv_long$ct_frac_bp * ct_frac_deconv_long$total_cell_nr_geomx)
 ct_frac_deconv_long$ct_nr_sd <- round(ct_frac_deconv_long$ct_frac_sd * ct_frac_deconv_long$total_cell_nr_geomx)
 
+# before mering per ROI, remove AOI from tsi regions which lost their pair during eg QC
+# TODO think if they should be included later or not. for checking concordance with cycif phenotyping better to rm
+roi_incomplete <- ct_frac_deconv_long %>%
+  select(dcc_filename, sample_roi, Segment_geomx) %>%
+  distinct() %>%
+  group_by(sample_roi) %>%
+  mutate(nr_aoi = n()) %>%
+  filter(Segment_geomx == 'tsi' & nr_aoi == 1)
+
 # merge per ROI
 ct_frac_deconv_long_roi <- ct_frac_deconv_long %>%
+  filter(!(dcc_filename %in% roi_incomplete$dcc_filename)) %>% # rmv 20 AOIs from incomplete ROIs
   group_by(sample_roi, cell_type) %>%
   summarise(total_cell_nr_geomx = sum(total_cell_nr_geomx), ct_nr_bp = sum(ct_nr_bp), ct_nr_sd = sum(ct_nr_sd),
             ct_frac_bp = mean(ct_frac_bp), ct_frac_sd = mean(ct_frac_sd)) %>%
@@ -156,16 +162,21 @@ hubs_inroi <- as.data.frame(fread(hubs_inroi_path)) %>%
   dplyr::filter(interaction_hub_type != '' | network_hub_type != '') %>%
   distinct()
 
+# relabel in line with Annotation_cell
+hubs_inroi$interaction_hub_type <- clean_labs(hubs_inroi$interaction_hub_type)
+
 # merge network labels in roi
 hubs_inroi <- hubs_inroi %>%
   group_by(sample_roi_orig) %>%
-  mutate(network_hub_type = paste0(unique(network_hub_type), collapse = "|")) %>%
+  mutate(network_hub_type = paste0(unique(network_hub_type), collapse = "_")) %>%
   distinct() %>%
   mutate(interaction_hub_type = paste0(unique(interaction_hub_type), collapse = "|")) %>%
   distinct()
 
 hubs_inroi$interaction_hub_type <- gsub("^\\||\\|$", "", hubs_inroi$interaction_hub_type)
 hubs_inroi$interaction_hub_type <- gsub("||", "|", hubs_inroi$interaction_hub_type, fixed = T)
+
+hubs_inroi$network_hub_type <- clean_labs(hubs_inroi$network_hub_type) # relabel after merging to ensure ordering
 
 hubs_inroi$sample_roi_orig <- gsub(" ", "", hubs_inroi$sample_roi_orig)
 
@@ -183,3 +194,130 @@ ct_frac_all <- left_join(ct_frac_cycif_long_roi, ct_frac_deconv_long_roi, by = c
          total_cell_nr_cycif, total_cell_nr_geomx, ct_nr_cycif, ct_nr_bp, ct_nr_sd, ct_frac_cycif, ct_frac_bp, ct_frac_sd)
 
 fwrite(ct_frac_all, output_ct_frac_all_roi_path)
+
+
+
+# compare cell fractions --------------------------------------------------
+
+label_vars <- c('Annotation_cell', 'network_hub_type')
+
+##########################################################
+# scatterplot with geomx vs cycif total cell count
+cell_count_roi <- select(ct_frac_all, sample_roi, Segment_geomx, total_cell_nr_cycif, total_cell_nr_geomx) %>%
+  distinct()
+
+cell_count_scatter <- ggplot(data = cell_count_roi, aes(x = total_cell_nr_cycif, y = total_cell_nr_geomx)) +
+  geom_point(aes(color = Segment_geomx)) +
+  ggtitle('total cell count per ROI cycif vs geomx') +
+  geom_smooth(method='lm', formula= y~x) +
+  stat_correlation(method = 'pearson')
+
+ggsave(file.path(outp_plot_dir, paste0('total_cellnr_cycif_vs_geomx.png')),
+       width = 2000, height = 2000, unit = 'px')
+
+
+##########################################################
+# compare ct fractions between deconv sd/bp and cycif phenotyping
+comp_type <- 'ct_frac' # or ct_nr
+
+# scatterplots with value comparisons between methods
+for(value_comb in c('bp_sd', 'bp_cycif', 'sd_cycif')){
+  vals <- unlist(strsplit(value_comb, split = '_'))
+  
+  # per cell type
+  for(color_var in label_vars){
+    for(ct_name in unique(ct_frac_all$cell_type)){
+      print(ct_name)
+      ct_frac_ct <- ct_frac_all[ct_frac_all$cell_type == ct_name, ]
+      
+      ct_scatter <- ggplot(data = ct_frac_ct, aes(x = get(paste0(comp_type, '_', vals[1])), y = get(paste0(comp_type, '_', vals[2])))) +
+        geom_point(aes(color = get(color_var), shape = Segment_geomx)) +
+        geom_smooth(method='lm', formula= y~x) +
+        stat_correlation(method = 'pearson') +
+        labs(title = paste(ct_name, comp_type, vals[1], 'vs', vals[2]), 
+             x = paste0(comp_type, '_', vals[1]), y = paste0(comp_type, '_', vals[2]), color = color_var)
+      
+      ggsave(file.path(outp_plot_dir, paste0('scatter_', ct_name, '_', vals[1], '_', vals[2], '_', comp_type, '_', color_var, '.png')),
+             width = 2000, height = 2000, unit = 'px')
+    }
+  }
+  
+  # for all faceted by ct
+  all_scatter <- ggplot(data = ct_frac_all, aes(x = get(paste0(comp_type, '_', vals[1])), y = get(paste0(comp_type, '_', vals[2])))) +
+    geom_point(aes(color = Segment_geomx)) +
+    facet_wrap(~ cell_type) +
+    geom_smooth(method='lm', formula= y~x) +
+    stat_correlation(method = 'pearson') +
+    labs(title = paste(comp_type, vals[1], 'vs', vals[2]), x = paste0(comp_type, '_', vals[1]), y = paste0(comp_type, '_', vals[2]))
+  
+  ggsave(file.path(outp_plot_dir, paste0('scatter_all_', vals[1], '_', vals[2], '_', comp_type, '.png')),
+         width = 2000, height = 2000, unit = 'px')
+}
+
+#######################################################################
+# boxplots with cell nr/fractions per different labels
+
+# make long dataframe for sd/bp/cycif methods
+ct_frac_all_method <- select(ct_frac_all, sample_roi, Segment_geomx, cell_type, !!label_vars, starts_with('ct_frac'), starts_with('ct_nr'))
+ct_frac_all_method_long <- melt(setDT(ct_frac_all_method), id.vars = c('sample_roi', 'Segment_geomx', 'cell_type', label_vars),
+                                variable.name = "method_type")
+
+# for each ct faceted by method
+for(comp_type in c('ct_frac', 'ct_nr')){
+  ct_frac_all_method_comp <- ct_frac_all_method_long[grepl(comp_type, ct_frac_all_method_long$method_type), ]
+  
+  for(label_var in label_vars){
+    for(ct_name in unique(ct_frac_all$cell_type)){
+      
+      ct_frac_all_method_comp_ct <- ct_frac_all_method_comp[ct_frac_all_method_comp$cell_type == ct_name, ]
+      
+      ggplot(ct_frac_all_method_comp_ct, aes(x = get(label_var), y = value)) + 
+        geom_boxplot(alpha = .2) +
+        geom_point(size = 0.2) + 
+        facet_wrap(~ method_type, nrow = length(unique(ct_frac_all_method_comp_ct$method_type))) +
+        labs(title = ct_name, x = label_var, y = comp_type) +
+        scale_x_discrete(guide = guide_axis(angle = 45))
+      
+      
+      ggsave(file.path(outp_plot_dir, paste0('boxpl_', ct_name, '_', label_var, '_', comp_type, '.png')),
+             width = 1500, height = 1000, unit = 'px')
+    }
+  }
+}
+
+# for each method, faceted by label
+for(method_name in unique(ct_frac_all_method_long$method_type)){
+  ct_frac_all_method_sel <- ct_frac_all_method_long[ct_frac_all_method_long$method_type == method_name, ]
+  
+  for(label_var in label_vars){
+    ggplot(ct_frac_all_method_sel, aes(x = cell_type, y = value)) + 
+      geom_boxplot(alpha = .2) +
+      geom_point(size = 0.2) + 
+      facet_wrap(~ get(label_var), ncol = 4) +
+      labs(title = paste(method_name, 'per', label_var), x = 'cell_type', y = method_name) +
+      scale_x_discrete(guide = guide_axis(angle = 90))
+    
+    
+    ggsave(file.path(outp_plot_dir, paste0('label_boxpl_allct_', label_var, '_', method_name, '.png')),
+           width = 1500, height = 3000, unit = 'px')
+    
+    # filtered to immune
+    ggplot(ct_frac_all_method_sel[ct_frac_all_method_sel$cell_type %in% ct_names_immune, ], aes(x = cell_type, y = value)) + 
+      geom_boxplot(alpha = .2) +
+      geom_point(size = 0.2) + 
+      facet_wrap(~ get(label_var), ncol = 4) +
+      labs(title = paste(method_name, 'per', label_var), x = 'cell_type', y = method_name) +
+      scale_x_discrete(guide = guide_axis(angle = 90))
+    
+    
+    ggsave(file.path(outp_plot_dir, paste0('label_boxpl_immune_', label_var, '_', method_name, '.png')),
+           width = 1500, height = 3000, unit = 'px')
+  }
+}
+
+
+# compare labels ----------------------------------------------------------
+
+
+
+
