@@ -22,9 +22,15 @@ anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_clea
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
-# coordinates, cell count and hubs pathways for cycif images
-eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT/"
-roi_coords_dir <- file.path(eyemt_pdrive_dir, "Data/geomx/batch2/rois_from_tcycif/cyciF_batch2_ROIs_arrays")
+# coordinates for cycif images pathways
+eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT"
+
+# TODO iterate through batches
+roi_coords_dir_b1 <- file.path(eyemt_pdrive_dir, "Data/geomx/batch1/roi_coordinates_cycif/cycif_roi_arrays") # batch1
+roi_coords_dir_b2 <- file.path(eyemt_pdrive_dir, "Data/geomx/batch2/roi_coordinates_cycif/cycif_roi_arrays") # batch2
+roi_coords_dir_b3 <- file.path(eyemt_pdrive_dir, "Data/geomx/batch3/roi_coordinates_cycif/cycif_roi_arrays") # batch3
+
+# cell count and hubs for cycif images pathways 
 cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
 hubs_dir <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_interaction_hubs")
 hubs_inter_path <- file.path(hubs_dir, "eyemt_batch2_interactions_dt17191719_ct15.csv")
@@ -33,7 +39,7 @@ hubs_single_path <- file.path(hubs_dir, "eyemt_batch2_network_hubs_dt17191719_ct
 
 # output dirs and paths 
 dir.create(file.path(output_dir, "cycif_integration"))
-out_path_coords <- file.path(output_dir, "cycif_integration", "batch2_cycif_coordinates.csv")
+out_path_coords <- file.path(output_dir, "cycif_integration", "batch3_cycif_coordinates.csv")
 out_path_cell_count <- file.path(output_dir, "cycif_integration", "batch2_cycif_cell_count_per_roi_stardist.csv")
 out_path_hubs <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_dt17191719_ct15.csv")
 out_path_hubs_inroi <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt17191719_ct15.csv")
@@ -54,7 +60,6 @@ metadt <- metadt[metadt$main_batch_nr == 2, ]
 
 # clean and calculate cycif coordinates -----------------------------------
 
-#patient_names <- sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(list.files(roi_coords_dir)))
 sample_names <- file_path_sans_ext(basename(list.files(roi_coords_dir)))
 
 roi_coords_all <- lapply(sample_names, function(sample_name){
