@@ -20,7 +20,7 @@
 ###############
 
 # best on batch-effect corrected data: 'limma_batch_corr' or 'harmony_batch_corr' (both log)
-norm_type <- 'harmony_q3_norm' 
+norm_type <- 'harmony_batch_corr_q3_norm' 
 
 cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
 

@@ -79,7 +79,7 @@ library(clusterProfiler, quietly =T)
 
 #all the batches should be merged and qc-ed + processed together and bigbatch + smallbatch variable as batch effects
 batch <<- 'batch123' # for correct paths and batch eff vars 
-merge_per_roi <- TRUE # whether or not signal from all AOIs within ROI should be added
+merge_per_roi <- FALSE # whether or not signal from all AOIs within ROI should be added
 
 # define variables and paths ----------------------------------------------
 
@@ -117,7 +117,7 @@ if(batch == 'batch1'){
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch23.xlsx') #batch1 and 2
 } else if(batch == 'batch123'){
   data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2711-roibased') # batch123
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
   anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
 }else{
   stop('wrong batch nr')
@@ -278,7 +278,7 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
-dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
+dge_inp_data_type <<- c('all') # within c('all', 'bp')
 
 #dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
@@ -297,10 +297,10 @@ ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4
 #custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
 custom_metadt_path <- NULL
 # DGE parameters
-comparison_type <<- 'between' 
+comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'NACT_status' # main variable to make comparison between
+main_var_name <<- 'Segment' # main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -308,7 +308,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('paired_status')
+dge_categories <<- c()
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 
