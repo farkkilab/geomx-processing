@@ -10,8 +10,10 @@ library(tibble)
 library(GeomxTools)
 library(readxl)
 library(tools)
+library(tiff)
 
-# TODO make sure X px and Y px for b1 are for c1 (top-left corner) - NO!!!!
+# TODO b1: xy left corner from geomx metadata
+# TODO width, height count image from rois original
 # TODO calculate 2 missing ROIs: 45,46 of S106 iOme (not in input frames)
 # c1: top-left, c2: top-right, c3: down-right, c4: down-left
 
@@ -31,11 +33,12 @@ output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808
 # coordinates for cycif images pathways
 eyemt_geomx_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT/Data/geomx"
 coords_dir <- "roi_coordinates_cycif/cycif_roi_arrays" # coors dir within batch data dir
-coords_geomx_dir <- "roi_coordinates_cycif/roi_coordinates_geomx" # coors dir within batch data dir
+coords_geomx_dir <- "roi_coordinates_cycif/roi_coordinates_geomx" # geom coors dir within batch data dir
+roi_images_geomx_dir <- "geomx_rois"
 
 dir.create(file.path(output_dir, "cycif_integration"))
 
-output_coords_b123_path <- file.path(output_dir, 'cycif_integration', 'batch123_geomx_cycif_coordinates.csv')
+output_coords_b123_path <- file.path(output_dir, 'cycif_integration', 'geomx_cycif_coordinates_batch123.csv')
 
 # load full cleaned metadata ----------------------------------------------
 
@@ -125,7 +128,7 @@ for(batch_name in c('batch2', 'batch3')){
   stopifnot(all(roi_coords_all$sample_roi %in% 
                   meta_cleaned$sample_roi[meta_cleaned$main_batch_nr == gsub("batch", "", batch_name)]))
 
-  fwrite(roi_coords_all, file.path(output_dir, "cycif_integration", paste0(batch_name, "_geomx_cycif_coordinates.csv")))
+  fwrite(roi_coords_all, file.path(output_dir, "cycif_integration", paste0("geomx_cycif_coordinates_", batch_name, ".csv")))
 }
 
 
@@ -141,11 +144,9 @@ sample_names <- file_path_sans_ext(basename(list.files(roi_coords_dir, pattern =
 roi_coords_all <- lapply(sample_names, function(sample_name){
   
   # read correct columns and rename
-  roi_coords <- as.data.frame(fread(file.path(roi_coords_dir, paste0(sample_name, '.csv')), select = c(1, 7:10, 2:5),
+  roi_coords <- as.data.frame(fread(file.path(roi_coords_dir, paste0(sample_name, '.csv')), select = c(1, 7:10),
                                     col.names = c("roi_name", "roi_c1_X_cycif", "roi_c1_Y_cycif",
-                                                  "roi_width_cycif", "roi_height_cycif", 
-                                                  "roi_c1_X_geomx", "roi_c1_Y_geomx",
-                                                  "roi_width_geomx", "roi_height_geomx")))
+                                                  "roi_width_cycif", "roi_height_cycif")))
   
   # calculate other corners
   roi_coords$roi_c2_X_cycif <- roi_coords$roi_c1_X_cycif + roi_coords$roi_width_cycif
@@ -169,36 +170,72 @@ roi_coords_all$roi_name <- gsub(" ", "", roi_coords_all$roi_name)
 roi_coords_all$main_batch_nr <- gsub("batch", "", batch_name)
 
 # merge patient+roi with metadata to find sample name
-roi_coords_all <- left_join(roi_coords_all, meta_cleaned[, c('Roi_geomx_original', 'Patient', 'Sample', 'main_batch_nr', 'Roi_geomx')], 
+roi_coords_all <- left_join(roi_coords_all, meta_cleaned[, c('Roi_geomx_original', 'Patient', 'Sample', 'main_batch_nr', 'Roi_geomx',
+                                                             'ROI_Coordinate_X_geomx', 'ROI_Coordinate_Y_geomx')], 
                             by = c('roi_name' = 'Roi_geomx_original', 'Patient', 'main_batch_nr')) %>%
+  dplyr::rename(roi_c1_X_geomx = ROI_Coordinate_X_geomx, roi_c1_Y_geomx = ROI_Coordinate_Y_geomx) %>%
   distinct()
 
 # unique identifier of roi
-roi_coords_all$sample_roi <- paste0(roi_coords_all$Sample, '_', roi_coords_all$Roi_geomx) 
+roi_coords_all$sample_roi <- paste0(roi_coords_all$Sample, '_', roi_coords_all$Roi_geomx)
+
+# find width and height of geomx ROIs from the images
+sample_names <- list.files(file.path(eyemt_geomx_dir, batch_name, roi_images_geomx_dir), pattern = "^S.*")
+
+roi_dim <- sapply(sample_names, function(sample_name){
+  sample_roi_images <- list.files(file.path(eyemt_geomx_dir, batch_name, roi_images_geomx_dir, sample_name, "original"), 
+                                  pattern = ".tiff", full.names = T)
+  
+  # for each image, load and calculate dimentions
+  lapply(sample_roi_images, function(roi_img_path){
+    roi_img <- readTIFF(roi_img_path)
+    sample_name_cleaned <- gsub('^s', 'S', tolower(sample_name)) # adjust naming
+    roi_df <- data.frame(sample_roi = paste0(sample_name_cleaned, "_", "roi-", file_path_sans_ext(basename(roi_img_path))), 
+                         roi_width_geomx = dim(roi_img)[2], roi_height_geomx = dim(roi_img)[1])
+    return(roi_df)
+  })
+})
+
+roi_dim_df <- do.call(rbind, unlist(roi_dim, recursive = F))
+
+# merge with main df
+roi_coords_all <- left_join(roi_coords_all, roi_dim_df)
 
 #reorder and save
 roi_coords_all <- roi_coords_all[, col_order]
-fwrite(roi_coords_all, file.path(output_dir, "cycif_integration", paste0(batch_name, "_geomx_cycif_coordinates.csv")))
+fwrite(roi_coords_all, file.path(output_dir, "cycif_integration", paste0("geomx_cycif_coordinates_", batch_name, ".csv")))
 
 # merge all files together and merge with cleaned metadata ----------------
 
 roi_coords_b123 <- lapply(c("batch1", "batch2", "batch3"), function(batch_name){
-  roi_coords_b <- fread(file.path(output_dir, "cycif_integration", paste0(batch_name, "_geomx_cycif_coordinates.csv")))
+  roi_coords_b <- fread(file.path(output_dir, "cycif_integration", paste0("geomx_cycif_coordinates_", batch_name, ".csv")))
 })
 
 roi_coords_b123 <- do.call(rbind, roi_coords_b123)
 roi_coords_b123$main_batch_nr <- as.integer(roi_coords_b123$main_batch_nr)
 fwrite(roi_coords_b123, output_coords_b123_path)
 
-# join with metadata
-meta <- fread(anno_path)
-meta <- left_join(meta, roi_coords_b123[, c(1, 2, 3, 6:21)], by = c('main_batch_nr','Sample', 'Roi_geomx'))
-meta <- meta[, c(1:24, 55:70, 25:54)]
+##################
+#################
+# careful, it override metadata !!
+# join with metadata and save
+# meta <- fread(anno_path)
+# meta <- left_join(meta, roi_coords_b123[, c(1:3, 6:21)], by = c('main_batch_nr','Sample', 'Roi_geomx'))
+# meta <- meta[, c(1:24, 55:70, 25:54)]
+# 
+# # 2 ROIs have not been computed 45,46 of S106 iOme (not in input frames)
+# meta_empty <- meta[is.na(meta$roi_c1_X_geomx), ]
+# 
+# # examine non-matching geomx coords
+# non_matching <- which(round(as.numeric(meta$ROI_Coordinate_X_geomx), 3) != round(as.numeric(meta$roi_c1_X_geomx), 3))
+# 
+# meta <- dplyr::select(meta, -ROI_Coordinate_X_geomx, -ROI_Coordinate_Y_geomx)
+# fwrite(meta, anno_path)
+# 
+# # same for meta with tls
+# meta <- fread(anno_path_notls)
+# meta <- left_join(meta, roi_coords_b123[, c(1:3, 6:21)], by = c('main_batch_nr','Sample', 'Roi_geomx'))
+# meta <- meta[, c(1:24, 55:70, 25:54)]
+# meta <- dplyr::select(meta, -ROI_Coordinate_X_geomx, -ROI_Coordinate_Y_geomx)
+# fwrite(meta, anno_path_notls)
 
-# 2 ROIs have not been computed 45,46 of S106 iOme (not in input frames)
-meta_empty <- meta[is.na(meta$roi_c1_X_geomx), ]
-
-# examine non-matching geomx coords
-# batch1 coords are not at all in line..
-non_matching <- which(round(as.numeric(meta$ROI_Coordinate_X_geomx), 3) != round(as.numeric(meta$roi_c1_X_geomx), 3))
-meta_non_matching <- meta[non_matching, ]

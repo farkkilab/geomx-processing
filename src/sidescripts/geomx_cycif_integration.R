@@ -1,5 +1,4 @@
-# integrates geomx and cycif roi coordinates
-# integrates cycif cell counts
+# integrates cycif cell counts + hubs labels by ROI coordinates
 # integrates hubs 
 
 library(data.table)
@@ -15,37 +14,47 @@ library(tools)
 
 # define paths ------------------------------------------------------------
 # from master script
-batch <- 'batch123'
 proj_dir <<- '~/Documents/phd/st'
 data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
 anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT"
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
-# coordinates for cycif images pathways
-eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT"
-
-# TODO iterate through batches
-roi_coords_dir_b1 <- file.path(eyemt_pdrive_dir, "Data/geomx/batch1/roi_coordinates_cycif/cycif_roi_arrays") # batch1
-roi_coords_dir_b2 <- file.path(eyemt_pdrive_dir, "Data/geomx/batch2/roi_coordinates_cycif/cycif_roi_arrays") # batch2
-roi_coords_dir_b3 <- file.path(eyemt_pdrive_dir, "Data/geomx/batch3/roi_coordinates_cycif/cycif_roi_arrays") # batch3
+# cycif-geomx coordinates path (computed with geomx_cycif_coordinates_adj.R)
+coords_path <- file.path(output_dir, 'cycif_integration', 'batch123_geomx_cycif_coordinates.csv')
 
 # cell count and hubs for cycif images pathways 
-cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
+#cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
 hubs_dir <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_interaction_hubs")
-hubs_inter_path <- file.path(hubs_dir, "eyemt_batch2_interactions_dt17191719_ct15.csv")
-hubs_cells_path <- file.path(hubs_dir, "eyemt_batch2_cells_dt17191719_ct15.csv")
-hubs_single_path <- file.path(hubs_dir, "eyemt_batch2_network_hubs_dt17191719_ct15.csv")
+hubs_comm_dir <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_communities")
+
+# hubs files
+dt_hubparam <- 'dt15171517' # version of distances metrics used for hubs 
+ct_hubparam <- 'ct15'
+dt_comm_hubparam <- 'dt500'
+res_hubparam <- 'res0015'
+hubs_cells_path <- file.path(hubs_dir, paste0("eyemt_batch2_cells_", dt_hubparam, "_", ct_hubparam,  ".csv")) # hubs per cell
+hubs_inter_path <- file.path(hubs_dir, paste0("eyemt_batch2_interactions_", dt_hubparam, "_", ct_hubparam,  ".csv")) # interaction hubs
+hubs_comm_path <- file.path(hubs_comm_dir, paste0("eyemt_batch2_communities_with_annotations_", ct_hubparam, "_", dt_comm_hubparam,  "_", res_hubparam, "_leiden_cmp.csv"))
 
 # output dirs and paths 
 dir.create(file.path(output_dir, "cycif_integration"))
-out_path_coords <- file.path(output_dir, "cycif_integration", "batch3_cycif_coordinates.csv")
-out_path_cell_count <- file.path(output_dir, "cycif_integration", "batch2_cycif_cell_count_per_roi_stardist.csv")
-out_path_hubs <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_dt17191719_ct15.csv")
-out_path_hubs_inroi <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt17191719_ct15.csv")
+#out_path_cell_count <- file.path(output_dir, "cycif_integration", "batch2_cycif_cell_count_per_roi_stardist.csv")
+out_path_hubs_cells <- file.path(output_dir, "cycif_integration", 
+                                 paste("batch2_hubs_cells", dt_hubparam, ct_hubparam, dt_comm_hubparam, res_hubparam, ".csv", sep = '_'))
+out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", 
+                                       paste("batch2_hubs_cells_inroi", dt_hubparam, ct_hubparam, dt_comm_hubparam, res_hubparam, ".csv", sep = '_'))
 out_path_roi_cellnr <- file.path(output_dir, "cycif_integration", "batch2_roi_cellnr.csv")
 
-# load geomx, merge with cleaned metadata ---------------------------------
+##########################
+cell_types <- c("DCs", "stroma", "Macrophages_Monocytes", "NKcells", "other",
+                "Tcells_CD4", "Tcells_CD8", "tumor")
+#cell_types_important <- c("DCs", "Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8")
+cell_types_immune <- c("DCs", "Macrophages_Monocytes", "NKcells", "Tcells_CD4", "Tcells_CD8")
+
+
+# load cleaned metadata ---------------------------------------------------
 # TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
 meta_geomx <- pData(readRDS(geomx_norm_batch_eff_rm_path))
 meta_cleaned <- read_excel(anno_path)
@@ -58,111 +67,85 @@ rm(meta_cleaned)
 # subset to batch2
 metadt <- metadt[metadt$main_batch_nr == 2, ]
 
-# clean and calculate cycif coordinates -----------------------------------
+# load cycif coordinates --------------------------------------------------
+roi_coords_all <- fread(coords_path)
 
-sample_names <- file_path_sans_ext(basename(list.files(roi_coords_dir)))
+# subset to batch2
+roi_coords_all <- roi_coords_all[roi_coords_all$main_batch_nr == 2, ]
 
-roi_coords_all <- lapply(sample_names, function(sample_name){
-  
-  # clean roi coords df
-  roi_coords <- as.data.frame(fread(file.path(roi_coords_dir, paste0(sample_name, '.csv')), drop = c(6, 11)))
-  colnames(roi_coords) <- c('roi_name', 'c1_X', 'c2_X', 'c3_X', 'c4_X', 'c1_Y', 'c2_Y', 'c3_Y', 'c4_Y')
-  roi_coords$c1_X <- gsub('\\[|\\]', '', roi_coords$c1_X)
-  roi_coords$c1_Y <- gsub('\\[|\\]', '', roi_coords$c1_Y)
-  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), function(x){gsub(" ", "", x)})
-  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
-  roi_coords$roi_name <- as.character(roi_coords$roi_name)
-  
-  #calculate additional dimentions
-  roi_coords <-  apply(roi_coords, 1, function(row){
-    row$roi_width <- round(as.numeric(max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) - min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']]))),3)
-    row$roi_height <- round(as.numeric(max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])) - min(as.numeric(row[['c3_Y']]), as.numeric(row[['c4_Y']]))),3)
-    row$roi_center_X <- round(as.numeric(min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) + (row$roi_width * 0.5)),3)
-    row$roi_center_Y <- round(as.numeric(min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) + (row$roi_height * 0.5)),3)
-    return(as.data.frame(row))
-  })
-  
-  roi_coords <- as.data.frame(do.call(rbind, roi_coords))
-  roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
-  roi_coords$Sample <- sample_name
-  
-  # TODO save per sample - not sure if needed
-  return(roi_coords)
-})
+# # subset cells to the ones in ROIs ----------------------------------------
+#TODO  may not be needed if we're using hubs_cell directly since it containt the same info
+#
+# cells_in_roi_all_sample <- lapply(unique(roi_coords_all$Sample), function(sample_name){
+#   
+#   print(sample_name)
+#   
+#   cell_count <- fread(file.path(cycif_cell_count_dir, sample_name,  paste0(sample_name, '_updated.csv')))
+#   
+#   # count cells within all ROIs in the sample
+#   roi_coords_sample <- roi_coords_all[roi_coords_all$Sample == sample_name, ]
+#   
+#   
+#   cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
+#     
+#     # find cells within range
+#     # coordinates are not longer rectangles, they're a bit rotated
+#     # the cells are found inside longer edges of rectangle
+#     print(row[["roi_name"]])
+# 
+#     cells_in_roi <- dplyr::filter(cell_count,
+#                            as.numeric(X_centroid) >= min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) &
+#                              as.numeric(X_centroid) <= max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) &
+#                              as.numeric(Y_centroid) >= min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) &
+#                              as.numeric(Y_centroid) <= max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])))
+#   
+#     print(nrow(cells_in_roi))
+#     
+#     cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
+#     
+#     return(cells_in_roi)
+#   })
+#   
+#   cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
+#   
+#   rm(cell_count)
+#   return(cells_in_roi_all)
+# })
+# 
+# cells_in_roi_all_sample <- do.call(rbind, cells_in_roi_all_sample)
+# 
+# fwrite(cells_in_roi_all_sample, out_path_cell_count)
+# 
 
-roi_coords_all <- do.call(rbind, roi_coords_all)
-roi_coords_all <- roi_coords_all[, c(ncol(roi_coords_all), 1:(ncol(roi_coords_all)-1))]
-fwrite(roi_coords_all, out_path_coords)
-
-# subset cells to the ones in ROIs ----------------------------------------
-
-cells_in_roi_all_sample <- lapply(unique(roi_coords_all$Sample), function(sample_name){
-  
-  print(sample_name)
-  
-  cell_count <- fread(file.path(cycif_cell_count_dir, sample_name,  paste0(sample_name, '_updated.csv')))
-  
-  # count cells within all ROIs in the sample
-  roi_coords_sample <- roi_coords_all[roi_coords_all$Sample == sample_name, ]
-  
-  
-  cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
-    
-    # find cells within range
-    # coordinates are not longer rectangles, they're a bit rotated
-    # the cells are found inside longer edges of rectangle
-    print(row[["roi_name"]])
-
-    cells_in_roi <- dplyr::filter(cell_count,
-                           as.numeric(X_centroid) >= min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) &
-                             as.numeric(X_centroid) <= max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) &
-                             as.numeric(Y_centroid) >= min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) &
-                             as.numeric(Y_centroid) <= max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])))
-  
-    print(nrow(cells_in_roi))
-    
-    cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-    
-    return(cells_in_roi)
-  })
-  
-  cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
-  
-  rm(cell_count)
-  return(cells_in_roi_all)
-})
-
-cells_in_roi_all_sample <- do.call(rbind, cells_in_roi_all_sample)
-
-fwrite(cells_in_roi_all_sample, out_path_cell_count)
-
-
-# integrate ROIs and hubs -------------------------------------------------
-hubs_inter <- fread(hubs_inter_path)
+# merge all hubs labels per cell ------------------------------------------
 hubs_cells <- fread(hubs_cells_path)
-hubs_single <- fread(hubs_single_path)
+hubs_inter <- fread(hubs_inter_path)
+hubs_comm <- fread(hubs_comm_path)
 
-# for couple of cells >1 hub - keep one
-hubs_cells$interaction_hub_ids <- gsub("['", "", hubs_cells$interaction_hub_ids, fixed = T)
-hubs_cells$interaction_hub_ids <- gsub("']", "", hubs_cells$interaction_hub_ids, fixed = T)
-hubs_cells$interaction_hub_ids <- gsub("',.*", "", hubs_cells$interaction_hub_ids, fixed = F)
+double_hubs <- hubs_cells[grepl(',', hubs_cells$interaction_hub_ids), ] # to keep just in case
+
+# for 294 cells  >1 hub - keep one
+hubs_cells$interaction_hub_ids <- gsub(",.*", "", hubs_cells$interaction_hub_ids)
+
 # TODO it might be changed back to pix in the original files
 hubs_cells$X_centroid_px <- hubs_cells$X_centroid / 0.325
 hubs_cells$Y_centroid_px <- hubs_cells$Y_centroid / 0.325
 
-hubs_cells <- left_join(hubs_cells, hubs_inter[, c('hub_id', 'hub_type')], by = c('interaction_hub_ids' = 'hub_id'))
-hubs_cells <- left_join(hubs_cells, hubs_single[, c('hubid', 'type')], by = c('network_hub_id' = 'hubid'))
-hubs_cells <- dplyr::rename(hubs_cells, interaction_hub_type = hub_type, network_hub_type = type)
+# join with interaction hubs
+hubs_cells <- left_join(hubs_cells, hubs_inter[, c('hub_id', 'hub_type', 'hub_size')], by = c('interaction_hub_ids' = 'hub_id')) %>%
+  dplyr::rename(interaction_hub_type = hub_type, interaction_hub_size = hub_size)
 
-fwrite(hubs_cells, out_path_hubs)
-# length(unique(hubs_cells$interaction_hub_ids))
-# length(unique(hubs_inter$hub_id))
-# length(intersect(hubs_cells$interaction_hub_ids, hubs_inter$hub_id))
-# setdiff(hubs_cells$interaction_hub_ids, hubs_inter$hub_id)
-# setdiff(hubs_inter$hub_id, hubs_cells$interaction_hub_ids)
+# join with network hubs and communities
+hubs_cells <- left_join(hubs_cells, hubs_comm[, c('hubid', 'hub_type', 'hub_size', 'community', 'cluster')], 
+                        by = c('network_hub_id' = 'hubid'))
+hubs_cells <-  dplyr::rename(hubs_cells, network_hub_type = hub_type, network_hub_size = hub_size, community_id = community, community_cluster = cluster)
 
-# filter to cells within ROIs
-hubs_cells_in_roi_all <- lapply(unique(roi_coords_all$Sample), function(sample_name){
+# TODO uncomment if needed, a bit to heavy just for checking 
+# fwrite(hubs_cells, out_path_hubs_cells)
+
+# filter to cells within ROIs ---------------------------------------------
+# TODO later it may be just merged from metadata instead of reading roi_coords_all
+hubs_cells_inroi <- lapply(unique(roi_coords_all$Sample), function(sample_name){
   print(sample_name)
   
   hubs_cells_sample <- hubs_cells[hubs_cells$imageid == sample_name, ]
@@ -170,70 +153,85 @@ hubs_cells_in_roi_all <- lapply(unique(roi_coords_all$Sample), function(sample_n
   # count cells within all ROIs in the sample
   roi_coords_sample <- roi_coords_all[roi_coords_all$Sample == sample_name, ]
   
-  
   cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
     
     # find cells within range
-    # coordinates are not longer rectangles, they're a bit rotated
-    # the cells are found inside longer edges of rectangle
-    print(row[["roi_name"]])
-    
+    # coordinates are not longer rectangles, they're a bit rotated - the cells are found inside longer edges of rectangle
     cells_in_roi <- dplyr::filter(hubs_cells_sample,
-                                  as.numeric(X_centroid_px) >= min(as.numeric(row[['c1_X']]), as.numeric(row[['c4_X']])) &
-                                    as.numeric(X_centroid_px) <= max(as.numeric(row[['c2_X']]), as.numeric(row[['c3_X']])) &
-                                    as.numeric(Y_centroid_px) >= min(as.numeric(row[['c4_Y']]), as.numeric(row[['c3_Y']])) &
-                                    as.numeric(Y_centroid_px) <= max(as.numeric(row[['c1_Y']]), as.numeric(row[['c2_Y']])))
-    
-    print(nrow(cells_in_roi))
-    
+                                  as.numeric(X_centroid_px) >= min(as.numeric(row[['roi_c1_X_cycif']]), as.numeric(row[['roi_c4_X_cycif']])) &
+                                    as.numeric(X_centroid_px) <= max(as.numeric(row[['roi_c2_X_cycif']]), as.numeric(row[['roi_c3_X_cycif']])) &
+                                    as.numeric(Y_centroid_px) >= min(as.numeric(row[['roi_c4_Y_cycif']]), as.numeric(row[['roi_c3_Y_cycif']])) &
+                                    as.numeric(Y_centroid_px) <= max(as.numeric(row[['roi_c1_Y_cycif']]), as.numeric(row[['roi_c2_Y_cycif']])))
+
     cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-    
     return(cells_in_roi)
   })
   
   cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
-  
-  rm(cell_count)
   return(cells_in_roi_all)
 })
 
-hubs_cells_in_roi_all <- do.call(rbind, hubs_cells_in_roi_all)
-hubs_cells_in_roi_all$interaction_hub_ids <- ifelse(hubs_cells_in_roi_all$interaction_hub_ids == '', NA, 
-                                                    hubs_cells_in_roi_all$interaction_hub_ids)
-hubs_cells_in_roi_all$network_hub_id <- ifelse(hubs_cells_in_roi_all$network_hub_id == '', NA, 
-                                                    hubs_cells_in_roi_all$network_hub_id)
-# hubs_cells_in_roi_all$interaction_hub_ids <- ifelse(hubs_cells_in_roi_all$interaction_hub_ids == '', 'notinhub', 
-#                                                     hubs_cells_in_roi_all$interaction_hub_ids)
-hubs_cells_in_roi_all$sample_roi <- paste0(hubs_cells_in_roi_all$Sample, '_', as.character(hubs_cells_in_roi_all$roi_name))
+hubs_cells_inroi <- do.call(rbind, hubs_cells_inroi)
+
+# clean labels
+hubs_cells_inroi$interaction_hub_ids <- ifelse(hubs_cells_inroi$interaction_hub_ids == '', NA, 
+                                               hubs_cells_inroi$interaction_hub_ids)
+hubs_cells_inroi$network_hub_id <- ifelse(hubs_cells_inroi$network_hub_id == '', NA, 
+                                          hubs_cells_inroi$network_hub_id)
+
+# add annotation_cell from metadata
+hubs_cells_inroi <- left_join(hubs_cells_inroi, unique(metadt[, c('Sample', 'Roi_geomx', 'Annotation_cell')]),
+                               by = c('Sample', 'Roi_geomx'))
 
 
-table(hubs_cells_in_roi_all$Sample, hubs_cells_in_roi_all$roi_name)
+table(hubs_cells_inroi$Sample, hubs_cells_inroi$roi_name)
 
-# merging with intumor/instroma labs
-cells_in_roi_all_sample$CellID <- paste0(cells_in_roi_all_sample$Sample, '_', cells_in_roi_all_sample$CellID)
-cells_in_roi_all_sample$phenotyping_segment <- ifelse(grepl('tumor|Tumor', cells_in_roi_all_sample$final_label), 'tumor', 
-                                                      ifelse(grepl('stroma|Stroma', cells_in_roi_all_sample$final_label), 'stroma', NA))
-hubs_cells_in_roi_all <- left_join(hubs_cells_in_roi_all, cells_in_roi_all_sample[, c('CellID', 'phenotyping_segment')], 
-                                   by =c('cell_id' = 'CellID'))
+fwrite(hubs_cells_inroi, out_path_hubs_cells_inroi)
 
-fwrite(hubs_cells_in_roi_all, out_path_hubs_inroi)
-######################################################################
-######################################################################
+# count phenotyped ct number in ROI  --------------------------------------
+# TODO move to roi_hubs_integration script
+# rename cells to match deconvolution
+hubs_cells_inroi$cell_type <-  mapvalues(hubs_cells_inroi$final_label, 
+                                              from = c("Macrophages", "CD4Tcells", "CD8Tcells",
+                                                       "Tumor", "CD11c", "undefined", "NK", "Stroma"),
+                                              to=c("Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8",
+                                                   "tumor", "DCs", "other", "NKcells", "stroma"))
+
+# count nr of cells per ROI and AOI
+roi_ct <- dcast(hubs_cells_inroi, sample_roi ~ cell_type)
+roi_ct$total_cell_nr <- rowSums(roi_ct[, cell_types])
+roi_ct$immune_cell_nr <- rowSums(roi_ct[, cell_types_immune])
+roi_ct$immune_other_cell_nr <- rowSums(roi_ct[, c(cell_types_immune, "other")])
+
+fwrite(roi_ct, out_path_roi_cellnr)
+
+#########################################################################################
+#########################################################################################
 # explore hubs vs ROI
 
-hubs_cells_in_roi_inhub <- hubs_cells_in_roi_all[hubs_cells_in_roi_all$interaction_hub_ids != 'notinhub', ]
+hubs_cells_inroi_inhub <- hubs_cells_inroi[!is.na(hubs_cells_inroi$interaction_hub_ids), ]
+hubs_cells_inroi_incomm <- hubs_cells_inroi[!is.na(hubs_cells_inroi$community_id), ]
 
-table(hubs_cells_in_roi_all$Sample, hubs_cells_in_roi_all$roi_name)
-table(hubs_cells_in_roi_inhub$Sample, hubs_cells_in_roi_inhub$roi_name)
+table(hubs_cells_inroi$Sample, hubs_cells_inroi$roi_name)
+table(hubs_cells_inroi_inhub$Sample, hubs_cells_inroi_inhub$roi_name)
+table(hubs_cells_inroi_incomm$Sample, hubs_cells_inroi_incomm$roi_name)
 
 # how many rois does not have any hubs?
-hubs_unique <- distinct(hubs_cells_in_roi_all, sample_roi, interaction_hub_ids, hub_type)
+hubs_unique <- distinct(hubs_cells_inroi, sample_roi, interaction_hub_ids, interaction_hub_type)
 length(unique(hubs_unique$sample_roi))
 
 # nr of unique hubs in each ROI
-hubs_unique_roi <- distinct(hubs_cells_in_roi_inhub, sample_roi, interaction_hub_ids, hub_type)
+hubs_unique_roi <- distinct(hubs_cells_inroi_inhub, sample_roi, interaction_hub_ids, interaction_hub_type)
 sort(table(hubs_unique_roi$sample_roi))
 length(unique(hubs_unique_roi$sample_roi))
+hist(unlist(table(hubs_unique_roi$sample_roi)))
+
+# nr of unique comms in each ROI
+comm_unique_roi <- distinct(hubs_cells_inroi_incomm, sample_roi, community_id, community_cluster)
+sort(table(comm_unique_roi$sample_roi))
+length(unique(comm_unique_roi$sample_roi))
+hist(unlist(table(comm_unique_roi$sample_roi)))
+
 
 sort(table(hubs_unique_roi$hub_type))
 
@@ -284,30 +282,11 @@ sort(table(hubs_unique_roi$hub_type))
 
 
 ########################################
-# rename cells
-
-hubs_cells_in_roi_all$cell_type <-  mapvalues(hubs_cells_in_roi_all$final_label, 
-                                                from = c("Macrophages", "CD4Tcells", "CD8Tcells",
-                                                         "Tumor", "CD11c", "undefined", "NK", "Stroma"),
-                                                to=c("Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8",
-                                                     "tumor", "DCs", "other", "NKcells", "stroma"))
-hubs_cells_in_roi_all$sample_roi <- gsub(" ", "", hubs_cells_in_roi_all$sample_roi)
 
 
-cell_types <- c("DCs", "stroma", "Macrophages_Monocytes", "NKcells", "other",
-                "Tcells_CD4", "Tcells_CD8", "tumor")
-cell_types_important <- c("DCs", "Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8")
-cell_types_immune <- c("DCs", "Macrophages_Monocytes", "NKcells", "Tcells_CD4", "Tcells_CD8")
-
-# count nr of cells per ROI and AOI
-
-# count cells per roi
-roi_ct <- dcast(hubs_cells_in_roi_all, sample_roi ~ cell_type)
-roi_ct$total_cell_nr <- rowSums(roi_ct[, cell_types])
-roi_ct$immune_cell_nr <- rowSums(roi_ct[, cell_types_immune])
-roi_ct$immune_other_cell_nr <- rowSums(roi_ct[, c(cell_types_immune, "other")])
-
-fwrite(roi_ct, out_path_roi_cellnr)
+#######################################################
+#######################################################
+# TODO all this is a messy version of geomx_roi_hubs_integration. r - check and clean
 
 roi_ct_long <- melt(roi_ct[, !(names(roi_ct) %in% c('total_cell_nr', 'immune_cell_nr','immune_other_cell_nr'))], 
                                         id.vars = c("sample_roi"), variable.name = "cell_type")
