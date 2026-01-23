@@ -22,7 +22,7 @@ eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT"
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
 # cycif-geomx coordinates path (computed with geomx_cycif_coordinates_adj.R)
-coords_path <- file.path(output_dir, 'cycif_integration', 'batch123_geomx_cycif_coordinates.csv')
+coords_path <- file.path(output_dir, 'cycif_integration', 'geomx_cycif_coordinates_batch123.csv')
 
 # cell count and hubs for cycif images pathways 
 #cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
@@ -45,14 +45,6 @@ out_path_hubs_cells <- file.path(output_dir, "cycif_integration",
                                  paste("batch2_hubs_cells", dt_hubparam, ct_hubparam, dt_comm_hubparam, res_hubparam, ".csv", sep = '_'))
 out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", 
                                        paste("batch2_hubs_cells_inroi", dt_hubparam, ct_hubparam, dt_comm_hubparam, res_hubparam, ".csv", sep = '_'))
-out_path_roi_cellnr <- file.path(output_dir, "cycif_integration", "batch2_roi_cellnr.csv")
-
-##########################
-cell_types <- c("DCs", "stroma", "Macrophages_Monocytes", "NKcells", "other",
-                "Tcells_CD4", "Tcells_CD8", "tumor")
-#cell_types_important <- c("DCs", "Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8")
-cell_types_immune <- c("DCs", "Macrophages_Monocytes", "NKcells", "Tcells_CD4", "Tcells_CD8")
-
 
 # load cleaned metadata ---------------------------------------------------
 # TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
@@ -183,27 +175,9 @@ hubs_cells_inroi$network_hub_id <- ifelse(hubs_cells_inroi$network_hub_id == '',
 hubs_cells_inroi <- left_join(hubs_cells_inroi, unique(metadt[, c('Sample', 'Roi_geomx', 'Annotation_cell')]),
                                by = c('Sample', 'Roi_geomx'))
 
-
 table(hubs_cells_inroi$Sample, hubs_cells_inroi$roi_name)
 
 fwrite(hubs_cells_inroi, out_path_hubs_cells_inroi)
-
-# count phenotyped ct number in ROI  --------------------------------------
-# TODO move to roi_hubs_integration script
-# rename cells to match deconvolution
-hubs_cells_inroi$cell_type <-  mapvalues(hubs_cells_inroi$final_label, 
-                                              from = c("Macrophages", "CD4Tcells", "CD8Tcells",
-                                                       "Tumor", "CD11c", "undefined", "NK", "Stroma"),
-                                              to=c("Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8",
-                                                   "tumor", "DCs", "other", "NKcells", "stroma"))
-
-# count nr of cells per ROI and AOI
-roi_ct <- dcast(hubs_cells_inroi, sample_roi ~ cell_type)
-roi_ct$total_cell_nr <- rowSums(roi_ct[, cell_types])
-roi_ct$immune_cell_nr <- rowSums(roi_ct[, cell_types_immune])
-roi_ct$immune_other_cell_nr <- rowSums(roi_ct[, c(cell_types_immune, "other")])
-
-fwrite(roi_ct, out_path_roi_cellnr)
 
 #########################################################################################
 #########################################################################################
