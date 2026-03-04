@@ -9,22 +9,22 @@ meta_names <- unique(c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experi
                main_roi_label, other_vars_bio))
 
 # best to use batch effect corrected or at least vst data (all in log form) 
-norm_type <- 'harmony_q3_norm' # from geomx assays
-deconv_norm_type <- 'q3_norm' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
+norm_type <- 'harmony_batch_corr_q3_norm' # from geomx assays
+deconv_norm_type <- 'deseq2_vst' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
 deconv_batch_rm_type <- 'harmony' # c('harmony', 'limma')
 
 # whethr or not rmv low complexity and non-coding genes from full signal geomx obj  (as for bp deconvolution)
-low_complex_rmv <- TRUE 
+low_complex_rmv <- TRUE
 
 adj_synonym <- T # whether or not adjust synonyms genes
 # around 300 genes can be rescued this way but ensembl does not always work
 # if there are issues, turn it off
-min_sign_gene_nr <- 10 # signatures with less nr of genes will be removed, 5 is min in msigdb
+min_sign_gene_nr <- 5 # signatures with less nr of genes will be removed, 5 is min in msigdb
 
 #compute_hallmark <- T
 # should GSEA for msigdb hallmark be computed
 
-msigdb_subcat <- c('CP:BIOCARTA', 'CP:REACTOME','CP:KEGG_MEDICUS', 'GO:BP', 'HALLMARK')
+msigdb_subcat <- c('CP:BIOCARTA', 'CP:REACTOME','CP:KEGG_MEDICUS', 'GO:BP', 'HALLMARK', 'CP:PID')
 # subcategories ('gs_subcat') of msigdb database for GSEA calculation
 
 # make dirs and set additional vars ---------------------------------------
@@ -118,7 +118,7 @@ if(signature_type == 'msigdb'){
   # signatures from custom file
   sign_list <- prepare_custom_sign_list(fread(custom_sign_path), adjust_synonym = adj_synonym,
                                                geomx_obj = geomx_obj)
-  out_name <- paste0('custom_', gsub('//.csv', '', basename(custom_sign_path)))
+  out_name <- signature_name
 } else{
   stop("signature_type parameter can only be 'msigdb' or 'custom'")
 }
@@ -147,7 +147,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   
   #TODO better names - deconv and all may have diff norm types!
   fwrite(gsea_long, file.path(output_dir,'pathway_analysis', 'gsea', 
-                              paste0(gsea_type, '_norm_', norm_name, '_',
+                              paste0(gsea_type, '_', norm_name, '_',
                                      names(expr_list)[x], '_', out_name,  '.csv')))
   
   return(gsea_long)

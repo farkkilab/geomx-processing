@@ -134,8 +134,8 @@ pkc_path <<- file.path(data_dir, 'metadata', 'Hs_R_NGS_WTA_v1.0.pkc')
 scrna_ref_path <<- file.path(proj_dir, 'data/scrna/GSE266577_qc_downsampled_keepfreq.RDS') # vaharautio
 
 # path to csv file with custom gene signatures
-custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-                               'ct_markers.csv')
+custom_sign_path <<- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'eyemt_immune',
+                               'additional_signatures_immune.csv')
 
 
 # set up metadata variables names -----------------------------------------
@@ -153,7 +153,7 @@ main_experimental_condition <<- 'NACT_status'
 sample_name <<- 'Sample'
 
 other_vars_bio <<- c("Segment_geomx", "Patient", "Site") #
-other_vars_tech <<- c('Slide_Name')
+other_vars_tech <<- c('slide name')
 
 # variables for batch effect removal
 # if analysing each batch separately, only batch_var is considered
@@ -248,7 +248,6 @@ pathway_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 # mid_lvl_ct_updated
 ct_of_interest <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells', 'Mast_cells',
                     "Macrophages_Monocytes", "DCs", "Fibroblasts_Mesothelial", "Endothelial_cells", "tumor")
-ct_of_interest <- NULL
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types

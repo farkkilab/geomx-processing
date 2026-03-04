@@ -18,7 +18,7 @@ segment_detect_rate_thr <- 0.05 # genes are removed if its expr > LOQ in less th
 
 # 3 slides from b1 + 6 from b3 have high NTC count but they behave ok - suspected contamination
 # suggested value should be 1000
-max_ntc <- 3000 
+max_ntc <- 4000 
 
 # TODO remove this for merging the code to master
 # remove TLS
@@ -63,38 +63,39 @@ modules <- gsub(".pkc", "", pkcs)
 print(paste('dim of raw dataset is: '))
 print(dim(geomx_obj))
 
-# manualfix of NTC --------------------------------------------------------
-
-sdt <- sData(geomx_obj)
-
-# !!! if theres no 'NTC_ID' column added manually, it assumes that each batch 
-# have their own NTC
-if(!('NTC_ID' %in% colnames(pData(geomx_obj)))){
-  sdt$NTC_ID <- apply(sdt, 1, function(x){
-    # one NTC/batch
-    ntc <- sdt[[aoi_id]][sdt$Slide_Name == 'No Template Control' & 
-                           sdt[[batch_var]] == x[[batch_var]] &
-                           sdt[[main_batch_var]] == x[[main_batch_var]]]
-    return(ntc)
-  })
-}
-
-#TODO check in manual if it really is Deduplicatedreads for NTC count
-sdt$NTC <- apply(sdt, 1, function(x){
-  ntc_cnt <- sdt$DeduplicatedReads[sdt[[aoi_id]] == x[['NTC_ID']]]
-})
-
-#add to protocolData
-identical(rownames(protocolData(geomx_obj)@data), sdt[[aoi_id]])
-protocolData(geomx_obj)@data[, c("NTC_ID", "NTC")] <- sdt[, c("NTC_ID", "NTC")]
-
-# remove NTC_ID from pData to prevent duplicated columns
-if('NTC_ID' %in% colnames(pData(geomx_obj))){
-  pData(geomx_obj) <- pData(geomx_obj)[ , -which(names(pData(geomx_obj)) == 'NTC_ID')]
-}
-
 #change 'Area' and 'Nuclei' colnames for correct qc flags
 pData(geomx_obj) <- dplyr::rename(pData(geomx_obj), 'area' = 'Area', 'nuclei' = 'Nuclei')
+
+# manualfix of NTC --------------------------------------------------------
+
+# sdt <- sData(geomx_obj)
+# 
+# # !!! if theres no 'NTC_ID' column added manually, it assumes that each batch
+# # have their own NTC
+# if(!('NTC_ID' %in% colnames(pData(geomx_obj)))){
+#   sdt$NTC_ID <- apply(sdt, 1, function(x){
+#     # one NTC/batch
+#     ntc <- sdt[[aoi_id]][sdt[['slide name']] == 'No Template Control' &
+#                            sdt[[batch_var]] == x[[batch_var]] &
+#                            sdt[[main_batch_var]] == x[[main_batch_var]]]
+#     return(ntc)
+#   })
+# }
+# 
+# #TODO check in manual if it really is Deduplicatedreads for NTC count
+# sdt$NTC <- apply(sdt, 1, function(x){
+#   ntc_cnt <- sdt$DeduplicatedReads[sdt[[aoi_id]] == x[['NTC_ID']]]
+# })
+# 
+# #add to protocolData
+# identical(rownames(protocolData(geomx_obj)@data), sdt[[aoi_id]])
+# protocolData(geomx_obj)@data[, c("NTC_ID", "NTC")] <- sdt[, c("NTC_ID", "NTC")]
+# 
+# # remove NTC_ID from pData to prevent duplicated columns
+# if('NTC_ID' %in% colnames(pData(geomx_obj))){
+#   pData(geomx_obj) <- pData(geomx_obj)[ , -which(names(pData(geomx_obj)) == 'NTC_ID')]
+# }
+# 
 
 # make overall sankey plot ------------------------------------------------
 
@@ -128,7 +129,7 @@ geomx_obj <- setSegmentQCFlags(geomx_obj, qcCutoffs = qc_params)
 
 
 # rmv NTC segments
-geomx_obj <- geomx_obj[, !(geomx_obj$Slide_Name == 'No Template Control')]
+geomx_obj <- geomx_obj[, !(geomx_obj[['slide name']] == 'No Template Control')]
 
 qc_results_segment <- protocolData(geomx_obj)[["QCFlags"]]
 qc_summary <- qc_summarize(qc_results_segment)
@@ -175,7 +176,7 @@ pData(geomx_obj)[, negCols] <- sData(geomx_obj)[["NegGeoMean"]]
 
 for(ann in paste0("NegGeoMean_", modules)) {
   QC_histogram(sData(geomx_obj), ann, aoi_segment_var, 2, scale_trans = "log10",
-               file.path(output_dir, 'qc/qc_hist_neggeomean.png')) #TODO? why exactly thr = 2?
+               file.path(output_dir, 'qc', 'qc_hist_neggeomean.png')) #TODO? why exactly thr = 2?
 }
 
 # detatch neg_geomean columns ahead of aggregateCounts call
@@ -208,7 +209,7 @@ length(which(assayDataElement(geomx_diag, "up_outlier") == 1, arr.ind = TRUE))
 # Or if a batch effect is assumed, the poisson model can be adjusted to take 
 # different groups into account. Here we are grouping the ROIs by slide.
 
-geomx_obj <- fitPoisBG(geomx_obj, groupvar = 'Slide_Name')
+geomx_obj <- fitPoisBG(geomx_obj, groupvar = 'slide name')
 
 set.seed(123)
 geomx_diag <- diagPoisBG(geomx_obj, split = TRUE)
@@ -217,15 +218,20 @@ notes(geomx_diag)$disper_sp
 
 # remove flagged segments -------------------------------------------------
 
-table(sData(geomx_obj)$NTC)
+print('nr of segments with NTC count:')
+print(table(sData(geomx_obj)$NTC))
 
 qc_results_segment$qc_status <- apply(qc_results_segment, 1L, function(x) {
   ifelse(sum(x) == 0L, "PASS", "WARNING")
 })
 
+# retain information for saving qc results
+qc_results_segment_meta <- rownames_to_column(qc_results_segment, var=aoi_id) %>%
+  left_join(pData(geomx_obj)[, c(aoi_id, "slide name", sample_name, roi_id,  main_batch_var)], by =aoi_id)
 
-fwrite(qc_results_segment[qc_results_segment$qc_status == 'WARNING', ], file.path(output_dir, 'qc_results_segment.csv'))
+fwrite(qc_results_segment_meta[qc_results_segment_meta$qc_status == 'WARNING', ], file.path(output_dir, 'qc',  'qc_segment_warning.csv'))
 
+# remove segments with QC warning
 geomx_obj <- geomx_obj[, qc_results_segment$qc_status == "PASS", ]
 
 # remove segments with neggeomean < 1.5
@@ -294,7 +300,8 @@ for(module in modules){
            pData(geomx_obj)[, paste0("NegGeoSD_", module)] ^ loq_cutoff)
 }
 
-pData(geomx_obj)$LOQ <- LOQ
+pData(geomx_obj)$LOQ <- LOQ # that creates df within df and may cause issues eg when saving as csv
+
 
 # calculate if expr > LOQ per each gene per segment
 LOQ_Mat <- c()
@@ -327,9 +334,10 @@ sapply(imp_vars, function(vname){
 })
 
 # save gdr info
-gdr_df <- pData(geomx_obj)[, -48] # fixing df within df for saving
+gdr_df <- pData(geomx_obj)[, -which(colnames(pData(geomx_obj)) == 'LOQ')] # fixing df within df for saving
 gdr_df$LOQ <- pData(geomx_obj)$LOQ$Hs_R_NGS_WTA_v1.0 # fixing df within df for saving
 fwrite(gdr_df, file.path(output_dir, 'segments_gdr.csv'))
+
 
 # filter out segments with too low gene detection rate
 geomx_obj <- geomx_obj[, pData(geomx_obj)$GeneDetectionRate >= gene_detect_thr]
@@ -344,7 +352,7 @@ fData(geomx_obj)$DetectionRate <- fData(geomx_obj)$DetectedSegments / nrow(pData
 LOQ_Mat <- LOQ_Mat[fData(geomx_obj)$TargetName, ]
 
 # plot detection rate per gene
-plot_gene_detection_rate(fData(geomx_obj), file.path(output_dir, 'qc/gene_detection_rate.png'))
+plot_gene_detection_rate(fData(geomx_obj), file.path(output_dir, 'qc', 'gene_detection_rate.png'))
 
 # manually include the negative control probe, for downstream use
 negativeProbefData <- subset(fData(geomx_obj), CodeClass == "Negative") # 1 bcs already collapsed to targets
@@ -357,8 +365,6 @@ geomx_obj <-
 
 print(paste('dim after removing genes based on LOQ: '))
 print(dim(geomx_obj))
-
-
 
 # remove genes below LOQ per AOI ------------------------------------------
 # moving all genes which are below noise level per given AOI to NA
