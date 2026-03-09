@@ -89,23 +89,13 @@ if('bp' %in% pathway_inp_data_type){
 
   names(deconv_ct_list) <- paste0('deconv_', names(deconv_ct_list))
   
-  # for pseudosc - deprecated
-  # deconv_res <- as.matrix(fread(deconv_bp_path), rownames = 1)
-  # 
-  # # filter to cell types of interest
-  # if(!is.null(ct_of_interest)){
-  #   deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
-  # }
-  # 
-  # deconv_list <- list(deconv_res)
-  # names(deconv_list) <- 'deconv'
-
   expr_list <- c(expr_list, deconv_ct_list)
 }
 
 # prepare signatures list -------------------------------------------------
+sign_list <- list()
 
-if(signature_type == 'msigdb'){
+if('msigdb' %in% signature_type){
   # signatures from all Hallmark + selected CP from msigDB 
   sign_list <- lapply(msigdb_subcat, function(subcat){
     print(subcat)
@@ -113,14 +103,13 @@ if(signature_type == 'msigdb'){
   })
   
   sign_list <- do.call(c, sign_list)
-  out_name <- 'msigdb'
-} else if(signature_type == 'custom'){
+} 
+
+if('custom' %in% signature_type){
   # signatures from custom file
-  sign_list <- prepare_custom_sign_list(fread(custom_sign_path), adjust_synonym = adj_synonym,
+  sign_list_custom <- prepare_custom_sign_list(fread(custom_sign_path), adjust_synonym = F,
                                                geomx_obj = geomx_obj)
-  out_name <- signature_name
-} else{
-  stop("signature_type parameter can only be 'msigdb' or 'custom'")
+  sign_list <- append(sign_list, sign_list_custom)
 }
 
 sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
@@ -148,7 +137,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   #TODO better names - deconv and all may have diff norm types!
   fwrite(gsea_long, file.path(output_dir,'pathway_analysis', 'gsea', 
                               paste0(gsea_type, '_', norm_name, '_',
-                                     names(expr_list)[x], '_', out_name,  '.csv')))
+                                     names(expr_list)[x], '_', signature_name,  '.csv')))
   
   return(gsea_long)
 })

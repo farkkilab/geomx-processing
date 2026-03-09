@@ -252,11 +252,13 @@ ct_of_interest <- c("Tcells_other","Tcells_CD8","Tcells_CD4", "Bcells", 'NKcells
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
 
-signature_type <<- 'custom' # c('msigdb', 'custom')
+signature_type <<- c('msigdb','custom') # c('msigdb', 'custom')
 # msigdb - on all pathways from msigdb (Hallmark + CP)
 # custom - on custom signatures list specified in custom_sign_path
 
-signature_name <<- ifelse(signature_type == 'custom', gsub('.csv', '', basename(custom_sign_path)), '')
+signature_name <<- ifelse('msigdb' %in% signature_type, 'msigdb', '')
+signature_name <<- ifelse('custom' %in% signature_type, paste0(signature_name, '_', gsub('.csv', '', basename(custom_sign_path))), '')
+signature_name <<- gsub('^_', '', signature_name)
 
 gsea_type <<- 'ssgsea' # 'gsva' or 'ssgsea'
 
