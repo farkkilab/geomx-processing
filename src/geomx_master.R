@@ -263,7 +263,7 @@ signature_name <<- gsub('^_', '', signature_name)
 gsea_type <<- 'ssgsea' # 'gsva' or 'ssgsea'
 
 gsea_logs_path <<- file.path(output_dir,'pathway_analysis', 'gsea', 
-                             paste0(gsea_type, '_', signature_type, '_', signature_name, '_logs.txt'))
+                             paste0(gsea_type, '_', signature_name, '_logs.txt'))
 
 
 run_unless_exists('Pathway analysis', gsea_logs_path, 

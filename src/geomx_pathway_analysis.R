@@ -145,7 +145,7 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
 writeLines(c('GSEA logs:',
              'GSEA type: ', gsea_type, 
              '; normalisation type : ', norm_name,
-             '; signature type : ', signature_type,
+             '; signature type : ', paste0(signature_type, collapse = '_'),
              '; low complex gene removed : ', low_complex_rmv,
              '; synonym genes adjusted : ', adj_synonym,
              '; deconv mtx used : ', deconv_bp_path), gsea_logs_path)
