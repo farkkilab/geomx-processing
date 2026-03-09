@@ -3,6 +3,7 @@ library(dplyr)
 library(tidyr)
 library(tidyverse)
 library(patchwork)
+library(stringi)
 
 # TODO barplots + clustering as for communities
 
@@ -26,6 +27,9 @@ ct_frac_deconv_roi_path <- file.path(output_dir, 'cycif_integration', 'b123_ct_f
 # just to check - only available for b3tls for now
 ct_frac_all_roi_path <- file.path(output_dir, 'cycif_integration', paste0('batch3tls_ct_frac_all_roi_bcells.csv'))
 
+# thresholds for cluster labelling high+mid
+hithr <- 0.25
+midthr <- 0.15
 
 # define names ------------------------------------------------------------
 
@@ -42,12 +46,16 @@ ct_names_all <- c("tumor", "Bcells", "Tcells_CD4", "Tcells_other", "Tcells_CD8",
 ct_names_stroma <- c("Fibroblasts_Mesothelial", "Endothelial_cells")
 
 # main immune cells from deconv - also counted in cycif phenotyping
-ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "Macrophages_Monocytes", "NKcells", "DCs", "Bcells") # no Bcells in basic phenotyping eg b1b2 
-ct_names_myeloids <- c("Macrophages_Monocytes", "DCs")
+ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes", "Bcells", "NKcells") # no Bcells in basic phenotyping eg b1b2 
+ct_names_myeloids <- c("DCs", "Macrophages_Monocytes")
 ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8")
 
 # additional cells from deconv not counted in phenotyping and should be treated as 'other'
 ct_names_other <- c("Tcells_other", "Mast_cells") # "Bcells" goes here when basic phenotyping b1b2
+
+# vector to clean cluster labels - just short names for immune cells 
+ct_names_toclean <- c(ct_names_immune, 'myeloids')
+ct_names_cleaned <- c('CD4', 'CD8', 'CD11', 'Iba1', 'CD20', 'NK', 'Mye')
 
 # load data ---------------------------------------------------------------
 
@@ -55,11 +63,6 @@ ct_frac_deconv <- as.data.frame(fread(ct_frac_deconv_path))
 ct_frac_deconv_roi <- as.data.frame(fread(ct_frac_deconv_roi_path))
 
 ct_frac_all_roi <- fread(ct_frac_all_roi_path)
-
-
-# plot ct fractions density distributions ---------------------------------
-
-
 
 # clustered hmaps with ct fractions ---------------------------------------
 
@@ -133,15 +136,20 @@ for(deconv_name in deconv_names){
 
 # stacked barplots with ct fractions + clustering -------------------------
 
-# calculate frqactions of immune_others and play with nr of labels (NK, Bcells to others, DC+macro etc)
+# calculate fractions of immune_others and play with nr of labels (NK, Bcells to others, DC+macro etc)
 
+#TODO to rmv - just for testing
 deconv_name <- 'sd'
 hclust_cut <- 2 # 1,5
 mye_add <- F
-
-ct_names_to_cluster_list <- list(mye_lymph_b = c(ct_names_myeloids, ct_names_lymphoids, 'Bcells'), 
-                                 mye_lymph = c(ct_names_myeloids, ct_names_lymphoids))
 list_n <- 1
+
+
+deconv_names <- c('sd', 'bp')
+
+#TODO change it to more universal code to use with different names combination 
+ct_names_to_cluster_list <- list(mye_lymph_b = c(ct_names_lymphoids, ct_names_myeloids, 'Bcells'), 
+                                 mye_lymph = c(ct_names_lymphoids, ct_names_myeloids))
 
 clust_list <- list()
 
@@ -154,10 +162,8 @@ for(deconv_name in deconv_names){
         out_name <- names(ct_names_to_cluster_list)[list_n]
         out_name <- ifelse(mye_add, paste0(out_name, '_myemerged'), out_name)
         out_name <- paste0(deconv_name, '_', out_name, '_hcut', as.character(hclust_cut))
-        
-        print(deconv_name)
+
         print(out_name)
-        print(hclust_cut)
         
         # transform to wide + calculate fractions of immune_other cells
         ct_frac_roi_wide_immune <- ct_frac_deconv_roi[, c('sample_roi', 'cell_type', paste0('ct_frac_', deconv_name))] %>%
@@ -198,31 +204,61 @@ for(deconv_name in deconv_names){
           left_join(hclust_avg_cut_df) %>%
           arrange(cluster, sample_roi, cell_type, fraction_of_immune)
         
-        # stacked bar plot
-        ggplot(ct_frac_roi_long_immune_clust, aes(x = sample_roi, y = fraction_of_immune, fill = cell_type)) +
-          geom_bar(stat = "identity") +
-          labs(title = paste0("ROI clustered with ", deconv_name, " cell type fractions of immune"), x = "Samples", y = "Counts") +
-          theme_minimal() +
-          #scale_x_discrete(labels=ct_frac_roi_long_immune$cluster)
-          theme(axis.text.x=element_blank()) +
-          facet_wrap(~ cluster, scale = "free")
-        
-        ggsave(file.path(out_dir, paste0('barplot_clust_immunefrac_', out_name,  '.png')))
-        
         # calculate mean per each cluster and compare across clusters to make labs
         ct_frac_clust_mean <- ct_frac_roi_long_immune_clust %>%
           group_by(cluster, cell_type) %>%
           summarise(mean_ct_frac_of_immune = mean(fraction_of_immune)) %>%
           ungroup()
         
+        # create cluster labels based on hi and mid frequency thresholds
+        ct_frac_clust_mean_wide <- ct_frac_clust_mean %>%
+          pivot_wider(names_from = cell_type, values_from = mean_ct_frac_of_immune)
+
+        ct_frac_clust_mean_wide$cluster_label <- apply(ct_frac_clust_mean_wide, 1, function(clust){
+          
+          lab <- sapply(ct_names_to_cluster, function(ct_name){
+            if(round(as.numeric(clust[[ct_name]]), 2) >= hithr){
+              return(paste0('hi', ct_name))
+            } else if(round(as.numeric(clust[[ct_name]]), 2) >= midthr){
+              return(paste0('mid', ct_name))
+            } else{
+              return('')
+            }
+          })
+          
+          lab <- paste(lab, collapse = '_')
+          return(lab)
+        })
+
+        # clean labels
+        ct_frac_clust_mean_wide$cluster_label <- stri_replace_all_regex(ct_frac_clust_mean_wide$cluster_label,
+                               pattern=c(ct_names_toclean, '^_*|_*$', '_+'),
+                               replacement=c(ct_names_cleaned, '', '_'),
+                               vectorize=FALSE)
+
+        # merge with ctfrac dfs
+        ct_frac_roi_long_immune_clust <- left_join(ct_frac_roi_long_immune_clust, ct_frac_clust_mean_wide)
+        ct_frac_clust_mean <- left_join(ct_frac_clust_mean, ct_frac_clust_mean_wide)
+        
+        # stacked bar plot with all samples per cluster
+        ggplot(ct_frac_roi_long_immune_clust, aes(x = sample_roi, y = fraction_of_immune, fill = cell_type)) +
+          geom_bar(stat = "identity") +
+          labs(title = paste0("ROI clustered with ", deconv_name, " cell type fractions of immune"), x = "ROIs", y = "ct_fraction") +
+          theme_minimal() +
+          theme(axis.text.x=element_blank()) +
+          facet_wrap(~ cluster, scale = "free")
+        
+        ggsave(file.path(out_dir, paste0('barplot_clust_immunefrac_', out_name,  '.png')))
+        
+        # stacked barplot for mean ct fraction per cluster
         ggplot(ct_frac_clust_mean, aes(x = cluster, y = mean_ct_frac_of_immune, fill = cell_type)) +
           geom_bar(stat = "identity") +
-          labs(title = "mean ct fraction of immune per cluster", x = "Samples", y = "Counts") +
+          labs(title = "mean ct fraction of immune per cluster", x = "ROI clusters", y = "mean ct fraction") +
           theme_minimal() 
         
         ggsave(file.path(out_dir, paste0('barplot_mean_clust_immunefrac_', out_name, '.png')))
         
-        # barplots for mean cluster ct fractins
+        # histograms for mean cluster ct fractins
         ggplot(data = ct_frac_clust_mean) +
           geom_histogram(aes(mean_ct_frac_of_immune, fill = cell_type)) +
           ylim(0, 4) +
@@ -232,9 +268,9 @@ for(deconv_name in deconv_names){
         
         # return clusters for comparison
         clust_df <- ct_frac_roi_long_immune_clust %>%
-          select(sample_roi, cluster) %>%
+          select(sample_roi, cluster, cluster_label) %>%
           distinct()
-        colnames(clust_df) <- c('sample_roi', out_name)
+        colnames(clust_df) <- c('sample_roi', out_name, paste0(out_name, '_label'))
         clust_list <- append(clust_list, list(clust_df))
       }
     }
@@ -243,10 +279,10 @@ for(deconv_name in deconv_names){
 
 clust_df_all <- do.call(cbind, clust_list) %>%
   column_to_rownames(var = 'sample_roi') %>%
-  select(-contains('sample_roi'))
+  select(-contains('sample_roi')) %>%
+  rownames_to_column('sample_roi')
 
-fwrite(clust_df_all, file.path(out_dir, 'clusters_df.png'))
-
+fwrite(clust_df_all, file.path(out_dir, paste0('roi_ctfreq_clusters_df_','mid', as.character(midthr), '_hi', as.character(hithr), '_labs.csv')))
 
 #######################################################################
 #######################################################################
