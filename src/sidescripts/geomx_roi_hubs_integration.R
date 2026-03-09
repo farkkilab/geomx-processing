@@ -36,13 +36,14 @@ sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 's
 
 # all cells within ROIs with hubs annotations computed with geomx_cycif_integration.R
 #hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt15171517_ct15_dt300_res0015_.csv")
-hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_dt1517151715_ct15_dt300.csv"))
+#hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_dt1517151715_ct15_dt300.csv"))
+hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_dt1515151717_ct10_dt300.csv"))
 
 ##############
 # output files
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_frac_comparison_b3tls_bcells')
+outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_frac_comparison_b3tls_bcells_ct10')
 dir.create(outp_plot_dir, recursive = T)
 dir.create(file.path(outp_plot_dir,'hmaps'), recursive = T)
 
@@ -177,6 +178,7 @@ fwrite(ct_frac_cycif_long_roi, output_ct_frac_cycif_roi_path)
 
 hubs_inroi_labs <- dplyr::select(hubs_cells_inroi, sample_roi, !!hubs_labels_list) %>%
   dplyr::mutate(across(hubs_labels_list, clean_labs)) %>%
+  #dplyr::mutate(across(c(network_hub_type), clean_labs)) %>% # if 'cluster_N' as names - should't be claaned
   dplyr::mutate(across(hubs_labels_list, ~replace(., . ==  '' , 'notinhub')))
 
 # count nr of each labels 

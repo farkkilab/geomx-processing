@@ -29,14 +29,14 @@ geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_
 hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPACEstat/batch3_communities")
 
 # hubs files
-dt_hubparam <- 'dt1517151715' # version of distances metrics used for hubs 
-ct_hubparam <- 'ct15'
+dt_hubparam <- 'dt1515151717' # version of distances metrics used for hubs 
+ct_hubparam <- 'ct10'
 dt_comm_hubparam <- 'dt300'
 #hubs_cells_path <- file.path(hubs_dir, paste0("eyemt_batch2_cells_", dt_hubparam, "_", ct_hubparam,  ".csv")) # hubs per cell
-hubs_cells_path <- file.path(hubs_comm_dir, paste0("eyemt_batch3_cells_consensus_bcells_", dt_hubparam, "_", ct_hubparam,  ".csv")) # hubs per cell
+hubs_cells_path <- file.path(hubs_comm_dir, paste0("eyemt_batch3_cells_", dt_hubparam, "_", ct_hubparam, "_", dt_comm_hubparam,  "_cmp.csv")) # hubs per cell
 #hubs_inter_path <- file.path(hubs_dir, paste0("eyemt_batch2_interactions_", dt_hubparam, "_", ct_hubparam,  ".csv")) # interaction hubs
 #hubs_comm_path <- file.path(hubs_comm_dir, paste0("eyemt_batch2_communities_with_annotations_", ct_hubparam, "_", dt_comm_hubparam,  "_", res_hubparam, "_leiden_cmp.csv"))
-hubs_comm_path <- file.path(hubs_comm_dir, paste0("eyemt_batch3_network_communities_consensus_bcells_", dt_hubparam, "_", ct_hubparam, "_",  dt_comm_hubparam,  ".csv"))
+hubs_comm_path <- file.path(hubs_comm_dir, paste0("eyemt_batch3_network_communities_consensus_", dt_hubparam, "_", ct_hubparam, "_",  dt_comm_hubparam,  "_cmp.csv"))
 
 um_to_pix_ratio <- 0.65 #0.325 for b2, 0.65 for b3TLS
 
@@ -90,12 +90,18 @@ double_hubs <- hubs_cells[grepl(',', hubs_cells$interaction_hub_ids), ] # to kee
 # in b2 for 294 cells  >1 hub - keep one
 # in b3tls for 121 cells  >1 hub - keep one
 # in b3tls with bcells for 366 cells >1 hub - keep one
+# in b3tls with bcells and ct10 for 856 cells > keep one
+# TODO think about this strategy
 hubs_cells$interaction_hub_ids <- gsub(",.*", "", hubs_cells$interaction_hub_ids)
 
 # TODO it might be changed back to pix in the original files
 hubs_cells$X_centroid_px <- hubs_cells$X_centroid / um_to_pix_ratio
 hubs_cells$Y_centroid_px <- hubs_cells$Y_centroid / um_to_pix_ratio
 
+if(!('cluster_label' %in% colnames(hubs_cells))){
+  hubs_comm$cluster_label <- paste0('cluster_', hubs_comm$cluster)
+}
+ 
 # join with network hubs and communities
 hubs_cells <- left_join(hubs_cells, hubs_comm[, c('hubid', 'hub_type', 'hub_size', 'residency', 'community', 'cluster', 'cluster_label')], 
                         by = c('network_hub_id' = 'hubid'))
@@ -154,15 +160,19 @@ fwrite(hubs_cells_inroi, out_path_hubs_cells_inroi)
 
 # total number of roi:
 length(unique(metadt$sample_roi))
+
+# nr of ROI with any cells phenotyped
 length(unique(hubs_cells_inroi$sample_roi))
 
 # rois without any cells found
 setdiff(metadt$sample_roi, hubs_cells_inroi$sample_roi) 
 
+hubs_cells_inroi_innet <- hubs_cells_inroi[!is.na(hubs_cells_inroi$network_hub_id), ]
 hubs_cells_inroi_inhub <- hubs_cells_inroi[!is.na(hubs_cells_inroi$interaction_hub_ids), ]
 hubs_cells_inroi_incomm <- hubs_cells_inroi[!is.na(hubs_cells_inroi$community_id), ]
 
 table(hubs_cells_inroi$Sample, hubs_cells_inroi$Roi_geomx)
+table(hubs_cells_inroi_innet$Sample, hubs_cells_inroi_innet$roi_name)
 table(hubs_cells_inroi_inhub$Sample, hubs_cells_inroi_inhub$roi_name)
 table(hubs_cells_inroi_incomm$Sample, hubs_cells_inroi_incomm$Roi_geomx)
 
@@ -178,174 +188,13 @@ sort(table(comm_unique_roi$sample_roi))
 length(unique(comm_unique_roi$sample_roi))
 hist(unlist(table(comm_unique_roi$sample_roi)))
 
+# nr of unique networks in each ROI
+net_unique_roi <- distinct(hubs_cells_inroi_innet, sample_roi, network_hub_type)
+sort(table(net_unique_roi$sample_roi))
+length(unique(net_unique_roi$sample_roi))
+hist(unlist(table(net_unique_roi$sample_roi)))
+
 # rois with cells but without any communities
 roi_wo_comm <- setdiff(hubs_cells_inroi$sample_roi, comm_unique_roi$sample_roi) 
 
 sort(table(hubs_cells_inroi$sample_roi[hubs_cells_inroi$sample_roi %in% roi_wo_comm]))
-
-######################################################################
-######################################################################
-# clustering and relabeling based on the cell counts in roi
-
-# cleaning labels
-# cells_in_roi_all_pt$sample_roi <- paste0(cells_in_roi_all_pt$Sample, '_', cells_in_roi_all_pt$roi_name)
-# 
-# cells_in_roi_all_pt$final_label <-  transmute(cells_in_roi_all_pt, final_label = 
-#                                                 plyr::mapvalues(final_label, c('undefined_Intumor_CD4Tcells',
-#                                                          'undefined_Intumor_CD8Tcells',
-#                                                          'Stroma', 'Tumor',
-#                                                          'undefined_Instroma',
-#                                                          'undefined_Intumor'), 
-#                                           c('Intumor_CD4Tcells',
-#                                             'Intumor_CD8Tcells',
-#                                             'Instroma_Fibroblasts',
-#                                             'Intumor_Tumor',
-#                                             'Instroma_undefined',
-#                                             'Intumor_undefined')))
-# 
-# cells_in_roi_all_pt$final_label <- ifelse(cells_in_roi_all_pt$final_label == 'NK', 
-#                                           paste0(cells_in_roi_all_pt$Global, '_NK'), 
-#                                           cells_in_roi_all_pt$final_label)
-# 
-# # dropping undefined_Global_NK bcs there is just 3 of them
-# cells_in_roi_all_pt$final_label <- ifelse(cells_in_roi_all_pt$final_label %in% c('undefined_Global_NK', 'undefined_Global'), 
-#                                           'Global_undefined', cells_in_roi_all_pt$final_label)
-# 
-# cells_in_roi_all_pt$Segment <- gsub('_.*', '', cells_in_roi_all_pt$final_label)
-# cells_in_roi_all_pt$Segment <- gsub('In', '', cells_in_roi_all_pt$Segment)
-# 
-# cells_in_roi_all_pt$cell_type <- gsub('^.*_', '', cells_in_roi_all_pt$final_label)
-# cells_in_roi_all_pt$cell_type <-  transmute(cells_in_roi_all_pt, cell_type = 
-#                                                 plyr::mapvalues(cell_type, c('CD11c', 'CD4Tcells',
-#                                                                                'CD8Tcells', 'Macrophages',
-#                                                                                'NK', 'Tumor', 'undefined', 'Fibroblasts'), 
-#                                                                 c('DCs', 'Tcells_CD4',
-#                                                                   'Tcells_CD8', 'Macrophages_Monocytes',
-#                                                                   'NKs', 'tumor', 'other', 'Fibroblasts')))
-# 
-# 
-# fwrite(cells_in_roi_all_pt, output_path)
-
-
-########################################
-
-
-#######################################################
-#######################################################
-# TODO all this is a messy version of geomx_roi_hubs_integration. r - check and clean
-
-# roi_ct_long <- melt(roi_ct[, !(names(roi_ct) %in% c('total_cell_nr', 'immune_cell_nr','immune_other_cell_nr'))], 
-#                                         id.vars = c("sample_roi"), variable.name = "cell_type")
-# 
-# roi_ct_frac <- mutate_at(roi_ct, vars(cell_types), funs(. / total_cell_nr))
-# roi_ct_frac_long <- melt(roi_ct_frac[, !(names(roi_ct_frac) %in% c('total_cell_nr', 'immune_cell_nr', 'immune_other_cell_nr'))], 
-#                          id.vars = c("sample_roi"), variable.name = "cell_type")
-# 
-# roi_ct_frac_immune <- mutate_at(roi_ct[, c("sample_roi", cell_types_immune, "immune_cell_nr")], 
-#                                 vars(cell_types_immune), funs(. / immune_cell_nr))
-# roi_ct_frac_immune_long <- melt(roi_ct_frac_immune[, !(names(roi_ct_frac_immune) %in% c('immune_cell_nr'))], 
-#                          id.vars = c("sample_roi"), variable.name = "cell_type")
-# 
-# roi_ct_frac_immune_other <- mutate_at(roi_ct[, c("sample_roi", cell_types_immune, "immune_other_cell_nr")], 
-#                                 vars(cell_types_immune), funs(. / immune_other_cell_nr))
-# roi_ct_frac_immune_other_long <- melt(roi_ct_frac_immune_other[, !(names(roi_ct_frac_immune_other) %in% c('immune_other_cell_nr'))], 
-#                                 id.vars = c("sample_roi"), variable.name = "cell_type")
-# 
-# 
-# #TODO merge with our labels
-# 
-# # count cells per aoi
-# # !!! Global unidentified cells are max 7 in 23 ROIs
-# # exchanging them to stromal segment to keep the cell count the same
-# aoi_ct <- cells_in_roi_all_pt
-# aoi_ct$Segment <- ifelse(aoi_ct$Segment == 'Global', 'stroma', aoi_ct$Segment) # !!!!
-# aoi_ct <- dcast(aoi_ct, sample_roi+Segment ~ cell_type)
-# aoi_ct$total_cell_nr <- rowSums(aoi_ct[, 3:ncol(aoi_ct)])
-# 
-# aoi_ct_frac <- mutate_at(aoi_ct, vars(3:10), funs(. / total_cell_nr))
-# aoi_ct_frac_long <- melt(aoi_ct_frac[, -11], id.vars = c("sample_roi", "Segment"), variable.name = "cell_type")
-# 
-# ################################
-# 
-# # TODO use ct number instead of fractions bcs if there are 2 ct abundant, fraction will be lower
-# # TODO also fraction of immune cells
-# 
-# # check ct fractions distribution
-# for(ct_name in cell_types_immune){
-#   roi_ct_long_ct <- roi_ct_frac_immune_long[roi_ct_frac_immune_long$cell_type == ct_name, ]
-#   #roi_ct_frac_immune_long_ct <- roi_ct_frac_immune_long[roi_ct_frac_immune_long$cell_type == ct_name, ]
-#   #roi_ct_frac_long_ct <- roi_ct_frac_long[roi_ct_frac_long$cell_type == ct_name, ]
-#   #aoi_ct_frac_long_ct <- aoi_ct_frac_long[aoi_ct_frac_long$cell_type == ct_name, ]
-#   
-#   ggplot(data = roi_ct_long_ct) +
-#     #geom_density(aes(value)) +
-#     geom_histogram(aes(value), bins = 100)
-#     ggtitle(ct_name)
-#   
-#   ggsave(file.path(output_dir, paste0('hist_fraq_immune_', ct_name, '.png')), width = 2000, height = 1000, unit='px')
-#   
-#   # ggplot(data = aoi_ct_frac_long_ct) +
-#   #   geom_density(aes(value, color = Segment)) +
-#   #   ggtitle(ct_name)
-#   # 
-#   # ggsave(file.path(output_dir, paste0('density_fraq_aoi_', ct_name, '.png')), width = 2000, height = 1000, unit='px')
-#   # 
-# }
-# 
-# ##############################################
-# # cluster ROIs per cell fraction in a hmap
-# 
-# ct_frac_mtx <- as.matrix(column_to_rownames(roi_ct_frac_immune[, !(names(roi_ct_frac_immune) %in% c('total_cell_nr', 'immune_cell_nr'))],
-#                                             'sample_roi'))
-# 
-# # TODO comment/uncomment for important cells
-# ct_frac_mtx <- ct_frac_mtx[, c(cell_types_important)]
-# ct_frac_mtx_zscore <- scale(ct_frac_mtx) # zscore by column
-# 
-# # cluster by hclust
-# ct_frac_hclust <- hclust(dist(ct_frac_mtx), method = "average")
-# plot(ct_frac_hclust, hang = -1, cex = 0.4)
-# ct_frac_hclust_cut <- cutree(ct_frac_hclust, h = 0.3)
-# 
-# ct_frac_zscore_hclust <- hclust(dist(ct_frac_mtx_zscore), method = "average")
-# plot(ct_frac_zscore_hclust, hang = -1, cex = 0.4)
-# ct_frac_zscore_hclust_cut <- cutree(ct_frac_zscore_hclust, h = 2)
-# ct_frac_zscore_hclust_cut_k <- cutree(ct_frac_zscore_hclust, k = 11)
-# 
-# #########
-# # TODO annotations on hmaps are wrong - only match zscores
-# # make hmaps
-# ha = HeatmapAnnotation(
-#   #ct_label = anno_simple(roi_ct_frac$Annotation_cell),
-#   hclust_h = anno_simple(as.character(unname(ct_frac_zscore_hclust_cut))),
-#   hclust_k = anno_simple(as.character(unname(ct_frac_zscore_hclust_cut_k))),
-#   which = "row", show_legend = TRUE)
-# 
-# # hmap for ct fraq
-# png(filename=file.path(output_dir, paste0('hmap_roi_fraq_immune_important_ct.png')), 
-#     width=10, height=6,units="in",res=2000)
-# 
-# ind_heat <- Heatmap(ct_frac_mtx, cluster_columns = F, cluster_rows= ct_frac_hclust,
-#                     show_row_names = TRUE, show_column_names = TRUE,
-#                     left_annotation = ha, show_heatmap_legend = TRUE)
-# 
-# 
-# draw(ind_heat, annotation_legend_side = "right", heatmap_legend_side = "right")
-# dev.off()
-# 
-# # hmap for zscore
-# png(filename=file.path(output_dir, paste0('hmap_roi_zscore_fraq_immune_important_ct.png')), 
-#     width=10, height=6,units="in",res=2000)
-# 
-# ind_heat <- Heatmap(ct_frac_mtx_zscore, cluster_columns = F, cluster_rows= ct_frac_zscore_hclust,
-#                     show_row_names = TRUE, show_column_names = TRUE,
-#                     left_annotation = ha, show_heatmap_legend = TRUE)
-# 
-# 
-# draw(ind_heat, annotation_legend_side = "right", heatmap_legend_side = "right")
-# dev.off()
-
-# TODO the same for geomx_segment
-# TODO compare with deconvoluted fractions
-# TODO compare with our labels
-# TODO add fractions (from all cells) for cell types (eg macro fraq + dc frac and then: check distrib, label highest ones)
