@@ -115,18 +115,30 @@ ct_frac_deconv_long <- do.call(left_join, ct_frac_deconv_long)
 ct_frac_deconv_long <- left_join(ct_frac_deconv_long, metadt[, c(meta_names, 'Nuclei', 'sample_roi')], by = 'dcc_filename') %>%
   dplyr::rename(total_cell_nr_geomx = Nuclei)
 
-# add cell nr
+# calculate cell number 
 ct_frac_deconv_long$ct_nr_bp <- round(ct_frac_deconv_long$ct_frac_bp * ct_frac_deconv_long$total_cell_nr_geomx)
 ct_frac_deconv_long$ct_nr_sd <- round(ct_frac_deconv_long$ct_frac_sd * ct_frac_deconv_long$total_cell_nr_geomx)
 
 # before merging per ROI, remove AOI from tsi regions which lost their pair during eg QC
-# TODO think if they should be included later or not. for checking concordance with cycif phenotyping better to rm
 roi_incomplete <- ct_frac_deconv_long %>%
   select(dcc_filename, sample_roi, Segment_geomx) %>%
   distinct() %>%
   group_by(sample_roi) %>%
   mutate(nr_aoi = n()) %>%
   filter(Segment_geomx == 'tsi' & nr_aoi == 1)
+
+file.path(output_dir, 'cycif_integration', 'b123_ct_frac_rois_incomplete.csv')
+
+# merge per ROI for incomplete ROIs: 
+# assume 50/50 ct number in both AOIs - double numbers
+# cell fractions stay the same
+# TODO remember about it
+ct_frac_deconv_long_roi_incomplete <- ct_frac_deconv_long %>%
+  filter(dcc_filename %in% roi_incomplete$dcc_filename) %>% # get 20 incomplete ROIs
+  group_by(sample_roi, cell_type) %>%
+  summarise(total_cell_nr_geomx = total_cell_nr_geomx*2, ct_nr_bp = ct_nr_bp*2, ct_nr_sd = ct_nr_sd*2,
+            ct_frac_bp = ct_frac_bp, ct_frac_sd = ct_frac_sd) %>%
+  ungroup()
 
 # merge per ROI
 ct_frac_deconv_long_roi <- ct_frac_deconv_long %>%
@@ -135,6 +147,9 @@ ct_frac_deconv_long_roi <- ct_frac_deconv_long %>%
   summarise(total_cell_nr_geomx = sum(total_cell_nr_geomx), ct_nr_bp = sum(ct_nr_bp), ct_nr_sd = sum(ct_nr_sd),
             ct_frac_bp = mean(ct_frac_bp), ct_frac_sd = mean(ct_frac_sd)) %>%
   ungroup()
+
+ct_frac_deconv_long_roi <- rbind(ct_frac_deconv_long_roi, ct_frac_deconv_long_roi_incomplete)
+
 
 fwrite(ct_frac_deconv_long, output_ct_frac_deconv_path)
 fwrite(ct_frac_deconv_long_roi, output_ct_frac_deconv_roi_path)
