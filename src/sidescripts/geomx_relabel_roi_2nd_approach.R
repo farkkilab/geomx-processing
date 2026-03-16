@@ -4,19 +4,21 @@ library(tidyr)
 library(tidyverse)
 library(patchwork)
 library(stringi)
-
-# TODO barplots + clustering as for communities
+library(PCAtools)
+library(uwot)
+library(NMF)
+library(fpc)
 
 # define variables --------------------------------------------------------
 batch_name <- 'batch123'
 proj_dir <<- '~/Documents/phd/st'
 data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
+anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.csv') #batch1 and 2 and 3
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-out_dir <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv')
+out_dir <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv-dimred')
 dir.create(out_dir, recursive = T)
 
 # outputs from geomx_roi_hubs_integration.R
@@ -33,17 +35,14 @@ midthr <- 0.15
 
 # define names ------------------------------------------------------------
 
-meta_names <- c('dcc_filename', 'Sample', 'Annotation_cell', 'Roi_geomx', 
+meta_names <- c('dcc_filename', 'Sample', 'NACT_status', 'Annotation_cell', 'Roi_geomx', 
                 'Segment_geomx',  'Segment', 'tCycIF_preselection_initial_label') 
 
-meta_names_per_roi <- c('Sample', 'Segment_geomx', 'Annotation_cell', 'tCycIF_preselection_initial_label')
+meta_names_per_roi <- c('Sample', 'Segment_geomx', 'NACT_status', 'Annotation_cell')
 
 ct_names_all <- c("tumor", "Bcells", "Tcells_CD4", "Tcells_other", "Tcells_CD8", 
                   "Fibroblasts_Mesothelial", "Macrophages_Monocytes", "Mast_cells",
                   "NKcells", "Endothelial_cells", "DCs")
-
-# ct from deconv counted as stroma in cycif
-ct_names_stroma <- c("Fibroblasts_Mesothelial", "Endothelial_cells")
 
 # main immune cells from deconv - also counted in cycif phenotyping
 ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes", "Bcells", "NKcells") # no Bcells in basic phenotyping eg b1b2 
@@ -64,6 +63,14 @@ ct_frac_deconv_roi <- as.data.frame(fread(ct_frac_deconv_roi_path))
 
 ct_frac_all_roi <- fread(ct_frac_all_roi_path)
 
+metadt <- fread(anno_path, select = meta_names) %>%
+  mutate(sample_roi = paste0(Sample, '_', Roi_geomx)) %>%
+  filter(sample_roi %in% ct_frac_deconv_roi$sample_roi)
+
+metadt_roi <- metadt %>%
+  select(sample_roi, !!meta_names_per_roi) %>%
+  distinct()
+  
 # clustered hmaps with ct fractions ---------------------------------------
 
 deconv_names <- c('sd', 'bp')
@@ -190,7 +197,7 @@ for(deconv_name in deconv_names){
         # clustering
         hclust_avg <- hclust(dist(ct_frac_roi_wide_immune), method = "ward.D2")
         plot(hclust_avg, hang = -1, cex = 0.3)
-        hclust_avg_cut <- cutree(hclust_avg, h = hclust_cut) # 1.5 = 9 clusters, 2 = 6 clusters
+        hclust_avg_cut <- cutree(hclust_avg, h = hclust_cut) # 1.5 = 9 clusters, 2 = 5 clusters
         hclust_avg_cut_df <- as.data.frame(hclust_avg_cut) %>%
           rownames_to_column(var = "sample_roi") %>%
           rename(cluster = hclust_avg_cut)
@@ -238,7 +245,9 @@ for(deconv_name in deconv_names){
 
         # merge with ctfrac dfs
         ct_frac_roi_long_immune_clust <- left_join(ct_frac_roi_long_immune_clust, ct_frac_clust_mean_wide)
+        ct_frac_roi_long_immune_clust$cluster_label_toplot <- paste0(ct_frac_roi_long_immune_clust$cluster, '_', ct_frac_roi_long_immune_clust$cluster_label)
         ct_frac_clust_mean <- left_join(ct_frac_clust_mean, ct_frac_clust_mean_wide)
+        ct_frac_clust_mean$cluster_label_toplot <- paste0(ct_frac_clust_mean$cluster, '_', ct_frac_clust_mean$cluster_label)
         
         # stacked bar plot with all samples per cluster
         ggplot(ct_frac_roi_long_immune_clust, aes(x = sample_roi, y = fraction_of_immune, fill = cell_type)) +
@@ -246,15 +255,15 @@ for(deconv_name in deconv_names){
           labs(title = paste0("ROI clustered with ", deconv_name, " cell type fractions of immune"), x = "ROIs", y = "ct_fraction") +
           theme_minimal() +
           theme(axis.text.x=element_blank()) +
-          facet_wrap(~ cluster, scale = "free")
+          facet_wrap(~ cluster_label_toplot, scales = "free", ncol = 1)
         
         ggsave(file.path(out_dir, paste0('barplot_clust_immunefrac_', out_name,  '.png')))
         
         # stacked barplot for mean ct fraction per cluster
-        ggplot(ct_frac_clust_mean, aes(x = cluster, y = mean_ct_frac_of_immune, fill = cell_type)) +
+        ggplot(ct_frac_clust_mean, aes(x = cluster_label_toplot, y = mean_ct_frac_of_immune, fill = cell_type)) +
           geom_bar(stat = "identity") +
           labs(title = "mean ct fraction of immune per cluster", x = "ROI clusters", y = "mean ct fraction") +
-          theme_minimal() 
+          theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, size = 6))
         
         ggsave(file.path(out_dir, paste0('barplot_mean_clust_immunefrac_', out_name, '.png')))
         
@@ -283,6 +292,146 @@ clust_df_all <- do.call(cbind, clust_list) %>%
   rownames_to_column('sample_roi')
 
 fwrite(clust_df_all, file.path(out_dir, paste0('roi_ctfreq_clusters_df_','mid', as.character(midthr), '_hi', as.character(hithr), '_labs.csv')))
+
+
+######################################################################
+######################################################################
+# Totally different approach:
+# use different clustering methods and make clusters: Hclust, GMM, DBScan
+# use dimentionality reduction methods: PCA, tSNE, UMAP, NMF
+# visualise dim red in 2D and color by cluster
+
+# clustering
+deconv_name <- 'sd'
+ct_names_to_cluster <- c(ct_names_lymphoids, ct_names_myeloids, 'Bcells')
+mye_add <- F
+out_name <- ifelse(mye_add, 'sd_mye_lymph_b_myemerged', 'sd_mye_lymph_b')
+    
+print(out_name)
+    
+# transform to wide + calculate fractions of immune_other cells
+ct_frac_roi_wide_immune <- ct_frac_deconv_roi[, c('sample_roi', 'cell_type', paste0('ct_frac_', deconv_name))] %>%
+  pivot_wider(names_from = cell_type, values_from = !!paste0('ct_frac_', deconv_name)) %>%
+  select(sample_roi, !!ct_names_immune, !!ct_names_other, immune_other) %>%
+  mutate(across(c(ct_names_immune, ct_names_other), ~./immune_other)) %>%
+  select(-immune_other) %>%
+  column_to_rownames(var = 'sample_roi')
+    
+# sum fractions of other cells
+ct_frac_roi_wide_immune <- ct_frac_roi_wide_immune %>%
+  mutate(other_immune = rowSums(across(setdiff(colnames(ct_frac_roi_wide_immune), ct_names_to_cluster)))) %>%
+  select(!!ct_names_to_cluster, other_immune)
+    
+# if needed, sum fractions of myeloids
+if(mye_add){
+  ct_frac_roi_wide_immune <- ct_frac_roi_wide_immune %>%
+    mutate(myeloids = rowSums(across(ct_names_myeloids))) %>%
+    select(-!!ct_names_myeloids)
+  
+  ct_names_to_cluster <- c(setdiff(ct_names_to_cluster, ct_names_myeloids), 'myeloids')
+}
+
+
+################################################################
+###############################################################
+make_and_plot_dimreduction <- function(input_mtx, clusters_df, output_path, dimred_method = c('UMAP', 'PCA'),  id_name = 'sample_roi'){
+  
+  if(dimred_method == 'PCA'){
+    dimred_df <- pca(mat = t(input_mtx))$rotated[, 1:2]
+  } else if(dimred_method == 'UMAP'){
+    dimred_df <- as.data.frame(umap(input_mtx, n_neighbors = 30))
+  }
+  
+  dimred_df <- dimred_df %>%
+    rownames_to_column(var = id_name) %>%
+    left_join(clusters_df) 
+  
+  colnames(dimred_df) <- c(id_name, paste0(dimred_method, '1'), paste0(dimred_method, '2'), 'cluster')
+  dimred_df$cluster <- as.character(dimred_df$cluster)
+  
+  ggplot(dimred_df, aes(x = get(paste0(dimred_method, '1')), y = get(paste0(dimred_method, '2')), color = cluster)) +
+    geom_point() +
+    labs(title = paste0(dimred_method, " across clusters")) +
+    xlab(paste0(dimred_method, '1')) +
+    ylab(paste0(dimred_method, '2')) +
+    theme_minimal()
+  
+  ggsave(file.path(output_path))
+  
+}
+
+####################################
+####################################
+install.packages(c("cluster", "factoextra"))  # Uncomment if not installed
+library(cluster)
+library(factoextra)
+# clustering: hclust, DBscan GMM
+ct_frac_mtx <- as.matrix(ct_frac_roi_wide_immune)
+
+# DBScan
+set.seed(220)
+dbscan_out <- dbscan(ct_frac_roi_wide_immune, eps = 0.1, MinPts = 10, scale = F)
+dbscan_df <- DataFrame(sample_roi = rownames(ct_frac_roi_wide_immune), cluster = dbscan_out$cluster)
+table(dbscan_out$cluster)
+plot(dbscan_out, ct_frac_roi_wide_immune, main = "DBScan")
+
+
+##############################################
+# iterate through different params for hclust
+hclust_cuts = c(1, 1.5, 2, 2.5)
+
+hclust_res <- lapply(hclust_cuts, function(hclust_cut){
+  clust_name <- paste0('hclust_cut', as.character(hclust_cut))
+  print(clust_name)
+  
+  hclust_avg <- hclust(dist(ct_frac_mtx), method = "ward.D2")
+  hclust_avg_cut <- cutree(hclust_avg, h = hclust_cut) 
+  cluster_df <- as.data.frame(hclust_avg_cut) %>%
+    rownames_to_column(var = "sample_roi") %>%
+    rename(cluster = hclust_avg_cut)
+  
+  print(table(cluster_df$cluster))
+  
+  # make dimreduction plots
+  make_and_plot_dimreduction(ct_frac_mtx, cluster_df, dimred_method = 'PCA',
+                             output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_PCA.png')))
+  
+  make_and_plot_dimreduction(ct_frac_mtx, cluster_df, dimred_method = 'UMAP',
+                             output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_UMAP.png')))
+  
+  # calculate wcss (inertia)
+  wcss <- sum(sapply(unique(cluster_df$cluster), function(cluster) {
+    cluster_points <- ct_frac_mtx[cluster_df$cluster == cluster, ]
+    return(sum(rowSums((scale(cluster_points) ^ 2))))  # WCSS for each cluster
+  }))
+  
+  # calculate silhouettes
+  silhouette_values <- silhouette(cluster_df$cluster, dist(ct_frac_mtx))
+  avg_silhouette <- mean(silhouette_values[, 3])
+  
+  outp_df <- data.frame(method = clust_name, clusters_nr = length(unique(cluster_df$cluster)),
+                        inertia = wcss, avg_silh = avg_silhouette)
+  
+  return(outp_df)
+})
+
+hclust_res <- do.call(rbind, hclust_res)
+
+
+# do the elbow plot with inertia +avg silhouette
+ggplot(data=hclust_res, aes(x=method)) +
+  geom_line(aes(y=inertia, group=1), color = 'blue')+
+  geom_point(aes(y=inertia), color = 'blue') + 
+  labs(title = 'Hclust inertia vs cut param')
+
+ggsave(file.path(out_dir, paste0(out_name,'_hclust_inertia.png')))
+
+ggplot(data=hclust_res, aes(x=method)) +
+  geom_line(aes(y=avg_silh, group=1), color = 'red')+
+  geom_point(aes(y=avg_silh), color = 'red') +
+  labs(title = 'Hclust avg silhouette vs cut param')
+
+ggsave(file.path(out_dir, paste0(out_name,'_hclust_avg_silhouette.png')))
 
 #######################################################################
 #######################################################################

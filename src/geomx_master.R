@@ -296,20 +296,25 @@ ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4
 # if more column names are identical to the existing ones, columns from the custom dt will be used
 # if not needed, set to NULL
 #custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
-custom_metadt_path <- NULL
+custom_metadt_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv', 'dcc_deconv_clusters.csv')
 # DGE parameters
 comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'Segment' # main variable to make comparison between
-main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
+main_var_name <<- 'sd_mye_lymph_b_hcut2_label' # main variable to make comparison between
+main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
+#TODO rewrite code to run multiple main vars at once
 #main_var_main_val <<- 'posCD8_posIBA1'
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
-main_var_main_val <<- NULL
+labs <- c("midCD4_hiCD8_midCD11_midCD20", "hiIba1", "hiCD8_midCD11_midIba1_midCD20", 
+          "hiCD8_hiIba1", "midCD8_hiCD20" )
+main_var_main_val <<- labs[5]
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c()
+dge_categories <<- c('Segment', 'NACT_status')
+
+
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 
