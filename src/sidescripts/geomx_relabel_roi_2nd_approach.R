@@ -6,7 +6,6 @@ library(patchwork)
 library(stringi)
 library(PCAtools)
 library(uwot)
-library(NMF)
 library(fpc)
 
 # define variables --------------------------------------------------------
@@ -363,8 +362,10 @@ make_and_plot_dimreduction <- function(input_mtx, clusters_df, output_path, dimr
 ####################################
 ####################################
 install.packages(c("cluster", "factoextra"))  # Uncomment if not installed
+library(basicClEval)
 library(cluster)
 library(factoextra)
+
 # clustering: hclust, DBscan GMM
 ct_frac_mtx <- as.matrix(ct_frac_roi_wide_immune)
 
@@ -378,7 +379,7 @@ plot(dbscan_out, ct_frac_roi_wide_immune, main = "DBScan")
 
 ##############################################
 # iterate through different params for hclust
-hclust_cuts = c(1, 1.5, 2, 2.5)
+hclust_cuts = c(3, 2.5, 2, 1.5, 1)
 
 hclust_res <- lapply(hclust_cuts, function(hclust_cut){
   clust_name <- paste0('hclust_cut', as.character(hclust_cut))
@@ -400,10 +401,7 @@ hclust_res <- lapply(hclust_cuts, function(hclust_cut){
                              output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_UMAP.png')))
   
   # calculate wcss (inertia)
-  wcss <- sum(sapply(unique(cluster_df$cluster), function(cluster) {
-    cluster_points <- ct_frac_mtx[cluster_df$cluster == cluster, ]
-    return(sum(rowSums((scale(cluster_points) ^ 2))))  # WCSS for each cluster
-  }))
+  wcss <- sum(wcss(ct_frac_mtx, cluster_df$cluster)$WCSSByCl, na.rm = T) # prevent NA 
   
   # calculate silhouettes
   silhouette_values <- silhouette(cluster_df$cluster, dist(ct_frac_mtx))
@@ -419,17 +417,18 @@ hclust_res <- do.call(rbind, hclust_res)
 
 
 # do the elbow plot with inertia +avg silhouette
-ggplot(data=hclust_res, aes(x=method)) +
+ggplot(data=hclust_res, aes(x=clusters_nr)) +
   geom_line(aes(y=inertia, group=1), color = 'blue')+
   geom_point(aes(y=inertia), color = 'blue') + 
-  labs(title = 'Hclust inertia vs cut param')
+  labs(title = 'Hclust inertia vs cluster nr')
 
 ggsave(file.path(out_dir, paste0(out_name,'_hclust_inertia.png')))
 
-ggplot(data=hclust_res, aes(x=method)) +
+
+ggplot(data=hclust_res, aes(x=clusters_nr)) +
   geom_line(aes(y=avg_silh, group=1), color = 'red')+
   geom_point(aes(y=avg_silh), color = 'red') +
-  labs(title = 'Hclust avg silhouette vs cut param')
+  labs(title = 'Hclust avg silhouette vs cluster nr')
 
 ggsave(file.path(out_dir, paste0(out_name,'_hclust_avg_silhouette.png')))
 
