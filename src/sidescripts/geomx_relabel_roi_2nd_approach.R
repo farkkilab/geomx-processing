@@ -1,4 +1,5 @@
 library(data.table)
+library(plyr)
 library(dplyr)
 library(tidyr)
 library(tidyverse)
@@ -60,7 +61,7 @@ ct_names_cleaned <- c('CD4', 'CD8', 'CD11', 'Iba1', 'CD20', 'NK', 'Mye')
 ct_frac_deconv <- as.data.frame(fread(ct_frac_deconv_path))
 ct_frac_deconv_roi <- as.data.frame(fread(ct_frac_deconv_roi_path))
 
-ct_frac_all_roi <- fread(ct_frac_all_roi_path)
+#ct_frac_all_roi <- fread(ct_frac_all_roi_path)
 
 metadt <- fread(anno_path, select = meta_names) %>%
   mutate(sample_roi = paste0(Sample, '_', Roi_geomx)) %>%
@@ -293,8 +294,10 @@ clust_df_all <- do.call(cbind, clust_list) %>%
 fwrite(clust_df_all, file.path(out_dir, paste0('roi_ctfreq_clusters_df_','mid', as.character(midthr), '_hi', as.character(hithr), '_labs.csv')))
 
 
-######################################################################
-######################################################################
+
+# systematic clustering methods comparison --------------------------------
+
+
 # Totally different approach:
 # use different clustering methods and make clusters: Hclust, GMM, DBScan
 # use dimentionality reduction methods: PCA, tSNE, UMAP, NMF
@@ -312,13 +315,13 @@ print(out_name)
 ct_frac_roi_wide_immune <- ct_frac_deconv_roi[, c('sample_roi', 'cell_type', paste0('ct_frac_', deconv_name))] %>%
   pivot_wider(names_from = cell_type, values_from = !!paste0('ct_frac_', deconv_name)) %>%
   select(sample_roi, !!ct_names_immune, !!ct_names_other, immune_other) %>%
-  mutate(across(c(ct_names_immune, ct_names_other), ~./immune_other)) %>%
+  dplyr::mutate(across(c(ct_names_immune, ct_names_other), ~./immune_other)) %>%
   select(-immune_other) %>%
   column_to_rownames(var = 'sample_roi')
     
 # sum fractions of other cells
 ct_frac_roi_wide_immune <- ct_frac_roi_wide_immune %>%
-  mutate(other_immune = rowSums(across(setdiff(colnames(ct_frac_roi_wide_immune), ct_names_to_cluster)))) %>%
+  dplyr::mutate(other_immune = rowSums(across(setdiff(colnames(ct_frac_roi_wide_immune), ct_names_to_cluster)))) %>%
   select(!!ct_names_to_cluster, other_immune)
     
 # if needed, sum fractions of myeloids
@@ -361,159 +364,308 @@ make_and_plot_dimreduction <- function(input_mtx, clusters_df, output_path, dimr
 
 ####################################
 ####################################
-install.packages(c("cluster", "factoextra"))  # Uncomment if not installed
+
+library(mclust)
 library(basicClEval)
 library(cluster)
-library(factoextra)
 
-# clustering: hclust, DBscan GMM
+# clustering: hclust, GMM, KNN
 ct_frac_mtx <- as.matrix(ct_frac_roi_wide_immune)
 
-# DBScan
-set.seed(220)
-dbscan_out <- dbscan(ct_frac_roi_wide_immune, eps = 0.1, MinPts = 10, scale = F)
-dbscan_df <- DataFrame(sample_roi = rownames(ct_frac_roi_wide_immune), cluster = dbscan_out$cluster)
-table(dbscan_out$cluster)
-plot(dbscan_out, ct_frac_roi_wide_immune, main = "DBScan")
+#######################################################
+# GMM
+#
+# iterate through different params
+gmm_clust_nrs <- seq(3, 16)
 
+gmm_res <- lapply(gmm_clust_nrs, function(gmm_clust_nr){
+  
+  clust_name <- paste0('gmm_clustnr_', as.character(gmm_clust_nr))
+  print(clust_name)
+  
+  gmm_model <- Mclust(ct_frac_mtx, G = gmm_clust_nr) 
+  cluster_assignments <- predict(gmm_model)$classification
+  gmm_df <- data.frame(sample_roi = rownames(ct_frac_mtx), cluster = cluster_assignments)
+  
+  print(table(gmm_df$cluster))
+  
+  # make dimreduction plots
+  make_and_plot_dimreduction(ct_frac_mtx, gmm_df, dimred_method = 'PCA',
+                             output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_PCA.png')))
+  
+  make_and_plot_dimreduction(ct_frac_mtx, gmm_df, dimred_method = 'UMAP',
+                             output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_UMAP.png')))
+  
+  # calculate wcss (inertia)
+  wcss <- sum(wcss(ct_frac_mtx, gmm_df$cluster)$WCSSByCl, na.rm = T) # prevent NA 
+  
+  # calculate silhouettes
+  silhouette_values <- silhouette(gmm_df$cluster, dist(ct_frac_mtx))
+  avg_silhouette <- summary(silhouette_values)$avg.width
+  
+  outp_df <- data.frame(method = clust_name, clusters_nr = length(unique(gmm_df$cluster)),
+                        inertia = wcss, avg_silh = avg_silhouette)
+  
+  colnames(gmm_df) <- c('sample_roi', paste0('clusters_', clust_name))
+  
+  return(list(metrics = outp_df, clusters = gmm_df))
+})
+
+
+gmm_metrics <- lapply(gmm_res, `[[`, 1)
+gmm_metrics <- do.call(rbind, gmm_metrics)
+gmm_clusters <- lapply(gmm_res, `[[`, 2)
+gmm_clusters <- do.call(cbind, gmm_clusters) %>%
+  select(1, starts_with('cluster'))
+
+#######################################################
+#KNN
+# iterate through different params
+kmeans_clust_nrs <- seq(3, 16)
+
+kmeans_res <- lapply(kmeans_clust_nrs, function(kmeans_clust_nr){
+  
+  clust_name <- paste0('kmeans_clustnr_', as.character(kmeans_clust_nr))
+  print(clust_name)
+  
+  kmeans_out <- kmeans(scale(ct_frac_mtx), kmeans_clust_nr)
+  kmeans_df <- data.frame(sample_roi = rownames(ct_frac_mtx), cluster = kmeans_out$cluster)
+  
+  print(table(kmeans_df$cluster))
+  
+  # make dimreduction plots
+  make_and_plot_dimreduction(ct_frac_mtx, kmeans_df, dimred_method = 'PCA',
+                             output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_PCA.png')))
+  
+  make_and_plot_dimreduction(ct_frac_mtx, kmeans_df, dimred_method = 'UMAP',
+                             output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_UMAP.png')))
+  
+  # calculate wcss (inertia)
+  wcss <- sum(wcss(ct_frac_mtx, kmeans_df$cluster)$WCSSByCl, na.rm = T) # prevent NA 
+  
+  # calculate silhouettes
+  silhouette_values <- silhouette(kmeans_df$cluster, dist(ct_frac_mtx))
+  avg_silhouette <- summary(silhouette_values)$avg.width
+  
+  outp_df <- data.frame(method = clust_name, clusters_nr = length(unique(kmeans_df$cluster)),
+                        inertia = wcss, avg_silh = avg_silhouette)
+  
+  colnames(kmeans_df) <- c('sample_roi', paste0('clusters_', clust_name))
+  
+  return(list(metrics = outp_df, clusters = kmeans_df))
+})
+
+kmeans_metrics <- lapply(kmeans_res, `[[`, 1)
+kmeans_metrics <- do.call(rbind, kmeans_metrics)
+kmeans_clusters <- lapply(kmeans_res, `[[`, 2)
+kmeans_clusters <- do.call(cbind, kmeans_clusters) %>%
+  select(1, starts_with('cluster'))
 
 ##############################################
 # iterate through different params for hclust
-hclust_cuts = c(3, 2.5, 2, 1.5, 1)
+# non-scaled data
+hclust_cuts <- c(3, 2.5, 2, 1.75, 1.5, 1.25, 1) #2,75, 2.5 2.25 all gave 4 clusters
+
+# scaled data
+#hclust_cuts <- c(10, 12, 14, 16, 18, 20, 22, 24)
 
 hclust_res <- lapply(hclust_cuts, function(hclust_cut){
+  
   clust_name <- paste0('hclust_cut', as.character(hclust_cut))
   print(clust_name)
   
   hclust_avg <- hclust(dist(ct_frac_mtx), method = "ward.D2")
+  #plot(hclust_avg, hang = -1, cex = 0.3)
   hclust_avg_cut <- cutree(hclust_avg, h = hclust_cut) 
-  cluster_df <- as.data.frame(hclust_avg_cut) %>%
-    rownames_to_column(var = "sample_roi") %>%
-    rename(cluster = hclust_avg_cut)
+  hclust_df <- data.frame(sample_roi = rownames(ct_frac_mtx), cluster = hclust_avg_cut)
   
-  print(table(cluster_df$cluster))
+  print(table(hclust_df$cluster))
   
   # make dimreduction plots
-  make_and_plot_dimreduction(ct_frac_mtx, cluster_df, dimred_method = 'PCA',
+  make_and_plot_dimreduction(ct_frac_mtx, hclust_df, dimred_method = 'PCA',
                              output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_PCA.png')))
   
-  make_and_plot_dimreduction(ct_frac_mtx, cluster_df, dimred_method = 'UMAP',
+  make_and_plot_dimreduction(ct_frac_mtx, hclust_df, dimred_method = 'UMAP',
                              output_path = file.path(out_dir, paste0('scatter_', out_name,'_', clust_name, '_UMAP.png')))
   
   # calculate wcss (inertia)
-  wcss <- sum(wcss(ct_frac_mtx, cluster_df$cluster)$WCSSByCl, na.rm = T) # prevent NA 
+  wcss <- sum(wcss(ct_frac_mtx, hclust_df$cluster)$WCSSByCl, na.rm = T) # prevent NA 
   
   # calculate silhouettes
-  silhouette_values <- silhouette(cluster_df$cluster, dist(ct_frac_mtx))
-  avg_silhouette <- mean(silhouette_values[, 3])
+  silhouette_values <- silhouette(hclust_df$cluster, dist(ct_frac_mtx))
+  avg_silhouette <- summary(silhouette_values)$avg.width
   
-  outp_df <- data.frame(method = clust_name, clusters_nr = length(unique(cluster_df$cluster)),
+  outp_df <- data.frame(method = clust_name, clusters_nr = length(unique(hclust_df$cluster)),
                         inertia = wcss, avg_silh = avg_silhouette)
   
-  return(outp_df)
+  colnames(hclust_df) <- c('sample_roi', paste0('clusters_', clust_name))
+  
+  return(list(metrics = outp_df, clusters = hclust_df))
 })
 
-hclust_res <- do.call(rbind, hclust_res)
+hclust_metrics <- lapply(hclust_res, `[[`, 1)
+hclust_metrics <- do.call(rbind, hclust_metrics)
+hclust_clusters <- lapply(hclust_res, `[[`, 2)
+hclust_clusters <- do.call(cbind, hclust_clusters) %>%
+  select(1, starts_with('cluster'))
+
+#########################################################
+# do the summarising plots
+
+clust_res_list <- list(hclust = hclust_metrics, kmeans = kmeans_metrics, gmm = gmm_metrics)
+
+for(i in 1:length(clust_res_list)){
+  
+  clust_res <- clust_res_list[[i]]
+  clust_name <- names(clust_res_list)[i]
+  
+  # do the elbow plot with inertia +avg silhouette
+  ggplot(data=clust_res, aes(x=clusters_nr)) +
+    geom_line(aes(y=inertia, group=1), color = 'blue')+
+    geom_point(aes(y=inertia), color = 'blue') + 
+    labs(title = paste0(clust_name, ' inertia vs cluster nr')) +
+    scale_x_continuous(breaks = seq(2, max(clust_res$clusters_nr)))
+  
+  ggsave(file.path(out_dir, paste0(out_name, '_', clust_name, '_inertia.png')))
+  
+  
+  ggplot(data=clust_res, aes(x=clusters_nr)) +
+    geom_line(aes(y=avg_silh, group=1), color = 'red')+
+    geom_point(aes(y=avg_silh), color = 'red') +
+    labs(title = paste0(clust_name, ' avg silhouette vs cluster nr')) +
+    scale_x_continuous(breaks = seq(2, max(clust_res$clusters_nr)))
+  
+  ggsave(file.path(out_dir, paste0(out_name, '_', clust_name, '_avg_silhouette.png')))
+}
 
 
-# do the elbow plot with inertia +avg silhouette
-ggplot(data=hclust_res, aes(x=clusters_nr)) +
-  geom_line(aes(y=inertia, group=1), color = 'blue')+
-  geom_point(aes(y=inertia), color = 'blue') + 
-  labs(title = 'Hclust inertia vs cluster nr')
+# return whole df with clusters
 
-ggsave(file.path(out_dir, paste0(out_name,'_hclust_inertia.png')))
+clusters_all <- cbind(gmm_clusters, kmeans_clusters, hclust_clusters) %>%
+  select(1, starts_with('cluster'))
 
+fwrite(clusters_all, file.path(out_dir, 'all_clustering_results.csv'))
 
-ggplot(data=hclust_res, aes(x=clusters_nr)) +
-  geom_line(aes(y=avg_silh, group=1), color = 'red')+
-  geom_point(aes(y=avg_silh), color = 'red') +
-  labs(title = 'Hclust avg silhouette vs cluster nr')
+clust_metrics_all <- do.call(rbind, clust_res_list)
 
-ggsave(file.path(out_dir, paste0(out_name,'_hclust_avg_silhouette.png')))
+fwrite(clust_metrics_all, file.path(out_dir, 'all_clustering_metrics.csv'))
+#######################################################################
+#######################################################################
+# compare selected clustering methods
 
+# TODO visualise clusters with stacked barplots
+# TODO systematic comparisons between clustering in choosen best methods
+
+choosen_clust_nrs <- c(4, 5, 6)
+
+# there are 7 clusters in hclust 1.75 but to make it simple they're reduced to 6
+clusters_sel <- clusters_all %>%
+  dplyr::rename(clusters_hclust_clustnr_4 = clusters_hclust_cut2.5,
+         clusters_hclust_clustnr_5 = clusters_hclust_cut2,
+         clusters_hclust_clustnr_6 = clusters_hclust_cut1.75) %>%
+  dplyr::select(sample_roi, ends_with('_4') | ends_with('_5') | ends_with('_6'))
+
+table(clusters_sel$clusters_gmm_clustnr_4, clusters_sel$clusters_kmeans_clustnr_4)
+table(clusters_sel$clusters_gmm_clustnr_4, clusters_sel$clusters_hclust_clustnr_4)
+table(clusters_sel$clusters_kmeans_clustnr_4, clusters_sel$clusters_hclust_clustnr_4)
+
+table(clusters_sel$clusters_gmm_clustnr_5, clusters_sel$clusters_hclust_clustnr_5)
+
+# make stacked barplots for each cluster + cluster means
+# transform to long, merge with clustering
+ct_frac_roi_long_immune_clust <- ct_frac_roi_wide_immune %>%
+  rownames_to_column(var = "sample_roi") %>%
+  pivot_longer(-sample_roi, names_to = "cell_type", values_to = "fraction_of_immune") %>%
+  left_join(clusters_sel)
+
+#  loop across cluster methods
+for(cluster_method in colnames(clusters_sel)[-1]){
+  # stacked bar plot with all samples per cluster
+  ggplot(ct_frac_roi_long_immune_clust, aes(x = sample_roi, y = fraction_of_immune, fill = cell_type)) +
+    geom_bar(stat = "identity") +
+    labs(title = paste0("ROI ", cluster_method, " ct frac of immune"), x = "ROIs", y = "ct_fraction") +
+    theme_minimal() +
+    theme(axis.text.x=element_blank()) +
+    facet_wrap(~ get(cluster_method), scales = "free", ncol = 2)
+  
+  ggsave(file.path(out_dir, paste0('barplots_', out_name), paste0('barplot_clust_immunefrac_', cluster_method,  '.png')))
+  
+  
+  ct_frac_clust_mean <- ct_frac_roi_long_immune_clust %>%
+    dplyr::group_by_at(c(cluster_method, 'cell_type')) %>%
+    dplyr::summarise(mean_ct_frac_of_immune = mean(fraction_of_immune))
+  
+  # stacked barplot for mean ct fraction per cluster
+  ggplot(ct_frac_clust_mean, aes(x = get(cluster_method), y = mean_ct_frac_of_immune, fill = cell_type)) +
+    geom_bar(stat = "identity") +
+    labs(title = paste0("mean ct frac of immune per clust in ", cluster_method), x = "ROI clusters", y = "mean ct fraction") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, size = 6))
+  
+  ggsave(file.path(out_dir, paste0('barplots_', out_name), paste0('barplot_mean_clust_immunefrac_', cluster_method,  '.png')))
+  
+}
+
+# best solutions:
+# 4 clusters - gmm
+# 5 clusters - gmm + hclust - 192 diff classified - 85+23 between mixed clusters + 36 hiMacro to mixed
+# 6 clusters - gmm + kmeans
+
+clust5_diff <- clusters_sel[clusters_sel$clusters_gmm_clustnr_5 != clusters_sel$clusters_hclust_clustnr_5, ]
+table(clust5_diff$clusters_gmm_clustnr_5, clust5_diff$clusters_hclust_clustnr_5)
 #######################################################################
 #######################################################################
 
-# # check ct fractions distribution
-# for(ct_name in cell_types_immune){
-#   roi_ct_long_ct <- roi_ct_frac_immune_long[roi_ct_frac_immune_long$cell_type == ct_name, ]
-#   #roi_ct_frac_immune_long_ct <- roi_ct_frac_immune_long[roi_ct_frac_immune_long$cell_type == ct_name, ]
-#   #roi_ct_frac_long_ct <- roi_ct_frac_long[roi_ct_frac_long$cell_type == ct_name, ]
-#   #aoi_ct_frac_long_ct <- aoi_ct_frac_long[aoi_ct_frac_long$cell_type == ct_name, ]
-#   
-#   ggplot(data = roi_ct_long_ct) +
-#     #geom_density(aes(value)) +
-#     geom_histogram(aes(value), bins = 100)
-#     ggtitle(ct_name)
-#   
-#   ggsave(file.path(output_dir, paste0('hist_fraq_immune_', ct_name, '.png')), width = 2000, height = 1000, unit='px')
-#   
-#   # ggplot(data = aoi_ct_frac_long_ct) +
-#   #   geom_density(aes(value, color = Segment)) +
-#   #   ggtitle(ct_name)
-#   # 
-#   # ggsave(file.path(output_dir, paste0('density_fraq_aoi_', ct_name, '.png')), width = 2000, height = 1000, unit='px')
-#   # 
-# }
-# 
-# ##############################################
-# # cluster ROIs per cell fraction in a hmap
-# 
-# ct_frac_mtx <- as.matrix(column_to_rownames(roi_ct_frac_immune[, !(names(roi_ct_frac_immune) %in% c('total_cell_nr', 'immune_cell_nr'))],
-#                                             'sample_roi'))
-# 
-# # TODO comment/uncomment for important cells
-# ct_frac_mtx <- ct_frac_mtx[, c(cell_types_important)]
-# ct_frac_mtx_zscore <- scale(ct_frac_mtx) # zscore by column
-# 
-# # cluster by hclust
-# ct_frac_hclust <- hclust(dist(ct_frac_mtx), method = "average")
-# plot(ct_frac_hclust, hang = -1, cex = 0.4)
-# ct_frac_hclust_cut <- cutree(ct_frac_hclust, h = 0.3)
-# 
-# ct_frac_zscore_hclust <- hclust(dist(ct_frac_mtx_zscore), method = "average")
-# plot(ct_frac_zscore_hclust, hang = -1, cex = 0.4)
-# ct_frac_zscore_hclust_cut <- cutree(ct_frac_zscore_hclust, h = 2)
-# ct_frac_zscore_hclust_cut_k <- cutree(ct_frac_zscore_hclust, k = 11)
-# 
-# #########
-# # TODO annotations on hmaps are wrong - only match zscores
-# # make hmaps
-# ha = HeatmapAnnotation(
-#   #ct_label = anno_simple(roi_ct_frac$Annotation_cell),
-#   hclust_h = anno_simple(as.character(unname(ct_frac_zscore_hclust_cut))),
-#   hclust_k = anno_simple(as.character(unname(ct_frac_zscore_hclust_cut_k))),
-#   which = "row", show_legend = TRUE)
-# 
-# # hmap for ct fraq
-# png(filename=file.path(output_dir, paste0('hmap_roi_fraq_immune_important_ct.png')), 
-#     width=10, height=6,units="in",res=2000)
-# 
-# ind_heat <- Heatmap(ct_frac_mtx, cluster_columns = F, cluster_rows= ct_frac_hclust,
-#                     show_row_names = TRUE, show_column_names = TRUE,
-#                     left_annotation = ha, show_heatmap_legend = TRUE)
-# 
-# 
-# draw(ind_heat, annotation_legend_side = "right", heatmap_legend_side = "right")
-# dev.off()
-# 
-# # hmap for zscore
-# png(filename=file.path(output_dir, paste0('hmap_roi_zscore_fraq_immune_important_ct.png')), 
-#     width=10, height=6,units="in",res=2000)
-# 
-# ind_heat <- Heatmap(ct_frac_mtx_zscore, cluster_columns = F, cluster_rows= ct_frac_zscore_hclust,
-#                     show_row_names = TRUE, show_column_names = TRUE,
-#                     left_annotation = ha, show_heatmap_legend = TRUE)
-# 
-# 
-# draw(ind_heat, annotation_legend_side = "right", heatmap_legend_side = "right")
-# dev.off()
+# how many samples are classified in the same clusters?
+clust_4 <- select(clusters_sel, ends_with('_4'))
+clust_5 <- select(clusters_sel, ends_with('_5'))
+clust_6 <- select(clusters_sel, ends_with('_6'))
 
-# TODO the same for geomx_segment
-# TODO compare with deconvoluted fractions
-# TODO compare with our labels
-# TODO add fractions (from all cells) for cell types (eg macro fraq + dc frac and then: check distrib, label highest ones)
+# remap cluster nrs to match (manual check from UMAP) 
+# gmm and hclust are matching each other for 4 and 5
+clust_4$clusters_kmeans_clustnr_4 <- mapvalues(clust_4$clusters_kmeans_clustnr_4, 
+                                              from=c(1, 2, 3, 4), to=c(4, 3, 1, 2))
+
+clust_5$clusters_kmeans_clustnr_5 <- mapvalues(clust_5$clusters_kmeans_clustnr_5, 
+                                               from=c(1, 2, 3, 4, 5), to=c(2, 1, 5, 4, 3))
 
 
+clust_6$clusters_hclust_clustnr_6 <- mapvalues(clust_6$clusters_hclust_clustnr_6, 
+                                               from=c(1, 2, 3, 4, 5, 6, 7), to=c(1, 2, 3, 4, 3, 6, 5))
+# 2 versions - km 5 into 4|6
+clust_6_v2 <- clust_6
+clust_6$clusters_kmeans_clustnr_6 <- mapvalues(clust_6$clusters_kmeans_clustnr_6, 
+                                               from=c(1, 2, 3, 4, 5, 6), to=c(2, 1, 1, 3, 4, 5))
 
+clust_6_v2$clusters_kmeans_clustnr_6 <- mapvalues(clust_6_v2$clusters_kmeans_clustnr_6, 
+                                               from=c(1, 2, 3, 4, 5, 6), to=c(2, 1, 1, 3, 6, 5)) 
+
+#####################
+table(clust_4$clusters_gmm_clustnr_4, clust_4$clusters_kmeans_clustnr_4)
+table(clust_4$clusters_gmm_clustnr_4, clust_4$clusters_hclust_clustnr_4)
+table(clust_4$clusters_kmeans_clustnr_4, clust_4$clusters_hclust_clustnr_4)
+
+table(clust_5$clusters_gmm_clustnr_5, clust_5$clusters_kmeans_clustnr_5)
+table(clust_5$clusters_gmm_clustnr_5, clust_5$clusters_hclust_clustnr_5)
+table(clust_5$clusters_kmeans_clustnr_5, clust_5$clusters_hclust_clustnr_5)
+
+# count misclassified samples
+clust4_nonmatch <- apply(clust_4[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
+clust4_nonmatch <- clust_4[clust4_nonmatch, ]
+
+clust5_nonmatch <- apply(clust_5[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
+clust5_nonmatch <- clust_5[clust5_nonmatch, ]
+
+clust6_nonmatch <- apply(clust_6[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
+clust6_nonmatch <- clust_6[clust6_nonmatch, ]
+
+clust6_v2_nonmatch <- apply(clust_6_v2[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
+clust6_v2_nonmatch <- clust_6_v2[clust6_v2_nonmatch, ]
+
+#####
+table(clust4_nonmatch$clusters_gmm_clustnr_4, clust4_nonmatch$clusters_kmeans_clustnr_4)
+table(clust4_nonmatch$clusters_gmm_clustnr_4, clust4_nonmatch$clusters_hclust_clustnr_4)
+table(clust4_nonmatch$clusters_kmeans_clustnr_4, clust4_nonmatch$clusters_hclust_clustnr_4)
+
+length(which(clust4_nonmatch$clusters_gmm_clustnr_4 != clust4_nonmatch$clusters_kmeans_clustnr_4))
+length(which(clust4_nonmatch$clusters_gmm_clustnr_4 != clust4_nonmatch$clusters_hclust_clustnr_4))
+length(which(clust4_nonmatch$clusters_kmeans_clustnr_4 != clust4_nonmatch$clusters_hclust_clustnr_4))
