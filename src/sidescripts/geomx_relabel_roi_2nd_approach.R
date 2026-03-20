@@ -553,8 +553,7 @@ fwrite(clust_metrics_all, file.path(out_dir, 'all_clustering_metrics.csv'))
 #######################################################################
 # compare selected clustering methods
 
-# TODO visualise clusters with stacked barplots
-# TODO systematic comparisons between clustering in choosen best methods
+#  visualise clusters with stacked barplots
 
 choosen_clust_nrs <- c(4, 5, 6)
 
@@ -605,6 +604,15 @@ for(cluster_method in colnames(clusters_sel)[-1]){
   
 }
 
+# density plot with immune fractions
+
+ggplot(data = ct_frac_roi_long_immune_clust) +
+  geom_density(aes(x = fraction_of_immune, color = cell_type), linewidth = 1) +
+  labs(title = 'ct fractions across ROIs')
+
+ggsave(file.path(out_dir, paste0('ct_frac_density.png')))
+
+
 # best solutions:
 # 4 clusters - gmm
 # 5 clusters - gmm + hclust - 192 diff classified - 85+23 between mixed clusters + 36 hiMacro to mixed
@@ -612,60 +620,5 @@ for(cluster_method in colnames(clusters_sel)[-1]){
 
 clust5_diff <- clusters_sel[clusters_sel$clusters_gmm_clustnr_5 != clusters_sel$clusters_hclust_clustnr_5, ]
 table(clust5_diff$clusters_gmm_clustnr_5, clust5_diff$clusters_hclust_clustnr_5)
-#######################################################################
-#######################################################################
-
-# how many samples are classified in the same clusters?
-clust_4 <- select(clusters_sel, ends_with('_4'))
-clust_5 <- select(clusters_sel, ends_with('_5'))
-clust_6 <- select(clusters_sel, ends_with('_6'))
-
-# remap cluster nrs to match (manual check from UMAP) 
-# gmm and hclust are matching each other for 4 and 5
-clust_4$clusters_kmeans_clustnr_4 <- mapvalues(clust_4$clusters_kmeans_clustnr_4, 
-                                              from=c(1, 2, 3, 4), to=c(4, 3, 1, 2))
-
-clust_5$clusters_kmeans_clustnr_5 <- mapvalues(clust_5$clusters_kmeans_clustnr_5, 
-                                               from=c(1, 2, 3, 4, 5), to=c(2, 1, 5, 4, 3))
 
 
-clust_6$clusters_hclust_clustnr_6 <- mapvalues(clust_6$clusters_hclust_clustnr_6, 
-                                               from=c(1, 2, 3, 4, 5, 6, 7), to=c(1, 2, 3, 4, 3, 6, 5))
-# 2 versions - km 5 into 4|6
-clust_6_v2 <- clust_6
-clust_6$clusters_kmeans_clustnr_6 <- mapvalues(clust_6$clusters_kmeans_clustnr_6, 
-                                               from=c(1, 2, 3, 4, 5, 6), to=c(2, 1, 1, 3, 4, 5))
-
-clust_6_v2$clusters_kmeans_clustnr_6 <- mapvalues(clust_6_v2$clusters_kmeans_clustnr_6, 
-                                               from=c(1, 2, 3, 4, 5, 6), to=c(2, 1, 1, 3, 6, 5)) 
-
-#####################
-table(clust_4$clusters_gmm_clustnr_4, clust_4$clusters_kmeans_clustnr_4)
-table(clust_4$clusters_gmm_clustnr_4, clust_4$clusters_hclust_clustnr_4)
-table(clust_4$clusters_kmeans_clustnr_4, clust_4$clusters_hclust_clustnr_4)
-
-table(clust_5$clusters_gmm_clustnr_5, clust_5$clusters_kmeans_clustnr_5)
-table(clust_5$clusters_gmm_clustnr_5, clust_5$clusters_hclust_clustnr_5)
-table(clust_5$clusters_kmeans_clustnr_5, clust_5$clusters_hclust_clustnr_5)
-
-# count misclassified samples
-clust4_nonmatch <- apply(clust_4[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
-clust4_nonmatch <- clust_4[clust4_nonmatch, ]
-
-clust5_nonmatch <- apply(clust_5[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
-clust5_nonmatch <- clust_5[clust5_nonmatch, ]
-
-clust6_nonmatch <- apply(clust_6[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
-clust6_nonmatch <- clust_6[clust6_nonmatch, ]
-
-clust6_v2_nonmatch <- apply(clust_6_v2[1:3], 1, function(x) length(unique(x[!is.na(x)])) != 1)
-clust6_v2_nonmatch <- clust_6_v2[clust6_v2_nonmatch, ]
-
-#####
-table(clust4_nonmatch$clusters_gmm_clustnr_4, clust4_nonmatch$clusters_kmeans_clustnr_4)
-table(clust4_nonmatch$clusters_gmm_clustnr_4, clust4_nonmatch$clusters_hclust_clustnr_4)
-table(clust4_nonmatch$clusters_kmeans_clustnr_4, clust4_nonmatch$clusters_hclust_clustnr_4)
-
-length(which(clust4_nonmatch$clusters_gmm_clustnr_4 != clust4_nonmatch$clusters_kmeans_clustnr_4))
-length(which(clust4_nonmatch$clusters_gmm_clustnr_4 != clust4_nonmatch$clusters_hclust_clustnr_4))
-length(which(clust4_nonmatch$clusters_kmeans_clustnr_4 != clust4_nonmatch$clusters_hclust_clustnr_4))
