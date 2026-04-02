@@ -32,7 +32,7 @@ ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8", "Bcells")
 metadt_cols <- c('dcc_filename','Segment', 'Roi_geomx', 'Segment_geomx', 'Sample', 'Patient', 
                  'NACT_status', 'HRP_status', 'BRCA_status', 'PFS_quartile_b123', 'OS_quartile_b123')
 
-min_frac <- 0.005 # gsea scores computed for dcc with smaller fraction, will be removed
+min_frac <- 0.01 # gsea scores computed for dcc with smaller fraction, will be removed
 # label_cols <- c('Annotation_cell','network_hub_type', 'community_cluster_label', 'network_hub_type_freq0.05',
 #                 'community_cluster_label_freq0.05')
 
@@ -144,6 +144,7 @@ unique_paths <- unlist(sapply(1:length(sign_genes_list), function(i){
 
 sigs <- sigs[sigs$pathway %in% unique_paths, ]
 
+# TODO should low cell frac be filtered based on sd or bp?
 # load ct fractions per aoi to filter gsea results computed for too little cells
 ct_frac_deconv_aoi <- fread(ct_frac_deconv_aoi_path, select = c('dcc_filename', 'cell_type', 'ct_frac_sd')) %>%
   spread(key = 'cell_type', value = 'ct_frac_sd') 
@@ -203,7 +204,7 @@ dcc_annot <- metadt_labels %>%
 
 # hmaps with pathways activity across all ROIs ----------------------------
 
-top_var_nr <- NULL # nr of top variable pathways for clustering, NULL for all pathways
+top_var_nr <- 20 # nr of top variable pathways for clustering, NULL for all pathways
 
 expr_type <- unique(gsea_all$expr_signal)[1]
 pathways_type <- unique(gsea_all$path_type)[1]
@@ -211,22 +212,28 @@ seg <- 'stroma'
 nact_status <- 'pre'
 
 for(expr_type in unique(gsea_all$expr_signal)){
-  for(pathways_type in unique(gsea_all$path_type)[1]){
+#  for(pathways_type in unique(gsea_all$path_type)){
     for(seg in c('both', 'stroma', 'tumor')){
       for(nact_status in c('pre', 'post')){
 
-        out_name <- ifelse(seg == 'both', paste(expr_type, pathways_type, sep ='_'),
-                           paste(expr_type, pathways_type, seg, nact_status, sep ='_'))
+        # out_name <- ifelse(seg == 'both', paste(expr_type, pathways_type, sep ='_'),
+        #                    paste(expr_type, pathways_type, seg, nact_status, sep ='_'))
+        
+        out_name <- ifelse(seg == 'both', expr_type,
+                           paste(expr_type, seg, nact_status, sep ='_'))
         print(out_name)
         
         # filter to expr signal type, cell state/process pathways, segment and nact status
-        gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type & gsea_all$path_type == pathways_type, ]
+        #gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type & gsea_all$path_type == pathways_type, ]
+        gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type, ]
         if(seg != 'both'){
           gsea_sel_paths <- gsea_sel_paths[gsea_sel_paths$dcc_filename %in% 
                                                  metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
         }
         
-        if(nrow(gsea_sel_paths) > 0){
+        if(length(unique(gsea_sel_paths$dcc_filename)) > 20){
+          
+          print(paste0(length(unique(gsea_sel_paths$dcc_filename)), ' AOI for comparison'))
           # create matrix with values for each pathway
           gsea_sel_wide <- spread(gsea_sel_paths[, c('dcc_filename','pathway', 'ssgsea_score')],
                                   key = 'pathway', value = 'ssgsea_score') %>%
@@ -308,7 +315,7 @@ for(expr_type in unique(gsea_all$expr_signal)){
         }
       }
     }
-  }
+#  }
 }
 
 
@@ -318,29 +325,34 @@ for(expr_type in unique(gsea_all$expr_signal)){
 corr_thr <- 0.7
 
 #TODO mostly copypasted - add to previous loop
-expr_type <- unique(gsea_all$expr_signal)[5]
+expr_type <- unique(gsea_all$expr_signal)[1]
 pathways_type <- unique(gsea_all$path_type)[1]
-seg <- 'stroma'
+seg <- 'both'
 nact_status <- 'post'
 
-
 for(expr_type in unique(gsea_all$expr_signal)){
-  for(pathways_type in unique(gsea_all$path_type)){
-    for(seg in c('stroma', 'tumor')){
+#  for(pathways_type in unique(gsea_all$path_type)){
+    for(seg in c('both', 'stroma', 'tumor')){
       for(nact_status in c('pre', 'post')){
         
-        out_name <- paste(expr_type, pathways_type, seg, nact_status, sep ='_')
+        #out_name <- paste(expr_type, pathways_type, seg, nact_status, sep ='_')
+        out_name <- ifelse(seg == 'both', expr_type,
+                           paste(expr_type, seg, nact_status, sep ='_'))
         print(out_name)
         
         # filter to all signal, cell state/process, segment and nact status
-        gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type & gsea_all$path_type == pathways_type, ]
-        gsea_sel_paths_seg <- gsea_sel_paths[gsea_sel_paths$dcc_filename %in% 
-                                               metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+        #gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type & gsea_all$path_type == pathways_type, ]
+        gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type, ]
         
-        if(nrow(gsea_sel_paths) > 0){
+        if(seg != 'both'){
+          gsea_sel_paths <- gsea_sel_paths[gsea_sel_paths$dcc_filename %in% 
+                                                 metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+        }
+        
+        if(length(unique(gsea_sel_paths$dcc_filename)) > 20){
           
           # create matrix with values for each pathway
-          gsea_sel_wide_seg <- spread(gsea_sel_paths_seg[, c('dcc_filename','pathway', 'ssgsea_score')],
+          gsea_sel_wide_seg <- spread(gsea_sel_paths[, c('dcc_filename','pathway', 'ssgsea_score')],
                                       key = 'pathway', value = 'ssgsea_score') %>%
             column_to_rownames(var="dcc_filename")
           
@@ -412,45 +424,55 @@ for(expr_type in unique(gsea_all$expr_signal)){
         }
       }
     }
-  }
+#  }
 }
 
 
 # heatmaps with correlations between 2 cell types deconv pathways ---------
 
 # TODO for deconv select only pathways specific for given ct, make 1 big hmap (not sure if needed)
+# pathways_type <- unique(gsea_all$path_type)[1]
+seg <- 'tumor'
+nact_status <- 'post'
+deconv_ct1 <- 'Tcells_CD8'
+deconv_ct2 <- 'Bcells'
 
 # corr between specific deconv
 corr_thr <- 0.7
 
-deconv_ct1 <- 'Tcells_CD4'
-deconv_ct2 <- 'Bcells'
-
-# pathways_type <- unique(gsea_all$path_type)[1]
-# seg <- 'stroma'
-# nact_status <- 'post'
-
-for(pathways_type in unique(gsea_all$path_type)){
-  for(seg in c('stroma', 'tumor')){
+#for(pathways_type in unique(gsea_all$path_type)){
+for(cells_comb in combn(ct_of_interest, 2, simplify = F)){
+  for(seg in c('both', 'stroma', 'tumor')){
     for(nact_status in c('pre', 'post')){
       
-      out_name <- paste('deconv', deconv_ct1, 'vs', deconv_ct2, pathways_type, seg, nact_status, sep ='_')
+      deconv_ct1 <- cells_comb[1]
+      deconv_ct2 <- cells_comb[2]
+      
+      out_name <- ifelse(seg == 'both', paste('deconv', deconv_ct1, 'vs', deconv_ct2, sep ='_'),
+                         paste('deconv', deconv_ct1, 'vs', deconv_ct2, seg, nact_status, sep ='_'))
       print(out_name)
+      #out_name <- paste('deconv', deconv_ct1, 'vs', deconv_ct2, pathways_type, seg, nact_status, sep ='_')
       
       # filter to cell state/process, segment and nact status
-      gsea_sel_paths <- gsea_all[gsea_all$path_type == pathways_type, ]
-      gsea_sel_paths_seg <- gsea_sel_paths[gsea_sel_paths$dcc_filename %in% 
-                                             metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+      # gsea_sel_paths <- gsea_all[gsea_all$path_type == pathways_type, ]
       
-    
-      gsea_deconv_ct1 <- gsea_sel_paths_seg[gsea_sel_paths_seg$expr_signal == paste0('deconv_', deconv_ct1), ]
-      gsea_deconv_ct2 <- gsea_sel_paths_seg[gsea_sel_paths_seg$expr_signal == paste0('deconv_', deconv_ct2), ]
+      if(seg != 'both'){
+        gsea_sel_paths <- gsea_all[gsea_all$dcc_filename %in% 
+                                     metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+      } else{
+        gsea_sel_paths <- gsea_all
+      }
       
-      if(nrow(gsea_deconv_ct1) > 0 & nrow(gsea_deconv_ct2) > 0){
+      gsea_deconv_ct1 <- gsea_sel_paths[gsea_sel_paths$expr_signal == paste0('deconv_', deconv_ct1), ]
+      gsea_deconv_ct2 <- gsea_sel_paths[gsea_sel_paths$expr_signal == paste0('deconv_', deconv_ct2), ]
+      
+      print(paste0("nr of shared AOIs:", as.character(length(intersect(gsea_deconv_ct1$dcc_filename, gsea_deconv_ct2$dcc_filename)))))
+      
+      if(length(intersect(gsea_deconv_ct1$dcc_filename, gsea_deconv_ct2$dcc_filename)) > 20){
         
         # create matrix with values for each pathway
         gsea_deconv_wide_ct1 <- spread(gsea_deconv_ct1[, c('dcc_filename','pathway', 'ssgsea_score')],
-                                    key = 'pathway', value = 'ssgsea_score') %>%
+                                       key = 'pathway', value = 'ssgsea_score') %>%
           column_to_rownames(var="dcc_filename")
         colnames(gsea_deconv_wide_ct1) <- paste0(colnames(gsea_deconv_wide_ct1), '_', deconv_ct1)
         
@@ -465,6 +487,8 @@ for(pathways_type in unique(gsea_all$path_type)){
         
         # correlation between pathways
         gsea_deconv_corr <- cor(gsea_deconv_wide_ct1, gsea_deconv_wide_ct2, method = 'pearson')
+        
+        print(paste0("max corr: ", as.character(max(gsea_deconv_corr))))
         
         # filter to values above thr
         if(!is.null(corr_thr)){
@@ -514,6 +538,7 @@ for(pathways_type in unique(gsea_all$path_type)){
     }
   }
 }
+#}
 
 
 # hmaps with mean GSEA score per ctfrac cluster ---------------------------

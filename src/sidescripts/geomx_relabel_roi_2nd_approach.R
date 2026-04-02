@@ -334,6 +334,8 @@ if(mye_add){
 }
 
 
+fwrite(rownames_to_column(ct_frac_roi_wide_immune, var = 'sample_roi'), file.path(out_dir, paste0(out_name, '_ct_fractions_of_immune.csv')))
+
 ################################################################
 ###############################################################
 make_and_plot_dimreduction <- function(input_mtx, clusters_df, output_path, dimred_method = c('UMAP', 'PCA'),  id_name = 'sample_roi'){
@@ -544,11 +546,11 @@ for(i in 1:length(clust_res_list)){
 clusters_all <- cbind(gmm_clusters, kmeans_clusters, hclust_clusters) %>%
   select(1, starts_with('cluster'))
 
-fwrite(clusters_all, file.path(out_dir, 'all_clustering_results.csv'))
+fwrite(clusters_all, file.path(out_dir, paste0(out_name, '_all_clustering_results.csv')))
 
 clust_metrics_all <- do.call(rbind, clust_res_list)
 
-fwrite(clust_metrics_all, file.path(out_dir, 'all_clustering_metrics.csv'))
+fwrite(clust_metrics_all, file.path(out_dir, paste0(out_name, '_all_clustering_metrics.csv')))
 #######################################################################
 #######################################################################
 # compare selected clustering methods
