@@ -1,9 +1,13 @@
 # unbiased GSEA/ORA on DGE results - to be added to main pipeline !!
 #library(org.Hs.eg.db) # for enrichGO
 library(fgsea)
+library(purrr)
 library(ComplexHeatmap)
 library(circlize)
 library(RColorBrewer)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(GO.db)
 
 # set variables -----------------------------------------------------------
 
@@ -31,7 +35,8 @@ library(RColorBrewer)
 ################
 # select thr
 fc_thr <- 0.5
-#pval_thr <- 0.05 # for DEG genes
+pval_thr <- 0.05 # for DEG genes
+qval_thr <- 0.2 # for GO
 gsea_padj_thr <- 0.05 # for GSEA results
 
 # jaccard idx hclust cuts 
@@ -47,6 +52,8 @@ min_sign_gene_nr <- 10
 #compute_hallmark <- T # should GSEA for msigdb hallmark be computed
 #msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
 #msigdb_subcat <- c('GO:BP', 'CP:KEGG_MEDICUS')
+
+scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
@@ -177,13 +184,15 @@ for(dge_df_path in dge_df_list){
   } else{
     print('no GSEA enrichment for this DEG list')
   }
-  }
+}
 
 # make entrez gene universe -----------------------------------------------
 
-
-# it just have to be expr mtx  for deconv sice only rownames are taken
+# TODO save it during dge script and load now
 # geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
+# scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+# 
+# geomx_filt <- remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
 # 
 # # convert to Entrez ID
 # ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl", host = "https://useast.ensembl.org")
@@ -191,18 +200,123 @@ for(dge_df_path in dge_df_list){
 # # bcg genes - all from geomx dataset
 # gene_entrez_universe <- getBM(attributes=c('external_gene_name', 'entrezgene_id'),
 #                               filters = 'external_gene_name',
-#                               values = rownames(geomx_obj),
+#                               values = rownames(geomx_filt),
 #                               mart = ensembl)
 # 
 # #rmv duplicates
 # gene_entrez_universe <- gene_entrez_universe[!duplicated(gene_entrez_universe$external_gene_name),]
 # 
-# 
-# # TODO rmv just for testing when ensembl does not work
+# rm(geomx_obj)
+# rm(scrna_ref_obj)
+# rm(geomx_filt)
+
+# TODO rmv just for testing when ensembl does not work
 # fwrite(gene_entrez_universe, file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-#                                        'enterz_universe_all.csv'))
-# gene_entrez_universe <- fread(file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-#                                         'enterz_universe_all.csv'))
+#                                        'enterz_universe_geomx_pc.csv'))
+gene_entrez_universe <- fread(file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
+                                        'enterz_universe_geomx_pc.csv'))
+
+
+# do GO enrichment --------------------------------------------------------
+
+dge_df_path <- dge_df_list[1]
+cont <- "Bcell_domin - CD8_Macro_domin"
+dt_group <- 'stroma_post'
+
+dir.create(file.path(dge_dir_path, 'go_enrichment'))
+
+# loop through all dge results
+for(dge_df_path in dge_df_list){
+  
+  dge_inp_data <- gsub(paste0( '_',dge_name, '.csv'), '', basename(dge_df_path))
+  print(paste0('##### ', dge_inp_data, ' #####'))
+  
+  dir.create(file.path(dge_dir_path, 'go_enrichment', dge_inp_data))
+  
+  # read DGE results --------------------------------------------------------
+  
+  dge_df <- fread(dge_df_path)
+  dge_df$data_group <- ifelse(is.na(dge_df$data_group), 'onegroup', dge_df$data_group) # add to avoid bugs
+  
+  # GO enrichment with clusterprofiler --------------------------------------
+
+  go_res_all <- lapply(unique(dge_df$Contrast), function(cont){
+    lapply(unique(dge_df$data_group), function(dt_group){
+      
+      # subset to data and contrast group
+      dge_sub <- dge_df[dge_df$data_group == dt_group & dge_df$Contrast == cont, ]
+      
+      dge_subset_name <- gsub(' ', '', paste0(dt_group, '_', cont))
+      print(dge_subset_name)
+      
+      # subset to differential genes using set up thresholds
+      dge_sub_signif_pos <- dge_sub[dge_sub$Estimate >= fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
+      dge_sub_signif_neg <- dge_sub[dge_sub$Estimate <= -fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
+      
+      dge_sub_signif_list <- list(pos = dge_sub_signif_pos, neg = dge_sub_signif_neg)
+      
+      lapply(1:length(dge_sub_signif_list), function(i){
+        dge_sub_signif <- dge_sub_signif_list[[i]]
+        dge_signif_name <- names(dge_sub_signif_list)[i]
+        
+        if(nrow(dge_sub_signif) >= min_sign_gene_nr){
+          # perform GO enrichment
+          go_res_obj <- enrichGO(gene = dge_sub_signif$Gene,
+                                 OrgDb = org.Hs.eg.db,
+                                 keyType = "SYMBOL",
+                                 ont = "BP",
+                                 pAdjustMethod = "BH",
+                                 pvalueCutoff = pval_thr,
+                                 qvalueCutoff = qval_thr,
+                                 readable = T,
+                                 universe = gene_entrez_universe$external_gene_name,
+                                 minGSSize = min_sign_gene_nr)
+          
+          go_res <- go_res_obj@result
+          go_res <- go_res[go_res$p.adjust <= pval_thr, ]
+          
+          if(nrow(go_res) > 0){
+            
+            print(paste0(dge_signif_name, " - nr of significant go terms: ", as.character(nrow(go_res))))
+            
+            # make visualisation plot
+            png(filename=file.path(dge_dir_path, 'go_enrichment', dge_inp_data,
+                                   paste0('dotplot_go_', dge_inp_data, '_', dge_subset_name, '_', dge_signif_name,
+                                                                         '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')), 
+                width=12, height=6,units="in",res=1000)
+            
+            plot(dotplot(go_res_obj, x = "GeneRatio", color = "p.adjust", title = paste0("Top 15 of GO Enrichment", dge_signif_name),
+                    showCategory = 15, label_format = 80))
+            dev.off()
+            
+            go_res$data_group <- dt_group
+            go_res$Contrast <- cont
+            go_res$direction <- dge_signif_name
+            
+            return(go_res)
+          } else{
+            return()
+          }
+        } else{
+          return()
+        }
+      })
+    })
+  })
+  
+  # combine into 1 df
+  go_res_all_flat <- list_flatten(list_flatten(go_res_all)) # flatten to single list of dfs
+  go_res_all_flat <- keep(go_res_all_flat, ~ is.data.frame(.x)) # keep only not-null
+  go_res_all_fin <- do.call(rbind, go_res_all_flat)
+  
+  if(!is.null(go_res_all_fin)){
+    fwrite(go_res_all_fin, file.path(dge_dir_path, 'go_enrichment',
+                                   paste0('go_dge_', dge_inp_data, '_fc', as.character(fc_thr),'_pval', as.character(pval_thr), '.csv')))
+  } else{
+    print('no GO enrichment for this DEG list')
+  }
+}
+
 
 # ORA ---------------------------------------------------------------------
 
