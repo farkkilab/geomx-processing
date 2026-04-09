@@ -318,6 +318,121 @@ for(dge_df_path in dge_df_list){
 }
 
 
+# do KEGG enrichment analysis ---------------------------------------------
+
+dge_df_path <- dge_df_list[1]
+cont <- "Bcell_domin - CD8_Macro_domin"
+dt_group <- 'stroma_post'
+
+dir.create(file.path(dge_dir_path, 'kegg_enrichment'))
+
+# loop through all dge results
+for(dge_df_path in dge_df_list){
+  
+  dge_inp_data <- gsub(paste0( '_',dge_name, '.csv'), '', basename(dge_df_path))
+  print(paste0('##### ', dge_inp_data, ' #####'))
+  
+  dir.create(file.path(dge_dir_path, 'kegg_enrichment', dge_inp_data))
+  
+  # read DGE results --------------------------------------------------------
+  
+  dge_df <- fread(dge_df_path)
+  dge_df$data_group <- ifelse(is.na(dge_df$data_group), 'onegroup', dge_df$data_group) # add to avoid bugs
+  
+  
+  # convert to Entrez ID
+  ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl", host = "https://useast.ensembl.org")
+  
+  # bcg genes - all from geomx dataset
+  dge_entrez <- getBM(attributes=c('external_gene_name', 'entrezgene_id'),
+                      filters = 'external_gene_name',
+                      values = dge_df$Gene,
+                      mart = ensembl)
+  
+  #rmv duplicates
+  dge_entrez <- dge_entrez[!duplicated(dge_entrez$external_gene_name),]
+  
+  dge_df <- left_join(dge_df, dge_entrez, by = c('Gene' = 'external_gene_name'))
+  
+  # GO enrichment with clusterprofiler --------------------------------------
+  
+  kegg_res_all <- lapply(unique(dge_df$Contrast), function(cont){
+    lapply(unique(dge_df$data_group), function(dt_group){
+      
+      # subset to data and contrast group
+      dge_sub <- dge_df[dge_df$data_group == dt_group & dge_df$Contrast == cont, ]
+      
+      dge_subset_name <- gsub(' ', '', paste0(dt_group, '_', cont))
+      print(dge_subset_name)
+      
+      # subset to differential genes using set up thresholds
+      dge_sub_signif_pos <- dge_sub[dge_sub$Estimate >= fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
+      dge_sub_signif_neg <- dge_sub[dge_sub$Estimate <= -fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
+      
+      dge_sub_signif_list <- list(pos = dge_sub_signif_pos, neg = dge_sub_signif_neg)
+      
+      lapply(1:length(dge_sub_signif_list), function(i){
+        dge_sub_signif <- dge_sub_signif_list[[i]]
+        dge_signif_name <- names(dge_sub_signif_list)[i]
+        
+        if(nrow(dge_sub_signif) >= min_sign_gene_nr){
+          # perform KEGG enrichment
+          kegg_res_obj <- enrichKEGG(dge_sub_signif$entrezgene_id, 
+                                     organism = "hsa", 
+                                     keyType = "kegg", 
+                                     pvalueCutoff = pval_thr, 
+                                     pAdjustMethod = "BH", 
+                                     universe = as.character(gene_entrez_universe$entrezgene_id), 
+                                     minGSSize = min_sign_gene_nr, 
+                                     qvalueCutoff = qval_thr)
+
+          kegg_res <- kegg_res_obj@result
+          kegg_res <- kegg_res[kegg_res$p.adjust <= pval_thr, ]
+          
+          if(nrow(kegg_res) > 0){
+            
+            print(paste0(dge_signif_name, " - nr of significant kegg terms: ", as.character(nrow(kegg_res))))
+            
+            # make visualisation plot
+            png(filename=file.path(dge_dir_path, 'kegg_enrichment', dge_inp_data,
+                                   paste0('dotplot_kegg_', dge_inp_data, '_', dge_subset_name, '_', dge_signif_name,
+                                          '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')), 
+                width=12, height=6,units="in",res=1000)
+            
+            plot(dotplot(kegg_res_obj, x = "GeneRatio", color = "p.adjust", title = paste0("Top 15 of KEGG Enrichment DGE ", dge_signif_name),
+                         showCategory = 15, label_format = 80))
+            dev.off()
+            
+            kegg_res$data_group <- dt_group
+            kegg_res$Contrast <- cont
+            kegg_res$direction <- dge_signif_name
+            
+            return(kegg_res)
+          } else{
+            return()
+          }
+        } else{
+          return()
+        }
+      })
+    })
+  })
+  
+  # combine into 1 df
+  kegg_res_all_flat <- list_flatten(list_flatten(kegg_res_all)) # flatten to single list of dfs
+  kegg_res_all_flat <- keep(kegg_res_all_flat, ~ is.data.frame(.x)) # keep only not-null
+  kegg_res_all_fin <- do.call(rbind, kegg_res_all_flat)
+  
+  if(!is.null(kegg_res_all_fin)){
+    fwrite(kegg_res_all_fin, file.path(dge_dir_path, 'kegg_enrichment',
+                                     paste0('kegg_dge_', dge_inp_data, '_fc', as.character(fc_thr),'_pval', as.character(pval_thr), '.csv')))
+  } else{
+    print('no KEGG enrichment for this DEG list')
+  }
+}
+
+
+
 # ORA ---------------------------------------------------------------------
 
 # ORA on GO
