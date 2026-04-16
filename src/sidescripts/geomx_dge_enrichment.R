@@ -1,5 +1,5 @@
 # unbiased GSEA/ORA on DGE results - to be added to main pipeline !!
-#library(org.Hs.eg.db) # for enrichGO
+# devtools::install_github("Evotec-Bioinformatics/evoGO")
 library(fgsea)
 library(purrr)
 library(ComplexHeatmap)
@@ -8,6 +8,7 @@ library(RColorBrewer)
 library(clusterProfiler)
 library(org.Hs.eg.db)
 library(GO.db)
+library(evoGO)
 
 # set variables -----------------------------------------------------------
 
@@ -60,6 +61,13 @@ source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 dge_dir_path <- file.path(output_dir, 'dge', dge_name)
 dir.create(file.path(dge_dir_path, "gsea_enrichment"))
 
+dge_df_list <- list.files(dge_dir_path, pattern = paste0(dge_name, '.csv'), full.names = T)
+
+# download the latest version of go annot
+# TODO only for evoGO, also may not work bc of ensembl
+# goAnnotation <- getGOAnnotation("hsapiens")
+# goAnnotation <- loadGOAnnotation("hsapiens")
+
 # prepare signatures list -------------------------------------------------
 
 geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path) # only mtx with rownames needed
@@ -85,8 +93,6 @@ sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
 print(paste0(length(sign_list), ' signatures will be used'))
 
 # load dge files ----------------------------------------------------------
-
-dge_df_list <- list.files(dge_dir_path, pattern = paste0(dge_name, '.csv'), full.names = T)
 
 # loop through all dge results
 for(dge_df_path in dge_df_list){
@@ -260,6 +266,7 @@ for(dge_df_path in dge_df_list){
         dge_signif_name <- names(dge_sub_signif_list)[i]
         
         if(nrow(dge_sub_signif) >= min_sign_gene_nr){
+          
           # perform GO enrichment
           go_res_obj <- enrichGO(gene = dge_sub_signif$Gene,
                                  OrgDb = org.Hs.eg.db,
