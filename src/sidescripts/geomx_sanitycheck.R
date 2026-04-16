@@ -15,6 +15,7 @@ library(tidyverse)
 library(PCAtools)
 library(umap)
 library(Rtsne)
+library(tidyr)
 
 # PROBLEM: BP predicts a lot more tumor in stromal AOIs, 
 # while sd predicts a lot more Tcells 
@@ -43,7 +44,7 @@ if(batch == 'batch1'){
 } else if(batch == 'batch23'){
   output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch23-2706') # batch23
 } else if(batch == 'batch123'){
-  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2711-roibased') # batch123
+  output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
 }else{
   stop('wrong batch nr')
 }
@@ -51,10 +52,12 @@ if(batch == 'batch1'){
 
 #clinical_dt_path <- file.path(proj_dir, 'geomx-processing/data/b12_dcc_clinical_data.csv')
 #TODO adjust script to this - clinical should be merged with dcc
-clinical_dt_path <<- file.path(proj_dir, 'data/geomx/clinical_data/9_eyemt_patient_clinical_data.csv')
+clinical_dt_path <<- file.path(proj_dir, 'data/geomx/clinical_data/9_eyemt_patient_clinical_data_SENSITIVE_upd_0426.csv')
 
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
 #geomx_norm_batch_eff_rm_path2 <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm_deseq2.RDS') # without vst
+metadata_orig_path <- file.path(proj_dir, 'data/geomx/batch123/metadata/dcc_metadata_batch123_no_tls_cleaned.csv')
+
 
 #################
 # files and params for deconvolution
@@ -113,23 +116,37 @@ ct_gsea_all_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'ssgsea_no
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))
 sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', paste0('sd_res_', scrna_anno, '_geomxfiltpc_ct_fraction.csv'))
 
+
+deconv_bp_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_updated_expr_mtx_cleaned_deseq2_vst_harmony_corr.RDS')
 # TODO not used atm
 # deconv_raw_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '.RDS'))
 # deconv_harmony_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_harmony_batch_corr.RDS'))
 # deconv_limma_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_vst_limma_batch_corr_main_batch_nrbatch_nr_cov_no.RDS'))
 
 
+# ct fractions per aoi from geomx_roi_hubs_integration
+ct_frac_deconv_aoi_path <- file.path(output_dir, 'cycif_integration', 'b123_ct_frac_deconv_bcells.csv')
+
+# ct fractions of immune per roi (used for clustering) from geomx_relabel_roi_2nd_approach
+ct_frac_deconv_roi_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv-dimred', 'sd_mye_lymph_b_ct_fractions_of_immune.csv')
+
+# ROI clusters based on deconvolution ct fractions from geomx_relabel_roi_2nd_approach
+ct_frac_clust_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv-dimred', 'sd_mye_lymph_b_all_clustering_results.csv')
+clust_types <- c('clusters_gmm_clustnr_5', 'clusters_hclust_cut2')
+# descriptive labels for clusters - IN THIS CASE BOTH METHODS HAS THE SAME CLUSTERS DESCRIPTION
+clust_labels <- list(CD8_Macro_domin = 1, mixed_w_CD4 = 2, mixed_w_others = 3, Macro_domin = 4, Bcell_domin = 5)
+
 # set up metadata variables names -----------------------------------------
 
 #aoi_id <<- 'dcc_filename'
-aoi_id <<- 'sample_roi'
+aoi_id <<- 'dcc_filename'
 roi_id <<- 'Roi'
 
 main_batch_var <- 'main_batch_nr'
 batch_var <<- 'batch_nr'
 
 
-aoi_segment_var <<- "Segment_geomx"
+aoi_segment_var <<- "Segment"
 main_roi_label <<- "Annotation_cell" 
 main_experimental_condition <<- 'NACT_status'
 sample_name <<- 'Sample'
@@ -141,10 +158,11 @@ primary_batch_var <<- ifelse(batch %in% c('batch1', 'batch2', 'batch3'), batch_v
 if(batch %in% c('batch1', 'batch2', 'batch3')){secondary_batch_var <<- NULL} else{secondary_batch_var <<- batch_var}
 
 important_metadt <- unique(c(primary_batch_var, secondary_batch_var,  
-                aoi_segment_var, main_roi_label, sample_name, main_experimental_condition, 
-                other_vars_bio))
+                aoi_segment_var, sample_name, main_experimental_condition, 
+                other_vars_bio, 'Segment_geomx'))
 
-important_clindt <- c('HRP_status', 'PFS_quartile_b123', 'OS_quartile_b123')
+important_clindt_labs <- c('stage', 'primary_surgery_residual', 'HRP_status', 'BRCA_status')
+important_clindt_cont <- c('PFS_days', 'OS_days', 'TMB', 'age_at_diagnosis')
 
 # load util functions and create dirs -------------------------------------
 
@@ -403,6 +421,128 @@ for(ct_name in c(ct_names, 'stroma')){
          width = 2000, height = 2000, unit = 'px')
 }
 
+################################################
+# do UMAP on deconvoluted data
+# TODO move to deconv script
+top_var <- NULL # it doesn't matter if we take top PCA the differnc eis non=visible
+top_pca <- NULL
+
+ct_of_interest <- c('Tcells_CD8', 'Tcells_CD4', 'Bcells', 'Macrophages_Monocytes', 'DCs')
+cluster_type <- 'clusters_gmm_clustnr_5'
+
+deconv_bp <- readRDS(deconv_bp_path)
+
+#TODO move it somewhere - it's important!
+# create metadata
+aois <- sData(readRDS(geomx_norm_batch_eff_rm_path))[[aoi_id]] #QCed AOIs from dataset
+clindt <- fread(clinical_dt_path, select = c('Patient', important_clindt_cont, important_clindt_labs)) %>%
+  distinct()
+
+ct_freq <- fread(ct_frac_deconv_aoi_path, select = c('dcc_filename', 'cell_type', 'ct_frac_sd')) %>%
+  spread(key = 'cell_type', value = 'ct_frac_sd') %>%
+  dplyr::select(dcc_filename, !!ct_of_interest)
+
+roi_clust <- fread(ct_frac_clust_path, select = c('sample_roi', cluster_type))
+
+metadt <- fread(metadata_orig_path, select = c('dcc_filename', 'Roi_geomx', important_metadt)) %>%
+  filter(dcc_filename %in% aois) %>%
+  mutate(sample_roi = paste0(Sample, '_', Roi_geomx)) %>%
+  left_join(clindt) %>%
+  left_join(ct_freq) %>%
+  left_join(roi_clust) %>%
+  as.data.frame()
+
+metadt$roi_cluster_label <- mapvalues(metadt[[cluster_type]], 
+                                      from=c(unname(unlist(clust_labels))),
+                                      to=c(names(clust_labels)))
+
+##########3
+ct_name <- ct_names[1]
+
+# iterate through all cell types
+sapply(ct_names[1], function(ct_name){
+  
+  print(ct_name)
+  # get deconv df and filter metadata
+  deconv_ct <- deconv_bp[[ct_name]]
+  metadt_ct <- metadt[metadt$dcc_filename %in% colnames(deconv_ct),]
+  
+  # iterate through all + different segments
+  seg_types <- c('all', unique(metadt[, aoi_segment_var]))
+  
+  sapply(seg_types, function(seg){
+    
+    print(seg)
+    dir.create(file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg)), showWarnings = T, recursive = T)
+    
+    if(seg != 'all'){
+      deconv_seg <- deconv_ct[, metadt_ct$dcc_filename[metadt_ct[[aoi_segment_var]] == seg]]
+      metadt_seg <- metadt_ct[metadt_ct$dcc_filename %in% colnames(deconv_seg),]
+    } else{
+      deconv_seg <- deconv_ct
+      metadt_seg <- metadt_ct
+    }
+    
+    print(dim(deconv_seg))
+    
+    # run UMAP and tSNE 
+    ###########################
+    # get top N variable genes
+    if(!is.null(top_var)){
+      per_gene_variance <- apply(deconv_seg, 1, stats::var)
+      top_var_genes <- names(sort(per_gene_variance, decreasing = T)[1:top_var])
+      
+      deconv_seg <- deconv_seg[rownames(deconv_seg) %in% top_var_genes, ]
+    }
+    
+    # do PCA
+    pca_obj <- pca(deconv_seg, scale = T)
+    pca_res <- t(-1*pca_obj$rotated) # reverse the signs of eigen vectors
+    pca_loads <- -1*pca_obj$loadings
+    #pca_vars <- pca_obj$variance
+    metadt_seg[, c("PCA1_","PCA2_")] <- t(pca_res)[, c(1,2)]
+    
+    if(!is.null(top_pca)){
+      deconv_seg <- pca_res[1:top_pca, ]
+    }
+
+    # make umap
+    custom_umap <- umap::umap.defaults
+    custom_umap$random_state <- 42
+    umap_out <- umap(t(deconv_seg), config = custom_umap)
+    metadt_seg[, c("UMAP1_","UMAP2_")] <- umap_out$layout[, c(1,2)]
+    
+    # make tsne
+    set.seed(42) 
+    tsne_out <- Rtsne(t(deconv_seg), perplexity = ncol(deconv_seg)*.15)
+    metadt_seg[, c("tSNE1_","tSNE2_")] <- tsne_out$Y[, c(1,2)]
+    
+    for(method in c('UMAP', 'tSNE', 'PCA')){
+      # for discrete labels
+      for(color_var in c(important_metadt, important_clindt_labs, important_clindt_cont, ct_of_interest, 'roi_cluster_label')){
+        print(color_var)
+        
+        sub <- ifelse(method == 'PCA', paste0('% of variance explained: PC1= ', as.character(round(pca_obj$variance[1], 2)),
+                                              ' PC2= ', as.character(round(pca_obj$variance[2], 2))), '')
+        
+        plot_umap_tsne(metadt_seg, method_type = method, 
+                       assay_name = "", color_var = color_var,
+                       subtitle = sub, 
+                       output_name = file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg), 
+                                               paste0(ct_name, '_', method, 
+                                                      '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
+                                                      '_toppca_', ifelse(is.null(top_pca), 'NULL', as.character(top_pca)), 
+                                                      '_', color_var, '.png')),
+                       output_type = 'png')
+      }
+    }
+    # save PCA res df
+    fwrite(pca_loads[, 1:10], file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg), 
+                                        paste0('pca_loads_', ct_name, '.csv')), row.names = F)
+  })
+})
+
+
 ################################333
 ###################################
 # up here works for now
@@ -497,89 +637,6 @@ sapply(c('bp', 'sd'), function(deconv_type){
 })
 
 
-################################################
-# do UMAP on deconvoluted data
-# TODO move to deconv script
-top_var <- NULL # it doesn't matter if we take top PCA the differnc eis non=visible
-top_pca <- 50
-
-deconv_harmony <- readRDS(deconv_harmony_path)
-metadt <- sData(readRDS(geomx_norm_batch_eff_rm_path))[, c('dcc_filename', important_metadt)]
-clindt <- data.frame(fread(clinical_dt_path))
-metadt <- left_join(metadt, clindt[, c('dcc_filename', important_clindt)])
-
-# iterate through all cell types
-sapply(ct_names, function(ct_name){
-  
-  print(ct_name)
-  # get deconv df and filter metadata
-  deconv_ct <- deconv_harmony[[ct_name]]
-  metadt_ct <- metadt[metadt$dcc_filename %in% colnames(deconv_ct),]
-  
-  # iterate through all + different segments
-  seg_types <- c('all', unique(metadt[, aoi_segment_var]))
-  
-  sapply(seg_types, function(seg){
-    
-    print(seg)
-    dir.create(file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg)), showWarnings = T, recursive = T)
-    
-    if(seg != 'all'){
-      deconv_seg <- deconv_ct[, metadt_ct$dcc_filename[metadt_ct[[aoi_segment_var]] == seg]]
-      metadt_seg <- metadt_ct[metadt_ct$dcc_filename %in% colnames(deconv_seg),]
-    } else{
-      deconv_seg <- deconv_ct
-      metadt_seg <- metadt_ct
-    }
-    
-    print(dim(deconv_seg))
-    
-    # run UMAP and tSNE 
-    ###########################
-    # get top N variable genes
-    if(!is.null(top_var)){
-      per_gene_variance <- apply(deconv_seg, 1, stats::var)
-      top_var_genes <- names(sort(per_gene_variance, decreasing = T)[1:top_var])
-      
-      deconv_seg <- deconv_seg[rownames(deconv_seg) %in% top_var_genes, ]
-    }
-    
-    # do PCA
-    if(!is.null(top_pca)){
-      deconv_seg <- pca(deconv_seg)
-      deconv_seg <- t(deconv_seg$rotated)
-      deconv_seg <- deconv_seg[1:top_pca, ]
-    }
-    
-    print(dim(deconv_seg))
-    
-    # make umap
-    custom_umap <- umap::umap.defaults
-    custom_umap$random_state <- 42
-    umap_out <- umap(t(deconv_seg), config = custom_umap)
-    metadt_seg[, c("UMAP1_","UMAP2_")] <- umap_out$layout[, c(1,2)]
-    
-    # make tsne
-    set.seed(42) 
-    tsne_out <- Rtsne(t(deconv_ct), perplexity = ncol(deconv_ct)*.15)
-    metadt_seg[, c("tSNE1_","tSNE2_")] <- tsne_out$Y[, c(1,2)]
-    
-    for(method in c('UMAP', 'tSNE')){
-      for(color_var in c(important_metadt, important_clindt)){
-        print(color_var)
-
-        plot_umap_tsne(metadt_seg, method_type = method, 
-                       assay_name = "", color_var = color_var,
-                       output_name = file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg), 
-                                               paste0(ct_name, '_', method, 
-                                                      '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
-                                                      '_toppca_', ifelse(is.null(top_pca), 'NULL', as.character(top_pca)), 
-                                                      '_', color_var, '.png')),
-                       output_type = 'png')
-      }
-    }
-  })
-})
 
 
 ################################################
