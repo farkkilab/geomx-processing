@@ -40,7 +40,7 @@ library(Matrix)
 library(Biobase, quietly =T)
 library(NanoStringNCTools, quietly =T)
 library(GeomxTools, quietly =T)
-library(GeoDiff, quietly =T)
+library(GeoDiff, quietly =T) #TODO error
 library(DESeq2, quietly =T)
 library(SpatialDecon, quietly =T)
 #install preprocessCore manually from source
@@ -279,7 +279,7 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
-dge_inp_data_type <<- c('all') # within c('all', 'bp')
+dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
 
 #dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
@@ -296,20 +296,21 @@ ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4
 # if more column names are identical to the existing ones, columns from the custom dt will be used
 # if not needed, set to NULL
 #custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
-custom_metadt_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv', 'dcc_deconv_clusters.csv')
+#custom_metadt_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv', 'dcc_deconv_clusters.csv')
+custom_metadt_path <<- "~/Documents/phd/st/geomx-processing/results/batch123-2808/downstream/gsea_immune/metadt_labels.csv"
+
 # DGE parameters
 comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'sd_mye_lymph_b_hcut2_label' # main variable to make comparison between
-main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
+main_var_name <<- 'clusters_gmm_clustnr_5_label' # main variable to make comparison between
+main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
 #TODO rewrite code to run multiple main vars at once
 #main_var_main_val <<- 'posCD8_posIBA1'
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
-labs <- c("midCD4_hiCD8_midCD11_midCD20", "hiIba1", "hiCD8_midCD11_midIba1_midCD20", 
-          "hiCD8_hiIba1", "midCD8_hiCD20" )
+labs <- c("CD8_Macro_domin", "mixed_w_CD4", "mixed_w_others", "Macro_domin", "Bcell_domin")
 main_var_main_val <<- labs[5]
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
 dge_categories <<- c('Segment', 'NACT_status')
@@ -335,7 +336,7 @@ run_unless_exists('Differential Gene Expression', dge_logs_path,
 # 'HALLMARK', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'GO:BP'
 
 signature_type <<- 'msigdb' # c('custom','msigdb') 
-msigdb_subcat <<- 'GO:BP' # if signature type is msigdb, which subdatabase to use. one of: c('HALLMARK', 'CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')
+msigdb_subcat <<- 'CP:REACTOME' # if signature type is msigdb, which subdatabase to use. one of: c('HALLMARK', 'CP:BIOCARTA', 'CP:KEGG_MEDICUS', 'CP:REACTOME', 'CP:PID', 'CP:WIKIPATHWAYS', 'GO:BP')
   # if signature_type == 'custom' set to NULL
 # msigdb - on msigdb db specified in 'msigdb_subcat
 # custom - on custom signatures list specified in custom_sign_path

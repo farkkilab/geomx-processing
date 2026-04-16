@@ -454,7 +454,7 @@ make_umap_tsne <- function(geomx, assay_name, assay_is_log = F, top_var = NULL, 
 #   None. The plot is saved to output_name.
 plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'), 
                            assay_name, color_var, shape_var = 'Segment',
-                           output_name, output_type = 'pdf'){
+                           output_name, output_type = 'pdf', subtitle = ''){
   
   pheno_data[[color_var]] <- as.character(pheno_data[[color_var]])
   
@@ -465,6 +465,7 @@ plot_umap_tsne <- function(pheno_data, method_type = c('UMAP', 'tSNE'),
     geom_point(size = 3) +
     xlab(paste0(method_type, '1_', assay_name)) +
     ylab(paste0(method_type, '2_', assay_name)) +
+    theme(plot.subtitle = subtitle) +
     scale_color_discrete(name = color_var) + 
     scale_shape_discrete(name = shape_var) + 
     theme_bw()

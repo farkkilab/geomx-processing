@@ -249,6 +249,7 @@ lapply(names(expr_list), function(expr_name){
   out_path <- file.path(output_dir, 'dge', dge_name, paste0(expr_name, '_', dge_name, '.csv'))
   if(nrow(dge_results) > 1){
     fwrite(dge_results, out_path)
+    print(out_path)
     print(paste0('results saved for ', expr_name))}
   
   
