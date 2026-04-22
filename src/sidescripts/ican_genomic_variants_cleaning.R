@@ -1,7 +1,19 @@
 library(data.table)
-library(dplyr)
 library(readxl)
-library(rvest)
+#library(rvest)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+# for S131 there was no proper SNV export:
+# info from iCAN: total nr of coding mutations: 79
+# 74 - tier4, 5 - tier3
+# TP53 missense_variant p.Ile195Thr
+# ERBB4 missense_variant p.Ser303Phe
+# FAT4 p.Glu1673Ala
+# PLXNB1 p.Pro850Thr
+# CBL p.Cys384Tyr
 
 eyemt_clin_path <- '/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_patient_clinical_data_SENSITIVE.csv' 
 id_path <- '/media/ldrive/ltdk_farkkila/Projects/12-SPACE/HBP2019007_iCan_raportit_03_2025_EXT/studyId_Ican_WES_key_06_2025.csv'
@@ -43,10 +55,35 @@ table(snv_eyemt$TIER)
 sort(table(germ_biomarker_eyemt$folder_source))
 
 ################################################
-# clean somatic variant
+snv <- fread('~/Documents/phd/st/data/geomx/clinical_data/9_eyemt_somatic_snv_coding_imtb_SENSITIVE.csv') # same as snv_eyemt, just copied to the disc
+# count all somatic variants
+# calculate nr of mutations per tier + sum of all
+snv_per_tier <- group_by(snv, study_id, TIER) %>%
+  summarise(n = n()) %>%
+  spread(key = 'TIER', value = 'n') %>%
+  replace(is.na(.), 0) %>%
+  mutate(all = rowSums(across(where(is.numeric)))) %>%
+  select(-`TIER 4`)
 
-snv_eyemt_important <- filter(snv_eyemt, TIER %in% c('TIER 1', 'TIER 2', 'TIER 3'))
-sort(table(snv_eyemt_important$folder_source))
+colnames(snv_per_tier) <- c('Patient', 'snv_coding_nr_tier2', 'snv_coding_nr_tier3', 'snv_coding_number_total')
+
+#manually ad patient which was not exported
+s131_dt <- data.frame('S131', 0, 5, 79)
+colnames(s131_dt) <- colnames(snv_per_tier)
+snv_per_tier <- rbind(snv_per_tier, s131_dt) 
+
+tp53_snv <- snv %>%
+  filter(SYMBOL == 'TP53') %>%
+  select(study_id, TIER) %>%
+  mutate(TIER = gsub(' ', '_', TIER)) 
+
+tp53_snv <- rbind(tp53_snv, data.frame(study_id = 'S131', TIER = 'TIER_3')) #manual add S131
+colnames(tp53_snv) <- c('Patient', 'TP53_mut')
+
+snv_summary <- left_join(snv_per_tier, tp53_snv) %>%
+  replace(is.na(.), 'wt')
+
+fwrite(snv_summary, '~/Documents/phd/st/data/geomx/clinical_data/9_eyemt_imtb_snv_summary.csv')
 
 ################################################
 # fetch TMB information form htmpl reports

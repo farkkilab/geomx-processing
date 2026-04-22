@@ -12,8 +12,9 @@ meta_b123_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metadata/
 meta_b123_out_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metadata/dcc_metadata_batch123_cleaned.csv'
 meta_b123_out_no_tls_path <- '/home/iganiemi/Documents/phd/st/data/geomx/batch123/metadata/dcc_metadata_batch123_no_tls_cleaned.csv'
 clin_path <- '/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_patient_clinical_data.csv'
+clin_sensitive_path <- '/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_patient_clinical_data_SENSITIVE.csv'
 
-source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
+#source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
 # combine worksheets
 worksheets_list <- list.files(file.path(meta_dir, 'lab_worksheets'), full.names = T, pattern = "csv")
@@ -360,3 +361,21 @@ for(sample in unique(meta_all3$Sample)){
   print('$$$$$$$$$$')
 }
 
+#######################
+# combining with new db data export
+
+clin_updated <- read_excel("/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_clinical_db_export_SENSITIVE_0426.xlsx")
+clin <- fread(clin_sensitive_path)
+
+clin <- left_join(clin, clin_updated[, c('study_ID', 'primary_treatment_response')], by = c('Patient' = 'study_ID'))
+
+clin <- left_join(clin, clin_updated[, c('study_ID', 'stage', 'age_at_diagnosis', 'deceased', 'primary_surgery_residual', 
+                                         'PFS_days', 'PFI_days', 'OS_days', 'BRCAmut_BRCA_result_general', 
+                                         'ovaHRDscar_test_result', 'ovaHRDscar_test_score',
+                                         'bevacizumab_in_1st_line', 'PARPi_treatment', 'PARPi_line', 'primary_treatment_response')], 
+                  by = c('Patient' = 'study_ID'))
+
+clin <- rename(clin, BRCA_status2 = BRCAmut_BRCA_result_general, treatment_bevacizumab_1st_line = bevacizumab_in_1st_line,
+               treatment_PARPi = PARPi_treatment)
+
+fwrite(clin, "/home/iganiemi/Documents/phd/st/data/geomx/clinical_data/9_eyemt_patient_clinical_data_SENSITIVE_upd_0426.csv")
