@@ -421,10 +421,11 @@ for(ct_name in c(ct_names, 'stroma')){
          width = 2000, height = 2000, unit = 'px')
 }
 
-################################################
+###########################################################################
+############################################################################
 # do UMAP on deconvoluted data
 # TODO move to deconv script
-top_var <- NULL # it doesn't matter if we take top PCA the differnc eis non=visible
+top_var <- 2000 # it doesn't matter if we take top PCA the differnc eis non=visible
 top_pca <- NULL
 
 ct_of_interest <- c('Tcells_CD8', 'Tcells_CD4', 'Bcells', 'Macrophages_Monocytes', 'DCs')
@@ -452,15 +453,18 @@ metadt <- fread(metadata_orig_path, select = c('dcc_filename', 'Roi_geomx', impo
   left_join(roi_clust) %>%
   as.data.frame()
 
+# add cluster labels
 metadt$roi_cluster_label <- mapvalues(metadt[[cluster_type]], 
                                       from=c(unname(unlist(clust_labels))),
                                       to=c(names(clust_labels)))
 
-##########3
+metadt$Site <- ifelse(metadt$Site == 'Peritroneum', 'Peritoneum', metadt$Site) # bugfix
+
+##############################
 ct_name <- ct_names[1]
 
 # iterate through all cell types
-sapply(ct_names[1], function(ct_name){
+sapply(ct_names, function(ct_name){
   
   print(ct_name)
   # get deconv df and filter metadata
@@ -500,7 +504,7 @@ sapply(ct_names[1], function(ct_name){
     pca_res <- t(-1*pca_obj$rotated) # reverse the signs of eigen vectors
     pca_loads <- -1*pca_obj$loadings
     #pca_vars <- pca_obj$variance
-    metadt_seg[, c("PCA1_","PCA2_")] <- t(pca_res)[, c(1,2)]
+    metadt_seg[, c("PCA1","PCA2")] <- t(pca_res)[, c(1,2)]
     
     if(!is.null(top_pca)){
       deconv_seg <- pca_res[1:top_pca, ]
@@ -510,30 +514,65 @@ sapply(ct_names[1], function(ct_name){
     custom_umap <- umap::umap.defaults
     custom_umap$random_state <- 42
     umap_out <- umap(t(deconv_seg), config = custom_umap)
-    metadt_seg[, c("UMAP1_","UMAP2_")] <- umap_out$layout[, c(1,2)]
+    metadt_seg[, c("UMAP1","UMAP2")] <- umap_out$layout[, c(1,2)]
     
     # make tsne
     set.seed(42) 
     tsne_out <- Rtsne(t(deconv_seg), perplexity = ncol(deconv_seg)*.15)
-    metadt_seg[, c("tSNE1_","tSNE2_")] <- tsne_out$Y[, c(1,2)]
+    metadt_seg[, c("tSNE1","tSNE2")] <- tsne_out$Y[, c(1,2)]
     
     for(method in c('UMAP', 'tSNE', 'PCA')){
+
       # for discrete labels
-      for(color_var in c(important_metadt, important_clindt_labs, important_clindt_cont, ct_of_interest, 'roi_cluster_label')){
+      for(color_var in c(important_metadt, important_clindt_labs, 'roi_cluster_label')){
         print(color_var)
-        
+
         sub <- ifelse(method == 'PCA', paste0('% of variance explained: PC1= ', as.character(round(pca_obj$variance[1], 2)),
                                               ' PC2= ', as.character(round(pca_obj$variance[2], 2))), '')
-        
-        plot_umap_tsne(metadt_seg, method_type = method, 
-                       assay_name = "", color_var = color_var,
-                       subtitle = sub, 
-                       output_name = file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg), 
-                                               paste0(ct_name, '_', method, 
-                                                      '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
-                                                      '_toppca_', ifelse(is.null(top_pca), 'NULL', as.character(top_pca)), 
-                                                      '_', color_var, '.png')),
-                       output_type = 'png')
+
+        ggplot(metadt_seg,
+               aes(x = get(paste0(method, '1')),
+                   y = get(paste0(method, '2')),
+                   color = get(color_var), shape = get(aoi_segment_var))) +
+          geom_point(size = 3) +
+          xlab(paste0(method, '1')) +
+          ylab(paste0(method, '2')) +
+          theme(plot.subtitle = sub) +
+          scale_color_discrete(name = color_var) +
+          scale_shape_discrete(name = aoi_segment_var) +
+          theme_bw()
+
+        ggsave(file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg),
+                         paste0(ct_name, '_', method, '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
+                                '_toppca_', ifelse(is.null(top_pca), 'NULL', as.character(top_pca)),
+                                '_', color_var, '.png')),
+               width = 2000, height = 1500, unit='px', device='png')
+      }
+      
+      #for continuous variables
+      for(color_var in c(important_clindt_cont, ct_of_interest)){
+        print(color_var)
+
+        sub <- ifelse(method == 'PCA', paste0('% of variance explained: PC1= ', as.character(round(pca_obj$variance[1], 2)),
+                                              ' PC2= ', as.character(round(pca_obj$variance[2], 2))), '')
+
+        ggplot(metadt_seg,
+               aes(x = get(paste0(method, '1')),
+                   y = get(paste0(method, '2')),
+                   color = get(color_var), shape = get(aoi_segment_var))) +
+          geom_point(size = 3) +
+          xlab(paste0(method, '1')) +
+          ylab(paste0(method, '2')) +
+          theme(plot.subtitle = sub) +
+          scale_color_continuous(name = color_var) +
+          scale_shape_discrete(name = aoi_segment_var) +
+          theme_bw()
+
+        ggsave(file.path(output_dir, 'sanity_check', paste0('deconv_umap_tsne_', seg),
+                         paste0(ct_name, '_', method, '_topvargenes_', ifelse(is.null(top_var), 'NULL', as.character(top_var)),
+                                '_toppca_', ifelse(is.null(top_pca), 'NULL', as.character(top_pca)),
+                                '_', color_var, '.png')),
+               width = 2000, height = 1500, unit='px', device='png')
       }
     }
     # save PCA res df
