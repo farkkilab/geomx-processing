@@ -1,6 +1,7 @@
 library(data.table)
 library(plyr)
 library(dplyr)
+library(tidyr)
 library(tidyverse)
 library(ComplexHeatmap)
 library(viridis)
@@ -20,31 +21,27 @@ library(GeomxTools)
 
 # TODO clean the code and put everything to 1 loop + functions
 
-
+# TODO corr vs ct number - make one table and analyse systematically
 
 # set up variables --------------------------------------------------------
 
-ct_of_interest <- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Bcells")
+#ct_of_interest <- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Bcells")
+ct_of_interest <- c("Macrophages_Monocytes")
 ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes", "Bcells", "NKcells")
 ct_names_myeloids <- c("DCs", "Macrophages_Monocytes")
 ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8", "Bcells")
 
-metadt_cols <- c('dcc_filename','Segment', 'Roi_geomx', 'Segment_geomx', 'Sample', 'Patient', 
-                 'NACT_status', 'HRP_status', 'BRCA_status', 'PFS_quartile_b123', 'OS_quartile_b123')
-
 min_frac <- 0.01 # gsea scores computed for dcc with smaller fraction, will be removed
-# label_cols <- c('Annotation_cell','network_hub_type', 'community_cluster_label', 'network_hub_type_freq0.05',
-#                 'community_cluster_label_freq0.05')
 
 proj_dir <<- '~/Documents/phd/st'
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808')
-out_dir <- file.path(output_dir, 'downstream', 'gsea_immune') 
+out_dir <- file.path(output_dir, 'downstream', 'gsea_immune_Macro') 
 
 #input files
 geomx_path <- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS')
 
-# metadata
-metadata_orig_path <- file.path(proj_dir, 'data/geomx/batch123/metadata/dcc_metadata_batch123_no_tls_cleaned.csv')
+# metadata compiled in metadata_join.R
+metadt_path <- file.path(output_dir, 'metadata_full_SENSITIVE.csv')
 
 # ssgsea_scores dir for msigdb and additional
 gsea_out_dir <- file.path(output_dir, 'pathway_analysis', 'gsea')
@@ -52,75 +49,18 @@ gsea_out_dir <- file.path(output_dir, 'pathway_analysis', 'gsea')
 # names of pathways of interest
 sigs_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'eyemt_immune', 'immune_pathways_names.csv')
 # RDS object with list of pathways and their genes
-signs_genes_list_path <- file.path(proj_dir, "geomx-processing/data/signatures/eyemt_immune/sign_list_immune.RDS")
-
-# merged cell fractions and roi labels from communities (from geomx_roi_hubs_integration.R)
-#ct_frac_all_roi_path <- file.path(output_dir, 'cycif_integration', paste0(batch_name, '_ct_frac_all_roi_bcells.csv'))
-
-# ct fractions per aoi from geomx_roi_hubs_integration
-ct_frac_deconv_aoi_path <- file.path(output_dir, 'cycif_integration', 'b123_ct_frac_deconv_bcells.csv')
-
-# ct fractions of immune per roi (used for clustering) from geomx_relabel_roi_2nd_approach
-ct_frac_deconv_roi_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv-dimred', 'sd_mye_lymph_b_ct_fractions_of_immune.csv')
-
-# ROI clusters based on deconvolution ct fractions from geomx_relabel_roi_2nd_approach
-ct_frac_clust_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv-dimred', 'sd_mye_lymph_b_all_clustering_results.csv')
-clust_types <- c('clusters_gmm_clustnr_5', 'clusters_hclust_cut2')
-# descriptive labels for clusters - IN THIS CASE BOTH METHODS HAS THE SAME CLUSTERS DESCRIPTION
-clust_labels <- list(CD8_Macro_domin = 1, mixed_w_CD4 = 2, mixed_w_others = 3, Macro_domin = 4, Bcell_domin = 5)
+signs_genes_list_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'eyemt_immune', 'sign_list_immune.RDS')
 
 # source and create output dir
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 dir.create(out_dir, recursive = T, showWarnings = F)
 
-# load metadata and merge with labels -------------------------------------
 
-metadt <- fread(metadata_orig_path, select = metadt_cols)
-metadt$sample_roi <- paste0(metadt$Sample, '_', metadt$Roi_geomx)
+# load metadata and filter to dcc after qc --------------------------------
 
-ct_frac_immune <- fread(ct_frac_deconv_roi_path)
-colnames(ct_frac_immune)[-1] <- paste0('roiimmunefrac_', colnames(ct_frac_immune)[-1])
-
-metadt <- left_join(metadt, ct_frac_immune)
-
-###########################################
-# extract communities roi labels and clean rois wo enough cells
-# ct_frac_roi <- fread(ct_frac_all_roi_path)
-# roi_labels <- ct_frac_roi %>%
-#   select(sample_roi, total_cell_nr_cycif, !!label_cols) %>%
-#   distinct() %>%
-#   filter(total_cell_nr_cycif >= 100)
-# 
-# # TODO examine for other batches - for now simple cleaning
-# roi_labels$community_cluster_label_freq0.05 <- ifelse(roi_labels$community_cluster_label_freq0.05 == 'CD11_Iba1|Iba1', 'CD11_Iba1',
-#                                                       roi_labels$community_cluster_label_freq0.05)
-# 
-# # TODO here only ROIs with any ct phenotyped remains
-# # change to do all ROIs clustering wo labels
-# # merge ROI labels with metadata - labels per AOI
-# metadt_labels_comm <- left_join(metadt, roi_labels, by = 'sample_roi') %>%
-#   filter(sample_roi %in% roi_labels$sample_roi)
-
-##########################################
-##########################################
-# alternative roi labels from deconv clustering
-deconv_ct_frac_clust <- fread(ct_frac_clust_path, select = c('sample_roi', clust_types))
-metadt_labels_deconv <- as.data.frame(left_join(metadt, deconv_ct_frac_clust, by = 'sample_roi'))
-# TODO may need adjustment
-metadt_labels_deconv[[paste0(clust_types[1], '_label')]] <- mapvalues(metadt_labels_deconv[[clust_types[1]]], 
-                                                                      from=c(unname(unlist(clust_labels))),
-                                                                      to=c(names(clust_labels)))
-metadt_labels_deconv[[paste0(clust_types[2], '_label')]] <- mapvalues(metadt_labels_deconv[[clust_types[2]]], 
-                                                                      from=c(unname(unlist(clust_labels))),
-                                                                      to=c(names(clust_labels)))
-
-# write for dge
-# TODO move to deconv labelling
-# fwrite(metadt_labels_deconv[, c('dcc_filename', paste0(clust_types, '_label'))], 
-#        file.path(output_dir, 'deconvolution', 'relabel-roi-deconv', 'dcc_deconv_clusters.csv'))
-
-# which one to use
-metadt_labels <- metadt_labels_deconv
+geomx_dcc <- colnames(readRDS(geomx_path))
+metadt <- as.data.frame(fread(metadt_path))
+metadt <- metadt[metadt$dcc_filename %in% geomx_dcc, ]
 
 # load and filter gsea signatures -----------------------------------------
 
@@ -144,11 +84,6 @@ unique_paths <- unlist(sapply(1:length(sign_genes_list), function(i){
 
 sigs <- sigs[sigs$pathway %in% unique_paths, ]
 
-# TODO should low cell frac be filtered based on sd or bp?
-# load ct fractions per aoi to filter gsea results computed for too little cells
-ct_frac_deconv_aoi <- fread(ct_frac_deconv_aoi_path, select = c('dcc_filename', 'cell_type', 'ct_frac_sd')) %>%
-  spread(key = 'cell_type', value = 'ct_frac_sd') 
-
 # load all gsea results filter to signatures and cells of interest, merge with sigs
 gsea_all <- lapply(list.files(gsea_out_dir, pattern = 'csv', full.names = T), function(x){
   gsea <- fread(x, select = c('dcc_filename', 'pathway', 'ssgsea_score', 'expr_signal'))
@@ -171,7 +106,7 @@ gsea_deconv_sel <- lapply(ct_of_interest, function(ct){
   gsea_ct <- gsea_all %>%
     filter(expr_signal == paste0('deconv_', ct)) %>%
     filter(path_cell_type %in% ct_groups) %>%
-    filter(dcc_filename %in% ct_frac_deconv_aoi$dcc_filename[ct_frac_deconv_aoi[[ct]] >= min_frac])
+    filter(dcc_filename %in% metadt$dcc_filename[metadt[[paste0("ct_frac_sd_aoi_", ct)]] >= min_frac])
   
   return(gsea_ct)
 })
@@ -182,11 +117,7 @@ gsea_all <- rbind(gsea_all[gsea_all$expr_signal == 'all', ], do.call(rbind, gsea
 
 path_annots <- c('path_cell_type', 'immune_effect', 'additional')
 path_annots <- c('path_cell_type', 'immune_effect')
-# dcc_annots <- c('Segment', 'Segment_geomx', 'HRP_status', 'PFS_quartile_b123',
-#                 'network_hub_type_freq0.05', 'community_cluster_label_freq0.05')
-#dcc_annots <- c('Segment', 'HRP_status', 'PFS_quartile_b123', 'network_hub_type_freq0.05', 'community_cluster_label_freq0.05')
-#dcc_annots <- c('Segment', 'Segment_geomx', 'HRP_status', 'PFS_quartile_b123', paste0(clust_types, '_label'))
-dcc_annots <- c('Segment', 'Segment_geomx', 'HRP_status', 'NACT_status', 'PFS_quartile_b123', paste0(clust_types[1], '_label'))
+dcc_annots <- c('Segment', 'Segment_geomx', 'HRP_status', 'NACT_status', 'roi_cluster_label_gmm')
 
 # row annotations based on pathways
 path_annot <- gsea_all %>%
@@ -196,7 +127,7 @@ path_annot <- gsea_all %>%
   mutate_all(as.factor)
 
 # column annotations based on metadata
-dcc_annot <- metadt_labels %>%
+dcc_annot <- metadt %>%
   select('dcc_filename', !!dcc_annots) %>%
   column_to_rownames(var="dcc_filename") %>%
   mutate_all(as.factor)
@@ -204,15 +135,17 @@ dcc_annot <- metadt_labels %>%
 
 # hmaps with pathways activity across all ROIs ----------------------------
 
-top_var_nr <- 20 # nr of top variable pathways for clustering, NULL for all pathways
+top_var_nr <- 50 # nr of top variable pathways for clustering, NULL for all pathways
 
+################
+# for testing
 expr_type <- unique(gsea_all$expr_signal)[1]
 pathways_type <- unique(gsea_all$path_type)[1]
 seg <- 'stroma'
 nact_status <- 'pre'
+################
 
 for(expr_type in unique(gsea_all$expr_signal)){
-#  for(pathways_type in unique(gsea_all$path_type)){
     for(seg in c('both', 'stroma', 'tumor')){
       for(nact_status in c('pre', 'post')){
 
@@ -228,7 +161,7 @@ for(expr_type in unique(gsea_all$expr_signal)){
         gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type, ]
         if(seg != 'both'){
           gsea_sel_paths <- gsea_sel_paths[gsea_sel_paths$dcc_filename %in% 
-                                                 metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+                                                 metadt$dcc_filename[metadt$Segment == seg & metadt$NACT_status == nact_status], ]
         }
         
         if(length(unique(gsea_sel_paths$dcc_filename)) > 20){
@@ -315,23 +248,23 @@ for(expr_type in unique(gsea_all$expr_signal)){
         }
       }
     }
-#  }
 }
-
 
 
 # hmaps with correlations between pathways and pathways vs ct frac --------
 
-corr_thr <- 0.7
+corr_thr <- 0.3
 
 #TODO mostly copypasted - add to previous loop
+##################
+# testing
 expr_type <- unique(gsea_all$expr_signal)[1]
 pathways_type <- unique(gsea_all$path_type)[1]
-seg <- 'both'
+seg <- 'stroma'
 nact_status <- 'post'
+#################
 
 for(expr_type in unique(gsea_all$expr_signal)){
-#  for(pathways_type in unique(gsea_all$path_type)){
     for(seg in c('both', 'stroma', 'tumor')){
       for(nact_status in c('pre', 'post')){
         
@@ -346,7 +279,7 @@ for(expr_type in unique(gsea_all$expr_signal)){
         
         if(seg != 'both'){
           gsea_sel_paths <- gsea_sel_paths[gsea_sel_paths$dcc_filename %in% 
-                                                 metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+                                                 metadt$dcc_filename[metadt$Segment == seg & metadt$NACT_status == nact_status], ]
         }
         
         if(length(unique(gsea_sel_paths$dcc_filename)) > 20){
@@ -356,10 +289,15 @@ for(expr_type in unique(gsea_all$expr_signal)){
                                       key = 'pathway', value = 'ssgsea_score') %>%
             column_to_rownames(var="dcc_filename")
           
-          # calculate wide df with immunefractions
-          immunefrac <- metadt_labels %>%
+          # wide df with immunefractions
+          roi_immunefrac <- metadt %>%
             filter(dcc_filename %in% rownames(gsea_sel_wide_seg)) %>%
-            dplyr::select('dcc_filename', starts_with('roiimmunefrac')) %>%
+            dplyr::select('dcc_filename', starts_with('ct_immunefrac_sd_roi')) %>%
+            column_to_rownames('dcc_filename')
+          
+          aoi_ctfrac <- metadt %>%
+            filter(dcc_filename %in% rownames(gsea_sel_wide_seg)) %>%
+            dplyr::select('dcc_filename', starts_with('ct_frac_sd_aoi')) %>%
             column_to_rownames('dcc_filename')
           
           ####################################
@@ -367,21 +305,33 @@ for(expr_type in unique(gsea_all$expr_signal)){
           gsea_seg_corr <- cor(gsea_sel_wide_seg, method = 'pearson')
           
           # correlation between pathways and immune ct fractions
-          gsea_seg_corr_ctfrac <- cor(gsea_sel_wide_seg, immunefrac, method = 'spearman')
+          gsea_seg_corr_roi_immunefrac <- cor(gsea_sel_wide_seg, roi_immunefrac, method = 'spearman')
+          gsea_seg_corr_aoi_ctfrac <- cor(gsea_sel_wide_seg, aoi_ctfrac, method = 'spearman')
+          
+          gsea_seg_corr_roi_immunefrac[is.na(gsea_seg_corr_roi_immunefrac)] <- 0
+          gsea_seg_corr_aoi_ctfrac[is.na(gsea_seg_corr_aoi_ctfrac)] <- 0
           
           if(!is.null(corr_thr)){
             gsea_seg_corr[gsea_seg_corr >= -corr_thr & gsea_seg_corr <= corr_thr] <- 0
-            cor_abovethr <- (colSums(gsea_seg_corr, na.rm=T) != 1) 
+            cor_abovethr <- (colSums(gsea_seg_corr, na.rm=T) != 1) # cor btw same pathway will be 1
             gsea_seg_corr <- gsea_seg_corr[cor_abovethr, cor_abovethr]
             
-            gsea_seg_corr_ctfrac[gsea_seg_corr_ctfrac >= -corr_thr & gsea_seg_corr_ctfrac <= corr_thr] <- 0
-            cor_abovethr_ctfrac <- (rowSums(gsea_seg_corr_ctfrac, na.rm=T) != 0) 
-            gsea_seg_corr_ctfrac <- gsea_seg_corr_ctfrac[cor_abovethr_ctfrac, ]
+            # TODO rmv duplication
+            gsea_seg_corr_roi_immunefrac[gsea_seg_corr_roi_immunefrac >= -corr_thr & gsea_seg_corr_roi_immunefrac <= corr_thr] <- 0
+            cor_abovethr_roi_immunefrac_row <- (rowSums(gsea_seg_corr_roi_immunefrac, na.rm=T) != 0) 
+            cor_abovethr_roi_immunefrac_col <- (colSums(gsea_seg_corr_roi_immunefrac, na.rm=T) != 0)
+            gsea_seg_corr_roi_immunefrac <- as.matrix(gsea_seg_corr_roi_immunefrac[cor_abovethr_roi_immunefrac_row,  cor_abovethr_roi_immunefrac_col])
+            
+            gsea_seg_corr_aoi_ctfrac[gsea_seg_corr_aoi_ctfrac >= -corr_thr & gsea_seg_corr_aoi_ctfrac <= corr_thr] <- 0
+            cor_abovethr_aoi_ctfrac_row <- (rowSums(gsea_seg_corr_aoi_ctfrac, na.rm=T) != 0) 
+            cor_abovethr_aoi_ctfrac_col <- (colSums(gsea_seg_corr_aoi_ctfrac, na.rm=T) != 0) 
+            gsea_seg_corr_aoi_ctfrac <- as.matrix(gsea_seg_corr_aoi_ctfrac[cor_abovethr_aoi_ctfrac_row, cor_abovethr_aoi_ctfrac_col])
             
             out_name <- paste0(out_name, '_filt', as.character(corr_thr))
           }
           
-          gsea_corr_list <- list(corr_path = gsea_seg_corr, corr_path_ctfrac = gsea_seg_corr_ctfrac)
+          gsea_corr_list <- list(corr_path = gsea_seg_corr, corr_path_roi_immunefrac = gsea_seg_corr_roi_immunefrac,
+                                 corr_path_aoi_ctfrac = gsea_seg_corr_aoi_ctfrac)
           
           #######################################
           
@@ -407,8 +357,8 @@ for(expr_type in unique(gsea_all$expr_signal)){
                                           legend_direction = "horizontal", 
                                           legend_width = unit(2, "in")),
                                         show_column_names = T,
-                                        row_names_gp = gpar(fontsize = 4),
-                                        column_names_gp = gpar(fontsize = 4),
+                                        row_names_gp = gpar(fontsize = ifelse(nrow(gsea_corr) < 20, 6, 4)),
+                                        column_names_gp = gpar(fontsize = ifelse(ncol(gsea_corr) < 20, 6, 4)),
                                         row_names_max_width = unit(5, "in"),
                                         col = col_fun
               )
@@ -424,18 +374,20 @@ for(expr_type in unique(gsea_all$expr_signal)){
         }
       }
     }
-#  }
 }
 
 
 # heatmaps with correlations between 2 cell types deconv pathways ---------
 
 # TODO for deconv select only pathways specific for given ct, make 1 big hmap (not sure if needed)
-# pathways_type <- unique(gsea_all$path_type)[1]
+
+################
+# testing
 seg <- 'tumor'
 nact_status <- 'post'
 deconv_ct1 <- 'Tcells_CD8'
 deconv_ct2 <- 'Bcells'
+#################
 
 # corr between specific deconv
 corr_thr <- 0.7
@@ -458,7 +410,7 @@ for(cells_comb in combn(ct_of_interest, 2, simplify = F)){
       
       if(seg != 'both'){
         gsea_sel_paths <- gsea_all[gsea_all$dcc_filename %in% 
-                                     metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+                                     metadt$dcc_filename[metadt$Segment == seg & metadt$NACT_status == nact_status], ]
       } else{
         gsea_sel_paths <- gsea_all
       }
@@ -728,40 +680,118 @@ for(path_name in unique(gsea_sel_paths_clust$pathway)){
 
 ################################################
 ################################################
+
+# clusters distributions vs ct frac and clinical vars ---------------------
+
 # each ct freq in tumor/stroma segment across nact status + freq cluster
-clust_type <- paste0(clust_types[1], '_label')
+#clust_type <- paste0(clust_types[1], '_label')
+clust_type <- 'roi_cluster_label_hclust'
+clust_type_name <- 'hclust' # for plotting
 
-ct_frac_deconv_aoi <- fread(ct_frac_deconv_aoi_path) 
-ct_frac_deconv_aoi_wide <- spread(ct_frac_deconv_aoi[, c('dcc_filename', 'cell_type', 'ct_frac_sd')],
-                                  key = 'cell_type', value = 'ct_frac_sd') %>%
-  select(dcc_filename, !!ct_of_interest) %>%
-  left_join(metadt_labels[, c('dcc_filename', 'Segment', 'NACT_status', clust_type)]) %>%
-  mutate(segment_nact = paste0(Segment, '_', NACT_status))
-
-ct_frac_deconv_aoi_long <- left_join(ct_frac_deconv_aoi[, c('dcc_filename', 'cell_type', 'ct_frac_sd')], 
-                                     metadt_labels[, c('dcc_filename', 'Segment', 'NACT_status', clust_type)]) %>%
+aoi_ctfrac_long <- metadt %>%
+  dplyr::select('dcc_filename', starts_with('ct_frac_sd_aoi')) %>%
+  pivot_longer(cols = starts_with('ct_frac_sd_aoi'), names_to = 'cell_type', values_to = 'ct_frac_sd_aoi') %>%
+  mutate(cell_type = gsub('ct_frac_sd_aoi_', '', cell_type)) %>%
+  left_join(metadt[, c('dcc_filename', 'Segment', 'NACT_status', clust_type)]) %>%
   mutate(segment_nact = paste0(Segment, '_', NACT_status)) %>%
   filter(cell_type %in% !!ct_names_immune)
 
+
 # boxpl all cells at once, color by segment_nact
-ggplot(ct_frac_deconv_aoi_long, aes(x = factor(cell_type), y = ct_frac_sd, fill = factor(segment_nact))) +
+ggplot(aoi_ctfrac_long, aes(x = factor(cell_type), y = ct_frac_sd_aoi, fill = factor(segment_nact))) +
   geom_boxplot() +
-  labs(title = 'ct freq aross segment and nact status', x = "cell type", y = "ct frac sd") +
+  labs(title = 'ct freq aross segment and nact status', x = "cell type", y = "ct frac sd in AOI") +
   theme_minimal()
 
-ggsave(file.path(out_dir, paste0('ct_frac_segment_nact.png')))
+ggsave(file.path(out_dir, paste0('ct_frac_aoi_segment_nact.png')))
 
 # boxpl faceted by cell, color by segment_nact all clusters at once
-ggplot(ct_frac_deconv_aoi_long, aes(x = factor(get(clust_type)), y = ct_frac_sd, fill = factor(segment_nact))) +
+ggplot(aoi_ctfrac_long, aes(x = factor(get(clust_type)), y = ct_frac_sd_aoi, fill = factor(segment_nact))) +
   geom_boxplot() +
-  labs(title = 'ct freq aross segment and nact status', x = "cell type", y = "ct frac sd") +
+  labs(title = 'ct freq aross segment and nact status', x = "cell type", y = "ct frac sd in AOI") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   facet_wrap(~cell_type, scales = "fixed", dir="v")
 
-ggsave(file.path(out_dir, paste0('ct_frac_per_cluster_segment_nact.png')))
+ggsave(file.path(out_dir, paste0('ct_frac_aoi_per_cluster_', clust_type_name, '_segment_nact.png')))
 
 
-#####
-# there are many gsea pathways computed for signal where there's less than 0.005 nr of cells !
-gsea_cd4 <- unique(gsea_all$dcc_filename[gsea_all$expr_signal == 'deconv_Tcells_CD4'])
-meta_cd4 <- ct_frac_deconv_aoi_wide[ct_frac_deconv_aoi_wide$dcc_filename %in% gsea_cd4, ]
+###########################################
+# ct frac clusters distribution across samples (pre, post, HRD, PFS, OS)
+
+vars_labels <- c('NACT_status', 'HRP_status', 'primary_treatment_response')
+vars_cont <- c('TMB', 'ovaHRDscar_score', 'PFS_days', 'OS_days')
+
+# count total nr of clusters in dataset (for ordering)
+cluster_labels_count <- metadt %>%
+  select(dcc_filename, Sample, !!vars_labels, !!vars_cont, !!clust_type) %>%
+  group_by(get(clust_type)) %>%   
+  mutate(clust_name_occur_total = n()) %>%
+  ungroup() %>%
+  as.data.frame()
+
+# all combinations
+clust_allcombs <- tidyr::expand(metadt, Sample, get(clust_type))
+colnames(clust_allcombs) <- c('Sample', clust_type) #fixing stupid names
+
+# count ROI label frequency per sample (per ROI not AOIs!)
+cluster_freqs_per_sample <- metadt[, c('Sample', 'sample_roi', clust_type)] %>%
+  distinct() %>%
+  group_by(Sample, get(clust_type)) %>%
+  mutate(clust_nr_per_sample = n()) %>%
+  ungroup() %>%
+  group_by(Sample) %>%
+  mutate(clust_freq_per_sample = clust_nr_per_sample/n()) %>%
+  select(Sample, !!clust_type, clust_nr_per_sample, clust_freq_per_sample) %>%
+  distinct() %>%
+  full_join(clust_allcombs, by = c('Sample', clust_type)) %>% # join with all combs to get 0
+  replace(is.na(.), 0) %>%
+  left_join(distinct(metadt[, c('Sample', vars_labels, vars_cont)]))
+
+
+# stacked barplot for nr of clusters across samples faceted by discrete vars
+for(label_var in vars_labels){
+
+  # nrs of AOIs from given ROI cluster 
+  ggplot(cluster_labels_count, aes(x = reorder(Sample, clust_name_occur_total), fill = get(clust_type))) +
+    geom_bar(stat = "count") +
+    labs(title = paste0("nr of AOIs per sample across ", label_var), x = "Sample", y = "AOI nr", fill='ROI cluster type') +
+    theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1, size = 8)) +
+    facet_wrap(~get(label_var), dir="v", scales = "free")
+  
+  ggsave(file.path(out_dir, paste0('aoi_nr_cluster_', clust_type_name, '_color_', label_var, '.png')))
+  
+  # frequencies of ROIs clusters - stacked barplots
+  ggplot(cluster_freqs_per_sample, aes(x = Sample, y = clust_freq_per_sample, fill = get(clust_type))) +
+    geom_bar(stat = "identity") +
+    labs(title = paste0("frequencies of ROI clusters per sample across ", label_var), x = "Sample", y = "ROI cluster frequency", fill='ROI cluster type') +
+    theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1, size = 8)) +
+    facet_wrap(~get(label_var), dir="v", scales = "free")
+  
+  ggsave(file.path(out_dir, paste0('roi_freq_cluster_', clust_type_name, '_color_', label_var, '.png')))
+  
+  # frequencies of ROIs clusters - boxplots
+  ggplot(cluster_freqs_per_sample, aes(x = get(clust_type), y = clust_freq_per_sample, fill = get(label_var))) +
+    geom_boxplot() +
+    geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+               size= 0.5, alpha = 0.6) +
+    geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
+    labs(title = paste0("frequencies of ROI clusters per sample across ", label_var), x = "ROI cluster", y = "ROI cluster frequency", fill= paste0(label_var)) +
+    theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1, size = 8))
+  
+  ggsave(file.path(out_dir, paste0('roi_freq_cluster_', clust_type_name, '_boxpl_color_', label_var, '.png')))
+}
+
+# scatterplots for continuous vars
+for(cont_var in vars_cont){
+  
+  ggplot(cluster_freqs_per_sample, aes(x = clust_freq_per_sample, y = get(cont_var), color = get(clust_type))) +
+    geom_point(size = 3) +
+    xlab("ROI cluster frequency in sample") +
+    ylab(cont_var) +
+    scale_color_discrete(name = clust_type) +
+    theme_bw()
+  
+  ggsave(file.path(out_dir, paste0('roi_freq_cluster_', clust_type_name, '_scatter_color_', cont_var, '.png')))
+}
+
+#fwrite(metadt_labels_count, file.path(out_dir, 'metadt_labels.csv'))
