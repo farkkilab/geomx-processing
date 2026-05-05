@@ -9,6 +9,8 @@ library(clusterProfiler)
 library(org.Hs.eg.db)
 library(GO.db)
 library(evoGO)
+#remotes::install_github("RHReynolds/rutils")
+library(rutils)
 
 # set variables -----------------------------------------------------------
 
@@ -64,9 +66,10 @@ dir.create(file.path(dge_dir_path, "gsea_enrichment"))
 dge_df_list <- list.files(dge_dir_path, pattern = paste0(dge_name, '.csv'), full.names = T)
 
 # download the latest version of go annot
-# TODO only for evoGO, also may not work bc of ensembl
-# goAnnotation <- getGOAnnotation("hsapiens")
-# goAnnotation <- loadGOAnnotation("hsapiens")
+# TODO only for evoGO, also may not work bcs of ensembl
+#goAnnotation <- getGOAnnotation("hsapiens", ensemblRelease = 114)
+goAnnotation <- loadGOAnnotation("hsapiens", ensemblRelease = 114)
+
 
 # prepare signatures list -------------------------------------------------
 
@@ -196,40 +199,53 @@ for(dge_df_path in dge_df_list){
 
 # TODO save it during dge script and load now
 # geomx_obj <- readRDS(geomx_norm_batch_eff_rm_path)
-# scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
-# 
-# geomx_filt <- remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
 # 
 # # convert to Entrez ID
-# ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl", host = "https://useast.ensembl.org")
+# ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl") #, host = "https://useast.ensembl.org"
 # 
 # # bcg genes - all from geomx dataset
-# gene_entrez_universe <- getBM(attributes=c('external_gene_name', 'entrezgene_id'),
+# gene_entrez_universe <- getBM(attributes=c('external_gene_name', 'entrezgene_id', 'ensembl_gene_id'),
+#                                  filters = 'external_gene_name',
+#                                  values = rownames(geomx_obj),
+#                                  mart = ensembl)
+# # rmv duplicated
+# gene_entrez_universe <- gene_entrez_universe[!duplicated(gene_entrez_universe$external_gene_name),]
+# 
+# 
+# fwrite(gene_entrez_universe, file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
+#                                        'enterz_universe_geomx.csv'))
+# filter to protein_coding
+# scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+#geomx_filt <- remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
+
+# # bcg genes from protein coding only
+# gene_entrez_universe_pc <- getBM(attributes=c('external_gene_name', 'entrezgene_id'),
 #                               filters = 'external_gene_name',
 #                               values = rownames(geomx_filt),
 #                               mart = ensembl)
 # 
 # #rmv duplicates
-# gene_entrez_universe <- gene_entrez_universe[!duplicated(gene_entrez_universe$external_gene_name),]
+# gene_entrez_universe_pc <- gene_entrez_universe_pc[!duplicated(gene_entrez_universe_pc$external_gene_name),]
 # 
-# rm(geomx_obj)
-# rm(scrna_ref_obj)
-# rm(geomx_filt)
-
-# TODO rmv just for testing when ensembl does not work
-# fwrite(gene_entrez_universe, file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
+# # rm(geomx_obj)
+# # rm(scrna_ref_obj)
+# # rm(geomx_filt)
+# 
+# # TODO rmv just for testing when ensembl does not work
+# fwrite(gene_entrez_universe_pc, file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
 #                                        'enterz_universe_geomx_pc.csv'))
+
 gene_entrez_universe <- fread(file.path(proj_dir, 'geomx-processing', 'data', 'signatures',
-                                        'enterz_universe_geomx_pc.csv'))
+                                        'enterz_universe_geomx.csv'))
 
 
 # do GO enrichment --------------------------------------------------------
 
-dge_df_path <- dge_df_list[1]
-cont <- "Bcell_domin - CD8_Macro_domin"
-dt_group <- 'stroma_post'
+dge_df_path <- dge_df_list[5]
+cont <- "stroma - tumor"
+dt_group <- 'post'
 
-dir.create(file.path(dge_dir_path, 'go_enrichment'))
+dir.create(file.path(dge_dir_path, 'go_enrichment_fdr'))
 
 # loop through all dge results
 for(dge_df_path in dge_df_list){
@@ -237,7 +253,7 @@ for(dge_df_path in dge_df_list){
   dge_inp_data <- gsub(paste0( '_',dge_name, '.csv'), '', basename(dge_df_path))
   print(paste0('##### ', dge_inp_data, ' #####'))
   
-  dir.create(file.path(dge_dir_path, 'go_enrichment', dge_inp_data))
+  dir.create(file.path(dge_dir_path, 'go_enrichment_fdr', dge_inp_data))
   
   # read DGE results --------------------------------------------------------
   
@@ -256,8 +272,10 @@ for(dge_df_path in dge_df_list){
       print(dge_subset_name)
       
       # subset to differential genes using set up thresholds
-      dge_sub_signif_pos <- dge_sub[dge_sub$Estimate >= fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
-      dge_sub_signif_neg <- dge_sub[dge_sub$Estimate <= -fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
+      #dge_sub_signif_pos <- dge_sub[dge_sub$Estimate >= fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
+      #dge_sub_signif_neg <- dge_sub[dge_sub$Estimate <= -fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
+      dge_sub_signif_pos <- dge_sub[dge_sub$Estimate >= fc_thr & dge_sub$FDR <= pval_thr, ]
+      dge_sub_signif_neg <- dge_sub[dge_sub$Estimate <= -fc_thr & dge_sub$FDR <= pval_thr, ]
       
       dge_sub_signif_list <- list(pos = dge_sub_signif_pos, neg = dge_sub_signif_neg)
       
@@ -276,18 +294,63 @@ for(dge_df_path in dge_df_list){
                                  pvalueCutoff = pval_thr,
                                  qvalueCutoff = qval_thr,
                                  readable = T,
-                                 universe = gene_entrez_universe$external_gene_name,
+                                 universe = rownames(geomx_obj),
                                  minGSSize = min_sign_gene_nr)
           
           go_res <- go_res_obj@result
           go_res <- go_res[go_res$p.adjust <= pval_thr, ]
+          
+          ##########################################
+          # reducing go terms redundancy
+          go_res$go_type <- 'BP'
+          go_res$go_id <- go_res$ID
+          go_res$neglog10_pval <- -log10(go_res$p.adjust)
+          go_res <- dplyr::arrange(go_res, -neglog10_pval)
+          
+          named_rank <- go_res$neglog10_pval
+          names(named_rank) <- go_res$go_id
+          
+          go_res_reduced_05 <- go_reduce(
+            go_res[, c('go_type', 'go_id')],
+            orgdb = "org.Hs.eg.db",
+            threshold = 0.5,
+            scores = named_rank,
+            measure = "Wang"
+          )
+          
+          go_res_reduced_07 <- go_reduce(
+            go_res[, c('go_type', 'go_id')],
+            orgdb = "org.Hs.eg.db",
+            threshold = 0.7,
+            scores = named_rank,
+            measure = "Wang"
+          )
+          
+          colnames(go_res_reduced_05) <- c('ontology_type', 'ID', 'parent_ID_05', 'parent_sim_score_05', 'parent_term_05')
+          colnames(go_res_reduced_07) <- c('ontology_type', 'ID', 'parent_ID_07', 'parent_sim_score_07', 'parent_term_07')
+          
+          go_res <- left_join(go_res, go_res_reduced_05) %>%
+            left_join(go_res_reduced_07[, -1])
+          
+          ###########################3
+          # GO enrichment with redundant pathways cleaning with evoGO
+          # works but doesn't reduce too much
+          # go_res_evogo <- calcGOenrichment(goAnnotation, 
+          #                                  deGenes = as.character(gene_entrez_universe$ensembl_gene_id[gene_entrez_universe$external_gene_name %in% dge_sub_signif$Gene]), 
+          #                                  domain = "BP", 
+          #                                  universe = as.character(gene_entrez_universe$ensembl_gene_id))
+          # 
+          # go_res_evogo <- go_res_evogo[go_res_evogo$fisher.pvalue <= pval_thr, ]
+          # go_res_evogo2 <- go_res_evogo[go_res_evogo$evogo.pvalue <= pval_thr, ]
+          
+          ##############################
           
           if(nrow(go_res) > 0){
             
             print(paste0(dge_signif_name, " - nr of significant go terms: ", as.character(nrow(go_res))))
             
             # make visualisation plot
-            png(filename=file.path(dge_dir_path, 'go_enrichment', dge_inp_data,
+            png(filename=file.path(dge_dir_path, 'go_enrichment_fdr', dge_inp_data,
                                    paste0('dotplot_go_', dge_inp_data, '_', dge_subset_name, '_', dge_signif_name,
                                                                          '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')), 
                 width=12, height=6,units="in",res=1000)
@@ -317,7 +380,7 @@ for(dge_df_path in dge_df_list){
   go_res_all_fin <- do.call(rbind, go_res_all_flat)
   
   if(!is.null(go_res_all_fin)){
-    fwrite(go_res_all_fin, file.path(dge_dir_path, 'go_enrichment',
+    fwrite(go_res_all_fin, file.path(dge_dir_path, 'go_enrichment_fdr',
                                    paste0('go_dge_', dge_inp_data, '_fc', as.character(fc_thr),'_pval', as.character(pval_thr), '.csv')))
   } else{
     print('no GO enrichment for this DEG list')
@@ -546,4 +609,49 @@ for(dge_df_path in dge_df_list){
 # cl0 <- names(path_clust[path_clust == 0])
 # cl1 <- names(path_clust[path_clust == 1])
 # cl2 <- names(path_clust[path_clust == 2])
+
+#############################################################################
+#############################################################################
+# change go_reduce function from https://rhreynolds.github.io/rutils/index.html
+# to adjust to the new column naming in rrvgo package
+
+go_reduce <- function (pathway_df, orgdb = "org.Hs.eg.db", threshold = 0.7, 
+                       scores = NULL, measure = "Wang") 
+{
+  if (!measure %in% c("Resnik", "Lin", "Rel", "Jiang", "Wang")) {
+    stop("Chosen measure is not one of the recognised measures, c(\"Resnik\", \"Lin\", \"Rel\", \"Jiang\", \"Wang\").")
+  }
+  if (measure == "Wang") {
+    computeIC <- FALSE
+  }
+  else {
+    computeIC <- TRUE
+  }
+  ont <- pathway_df %>% .[["go_type"]] %>% unique()
+  if (any(!ont %in% c("BP", "CC", "MF"))) {
+    stop("Column go_type does not contain the recognised sub-ontologies, c(\"BP\", \"CC\", \"MF\")")
+  }
+  go_similarity <- setNames(object = vector(mode = "list", 
+                                            length = length(ont)), nm = ont)
+  for (i in 1:length(ont)) {
+    print(stringr::str_c("Reducing sub-ontology: ", ont[i]))
+    hsGO <- GOSemSim::godata(annoDb = orgdb, ont = ont[i], 
+                             computeIC = computeIC)
+    terms <- pathway_df %>% dplyr::filter(.data$go_type == 
+                                            ont[i]) %>% .[["go_id"]] %>% unique()
+    sim <- GOSemSim::mgoSim(GO1 = terms, GO2 = terms, semData = hsGO, 
+                            measure = measure, combine = NULL)
+    go_similarity[[i]] <- rrvgo::reduceSimMatrix(simMatrix = sim, 
+                                                 threshold = threshold, orgdb = orgdb, scores = scores) %>% 
+      tibble::as_tibble() %>% dplyr::rename(parent_id = .data$parent, 
+                                            parent_term = .data$parentTerm, parent_sim_score = .data$score)
+  }
+  go_sim_df <- go_similarity %>% qdapTools::list_df2df(col1 = "go_type")
+  pathway_go_sim_df <- pathway_df %>% dplyr::inner_join(go_sim_df %>% 
+                                                          dplyr::select(.data$go_type, go_id = .data$go, contains("parent")), 
+                                                        by = c("go_type", "go_id")) %>% dplyr::arrange(.data$go_type, 
+                                                                                                       .data$parent_id, -.data$parent_sim_score)
+  return(pathway_go_sim_df)
+}
+
 
