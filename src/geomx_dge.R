@@ -27,12 +27,16 @@ cofounder_name <- sample_name # better don't change - is added as a cofounder (r
 # remove samples with <2 nr of each AOI comparison group (not enough to compare, only adds noise)
 min_aoi_nr <- 2
 
+# for deconvolution DGE: remove AOIs with lower ct fraction - too unstable
+min_ct_fraction <- 0.01
+
 # make dirs and source functions ------------------------------------------
 
 dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'dge', dge_name), showWarnings = T, recursive = T)
 
 norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
+norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) # TODO needed?
 
 # path to cleaned scrna which should be calculated in deconvolution step
 scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_cleaned_for_deconv.RDS', basename(scrna_ref_path)))
@@ -47,6 +51,9 @@ deconv_bp_path <- ifelse(grepl('harmony', norm_type),
                                           primary_batch_var, secondary_batch_var,
                                           '_cov_', covname, '.RDS'))) 
 
+# path to deconvolution ct fractions 
+deconv_bp_cellfrac_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 
+                                     paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))
 # deconv_bp_pulled_path <- file.path(output_dir, 'deconvolution', 'bayes_prism',
 #                             paste0('bp_res_pseudosc_mid_lvl_ct_updated_ct_frac_0.005_deseq2_vst_harmony.csv'))
 
@@ -59,24 +66,24 @@ if(!is.null(custom_metadt_path)){
   custom_metadt <- fread(custom_metadt_path)
   if(aoi_id %in% colnames(custom_metadt)){
     pData(geomx_obj) <- left_join(pData(geomx_obj), custom_metadt, by = aoi_id, suffix = c("_orig", ""))
+    colnames(geomx_obj) <- pData(geomx_obj)[[aoi_id]] # returning lost colnames
   } else{
     stop('custom_metadt have to contain aoi_id column to be merged with metadata')
   }
 }
 
-low_complex_rmv <- ifelse(file.exists(scrna_ref_cleaned_path), TRUE, FALSE)
-norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) # TODO needed?
-
-if(low_complex_rmv){
-  scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
-}
-
 expr_list <- list()
 
 if('all' %in% dge_inp_data_type){
+  
   # remove low complexity genes and change to log if needed
-  geomx_filt <- remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
-  expr_mtx <- geomx_filt@assayData[[norm_type]]
+  if(file.exists(scrna_ref_cleaned_path)){
+    scrna_ref_obj <- readRDS(scrna_ref_cleaned_path)
+    geomx_filt <- remove_low_complex_and_noncoding_genes(geomx_obj, scrna_ref_obj, raw_counts_layer = 'counts')
+    expr_mtx <- geomx_filt@assayData[[norm_type]]
+  } else{
+    expr_mtx <- geomx_obj@assayData[[norm_type]]
+  }
   
   if(!norm_is_log){
     expr_mtx <- log2(expr_mtx + 1)
@@ -91,19 +98,32 @@ if('all' %in% dge_inp_data_type){
 
 if('bp' %in% dge_inp_data_type){
   
+  # load deconvoluted profiles and ct fractions
   deconv_ct_list <- readRDS(deconv_bp_path)
+  deconv_ct_frac <- fread(deconv_bp_cellfrac_path, select = c(aoi_id, ct_of_interest))
+  deconv_ct_frac[is.na(deconv_ct_frac)] <- 0
+  colnames(deconv_ct_frac) <- c(aoi_id, paste0(ct_of_interest, '_aoi_ct_frac'))
+  
+  # merge with metadata
+  pData(geomx_obj) <- left_join(pData(geomx_obj), deconv_ct_frac, by = aoi_id, suffix = c("_orig", ""))
+  colnames(geomx_obj) <- pData(geomx_obj)[[aoi_id]] # returning lost colnames
   
   # filter to cell types of interest
-  if(!is.null(ct_of_interest)){
-    deconv_ct_list <- deconv_ct_list[ct_of_interest]
-  }
+  # filter to AOIs with > min fraction of given cell
+  deconv_ct_list_filt <- lapply(ct_of_interest, function(ct_name){
+    deconv_ct <- deconv_ct_list[[ct_name]]
+    deconv_ct <- deconv_ct[, deconv_ct_frac$dcc_filename[deconv_ct_frac[[paste0(ct_name, '_aoi_ct_frac')]] >= min_ct_fraction]]
+    return(deconv_ct)
+  })
+  
   # TODO add error if name not in names from deconv list
-  #TODO parse if norm is not log
+  # TODO parse if norm is not log
+  # TODO may throw an error if 0 AOI remain after filtering
   
-  names(deconv_ct_list) <- paste0('dge_deconv_', names(deconv_ct_list))
-  expr_list <- c(expr_list, deconv_ct_list)
-  
-  } 
+  names(deconv_ct_list_filt) <- paste0('dge_deconv_', ct_of_interest)
+  expr_list <- c(expr_list, deconv_ct_list_filt)
+} 
+
 # else if('bp_pulled' %in% dge_inp_data_type){
 #   
 #   deconv_res <- as.matrix(fread(deconv_bp_pulled_path), rownames = 1)
@@ -125,11 +145,15 @@ if('bp' %in% dge_inp_data_type){
 # create formula for the LLM model:
 # Sample is used as a mixed effect (cofounder)
 if(comparison_type == 'within'){
-  # within slide analysis - with random slope in LLM
-  model_formula <- ~ main_var_factor + (1 + main_var_factor | cofounder_factor) # random slope + random intercept
+  # within slide analysis - with random slope in LMM
+  model_formula_base <- ~ main_var_factor + (1 + main_var_factor | cofounder_factor) # random slope + random intercept
+  # correction for ct fraction in deconv
+  model_formula_ctfrac_corr <- ~ main_var_factor + ct_fraction + (1 + main_var_factor | cofounder_factor) 
   #reduced_model_formula <- ~ (1 + main_var_factor | cofounder_factor) # for testing if model add any information
 } else if(comparison_type == 'between'){
-  model_formula <- ~ main_var_factor + (1 | cofounder_factor) # random intercept
+  model_formula_base <- ~ main_var_factor + (1 | cofounder_factor) # random intercept
+  # correction for ct fraction in deconv
+  model_formula_ctfrac_corr <- ~ main_var_factor + ct_fraction + (1 | cofounder_factor) 
   #reduced_model_formula <- ~ (1 | cofounder_factor)
 } else{stop('comparison type can be either "within" or "between"')}
 
@@ -139,7 +163,7 @@ runlogs <- c()
 # iterate through all + deconv matrices
 lapply(names(expr_list), function(expr_name){
   print(paste0('########## ', expr_name, ' ###########'))
-  
+
   # hacking GeoMx class object 
   newassay <- new.env(parent=geomx_obj@assayData)
   newassay[[expr_name]] <- expr_list[[expr_name]]
@@ -155,6 +179,15 @@ lapply(names(expr_list), function(expr_name){
   
   pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj_dge), main_var_name, main_var_is_bin, main_var_main_val,
                                                dge_categories, cofounder_name) 
+  
+  # if dge is computed for deconv results, choose model with ct correction and change colname
+  if(expr_name == 'dge_all'){
+    model_formula <- model_formula_base
+  } else{
+    model_formula <- model_formula_ctfrac_corr
+    pData(geomx_obj_dge)$ct_fraction <- round(pData(geomx_obj_dge)[[paste0(gsub('dge_deconv_', '', expr_name), '_aoi_ct_frac')]], 2)
+  }
+  
   
   dge_results <- data.frame()
   
@@ -287,6 +320,6 @@ writeLines(c('DGE logs:',
              '; categories to compare: ', dge_categories,
              '; min number of categories to compare within slide: ', min_aoi_nr,
              '; normalisation type: ', norm_name,
-             '; low complex gene removed : ', low_complex_rmv,
+             '; low complex gene removed : ', ifelse(file.exists(scrna_ref_cleaned_path), 'TRUE', 'FALSE'),
              '; deconv mtx used : ', deconv_bp_path,
              'runlogs: ', runlogs), dge_logs_path)

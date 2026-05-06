@@ -279,13 +279,14 @@ run_unless_exists('Pathway analysis', gsea_logs_path,
 # column name of cell type label in scRNAseq metadata
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 
-dge_inp_data_type <<- c('all', 'bp') # within c('all', 'bp')
+dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 
 #dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 # all - full geomx data (not-deconvoluted)
 # bp - bayes prism deconvoluted data
 
 #ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells", "DCs")
+ct_of_interest <<- c("Tcells_CD8", "Macrophages_Monocytes")
 ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Bcells", "Fibroblasts_Mesothelial")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
@@ -297,21 +298,21 @@ ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4
 # if not needed, set to NULL
 #custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
 #custom_metadt_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv', 'dcc_deconv_clusters.csv')
-custom_metadt_path <<- "~/Documents/phd/st/geomx-processing/results/batch123-2808/downstream/gsea_immune/metadt_labels.csv"
+custom_metadt_path <<- "~/Documents/phd/st/geomx-processing/results/batch123-2808/metadata_full_SENSITIVE.csv"
 
 # DGE parameters
 comparison_type <<- 'within' 
 # 'within' when you compare different ROI types within sample
 # between - comparisons between slides
-main_var_name <<- 'clusters_gmm_clustnr_5_label' # main variable to make comparison between
-main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
+main_var_name <<- 'roi_cluster_label_gmm' # main variable to make comparison between
+main_var_is_bin <<- TRUE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
 #TODO rewrite code to run multiple main vars at once
 #main_var_main_val <<- 'posCD8_posIBA1'
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 labs <- c("CD8_Macro_domin", "mixed_w_CD4", "mixed_w_others", "Macro_domin", "Bcell_domin")
-main_var_main_val <<- labs[5]
+main_var_main_val <<- "Macro_domin"
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
 dge_categories <<- c('Segment', 'NACT_status')
 
