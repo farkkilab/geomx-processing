@@ -1143,7 +1143,7 @@ rank_genes_and_do_gsea_enrichment <- function(gene_diff_df, diff_colname, pval_c
 #####################################################3
 # clustering gsea enrichment results by jaccard idx (+ heatmap)
 
-cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname, jaccard_hclust_cuts = c(0.5, 1, 1.2, 1.5), lead_genes_split = ';', 
+cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname, simscore = 'jaccard', hclust_cuts = c(0.5, 1, 1.2, 1.5), lead_genes_split = ';', 
                                     nes_colname = 'NES', hmap_outpath = NULL, hmap_title = NULL){
   # cluster pathways based on jaccard idx -----------------------------------
   
@@ -1153,30 +1153,53 @@ cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname,
   
   names(paths_genes_list) <- gsea_sign[[path_colname]]
   
+  # remove leading genes which are subset of other set and choose the longest one
+  # unique_paths <- unlist(sapply(1:length(paths_genes_list), function(i){
+  #   sign <- paths_genes_list[[i]]
+  #   sign_inters <- sapply(paths_genes_list[-i], function(sign2){
+  #     length(intersect(sign, sign2))
+  #   })
+  # 
+  #   if(max(sign_inters) < length(sign)){
+  #     return(names(paths_genes_list)[i])
+  #   } else{
+  #     return()
+  #   }
+  # }))
+  # 
+  # paths_genes_list <- paths_genes_list[names(paths_genes_list) %in% unique_paths]
+  
   # calculate jaccard score between each pathway leading gene set
-  path_jaccard <- lapply(paths_genes_list, function(x){
+  path_sim <- lapply(paths_genes_list, function(x){
     p1 <- lapply(paths_genes_list, function(y){
-      jacc_idx <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
+      if(simscore == 'jaccard'){
+        sim <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
+      } else if(simscore == 'overlap'){
+        # Overlap coefficient (Szymkiewicz–Simpson): x / min(a,b) — emphasizes whether the smaller set is contained.
+        sim <- as.numeric(round(length(intersect(x, y)) / min(length(x), length(y))), digits = 4)
+      }
+      return(sim)
     })
     return(unlist(p1))
   })
   
-  path_jaccard_mtx <- do.call('cbind', path_jaccard)
+  path_sim_mtx <- do.call('cbind', path_sim)
   # heatmap(path_jaccard_mtx)
   
   # clustering with hclust
-  path_hclust <- hclust(dist(path_jaccard_mtx), method = "average")
+  path_hclust <- hclust(dist(path_sim_mtx), method = "average")
   #plot(path_hclust, hang = -1, cex = 0.4)
   
   # making clustered pathway heatmap
   if(!is.null(hmap_outpath)){
-    make_clustered_gsea_hmap(gsea_sign, path_jaccard_mtx, path_colname, nes_colname, hmap_outpath, hmap_title)
+    make_clustered_gsea_hmap(gsea_sign, path_sim_mtx, path_colname, nes_colname, hmap_outpath, hmap_title)
   }
   
-  for(cutnr in jaccard_hclust_cuts){
+  for(cutnr in hclust_cuts){
     # cut the hclust tree at given point
     path_hclust_cut <- cutree(path_hclust, h = cutnr)
     
+    #TODO when removing subsetted paths: theres less pathways - add rest as cluster 0
     # merge with gsea result
     if(identical(gsea_sign[[path_colname]], names(path_hclust_cut))){
       gsea_sign[[paste0('path_cluster_cut_', gsub('\\.', '', as.character(cutnr)))]] <- path_hclust_cut

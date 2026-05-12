@@ -8,7 +8,7 @@ library(RColorBrewer)
 library(clusterProfiler)
 library(org.Hs.eg.db)
 library(GO.db)
-library(evoGO)
+#library(evoGO)
 #remotes::install_github("RHReynolds/rutils")
 library(rutils)
 
@@ -51,7 +51,7 @@ adj_synonym <- T # whether or not adjust synonyms genes
 # if there are issues, turn it off
 
 # signatures and DEG results with less nr of genes will be removed
-min_sign_gene_nr <- 10
+min_sign_gene_nr <- 5
 #compute_hallmark <- T # should GSEA for msigdb hallmark be computed
 #msigdb_subcat <- c('CP:BIOCARTA', 'CP:KEGG_MEDICUS','GO:BP')
 #msigdb_subcat <- c('GO:BP', 'CP:KEGG_MEDICUS')
@@ -68,7 +68,7 @@ dge_df_list <- list.files(dge_dir_path, pattern = paste0(dge_name, '.csv'), full
 # download the latest version of go annot
 # TODO only for evoGO, also may not work bcs of ensembl
 #goAnnotation <- getGOAnnotation("hsapiens", ensemblRelease = 114)
-goAnnotation <- loadGOAnnotation("hsapiens", ensemblRelease = 114)
+#goAnnotation <- loadGOAnnotation("hsapiens", ensemblRelease = 114)
 
 
 # prepare signatures list -------------------------------------------------
@@ -96,6 +96,10 @@ sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
 print(paste0(length(sign_list), ' signatures will be used'))
 
 # load dge files ----------------------------------------------------------
+
+dge_df_path <- dge_df_list[4]
+cont <- "Bcell_domin - Macro_domin"
+dt_group <- 'stroma_post'
 
 # loop through all dge results
 for(dge_df_path in dge_df_list){
@@ -144,6 +148,7 @@ for(dge_df_path in dge_df_list){
     # cluster gsea signatures by jaccard idx ----------------------------------
     # clustering based on jaccard idx - nr of common elements in a set / union of sets
     
+    #TODO another loop through cont and data group - incorporate within the previous one
     gsea_res_clust_all <- lapply(unique(gsea_res_all$Contrast), function(cont){
       lapply(unique(gsea_res_all$data_group), function(dt_group){
         
@@ -162,18 +167,55 @@ for(dge_df_path in dge_df_list){
             gsea_subset <- gsea_subset[gsea_subset$is_main_pathway == 'yes', ]
           }
           
+          
           # only clustering more than 1 pathways makes sense
-          if(nrow(gsea_subset) > 1){
+          if(nrow(gsea_subset) > 2){
             hmap_outpath <- file.path(dge_dir_path, 'gsea_enrichment',dge_inp_data,
                                       paste0('hmap_',gsea_subset_name, '_', out_name, '_', dge_inp_data, 
                                              '_fc', as.character(fc_thr), '.png'))
             
-            # cluster pathways by jaccard idx and make heatmap
-            gsea_subset <- cluster_gsea_enrichment(gsea_subset, 'leadingEdge', 'pathway', 
+            # cluster pathways by similarity score and make heatmap
+            gsea_subset <- cluster_gsea_enrichment(gsea_subset, 'leadingEdge', 'pathway', simscore = 'overlap',
                                                   hmap_outpath = hmap_outpath, hmap_title = gsea_subset_name, 
                                                   lead_genes_split = '|')
+            
+            # visualise clustered paths
+            gsea_subset_bestclust <- gsea_subset %>%
+              group_by(path_cluster_cut_12) %>%
+              filter(NES == max(abs(NES))) %>%
+              arrange(NES) %>%
+              mutate(pathway = as.factor(pathway))
+            
+            ggplot(gsea_subset_bestclust, aes(x = NES, y = factor(pathway, levels = rev(gsea_subset_bestclust$pathway)))) +
+              geom_point(aes(color = padj, size = size)) +
+              scale_size_area(max_size = 15)
+              theme_classic() +
+              xlab('size') +
+              ylab(NULL) +
+              ggtitle("all pathways", dir)
+            
+            ggsave(file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
+                             paste0('bubbleplot_bestclust_', gsea_subset_name, '_', out_name, '_', dge_inp_data, '.png')),
+                   width = 12, height = 8, units = 'in')
           }
           
+          # visualise all paths
+          gsea_subset_toplot <- gsea_subset %>%
+            arrange(NES) %>%
+            mutate(pathway = as.factor(pathway))
+
+          ggplot(gsea_subset, aes(x = NES, y = factor(pathway, levels = rev(gsea_subset$pathway)))) +
+            geom_point(aes(color = padj, size = size)) +
+            scale_size_area(max_size = 15)
+            theme_classic() +
+            xlab('size') +
+            ylab(NULL) +
+            ggtitle("all pathways", dir)
+          
+          ggsave(file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
+                    paste0('bubbleplot_all_', gsea_subset_name, '_', out_name, '_', dge_inp_data, '.png')),
+                 width = 12, height = 8, units = 'in')
+
           return(gsea_subset)
         } else{
           return()
@@ -241,19 +283,63 @@ gene_entrez_universe <- fread(file.path(proj_dir, 'geomx-processing', 'data', 's
 
 # do GO enrichment --------------------------------------------------------
 
-dge_df_path <- dge_df_list[5]
-cont <- "stroma - tumor"
-dt_group <- 'post'
+#############################################################################
+# change go_reduce function from https://rhreynolds.github.io/rutils/index.html
+# to adjust to the new column naming in rrvgo package
+# https://ssayols.github.io/rrvgo/reference/reduceSimMatrix.html
 
-dir.create(file.path(dge_dir_path, 'go_enrichment_fdr'))
+go_reduce2 <- function (pathway_df, orgdb = "org.Hs.eg.db", threshold = 0.7, 
+                        scores = NULL, measure = "Wang") 
+{
+  if (!measure %in% c("Resnik", "Lin", "Rel", "Jiang", "Wang")) {
+    stop("Chosen measure is not one of the recognised measures, c(\"Resnik\", \"Lin\", \"Rel\", \"Jiang\", \"Wang\").")
+  }
+  if (measure == "Wang") {
+    computeIC <- FALSE
+  }
+  else {
+    computeIC <- TRUE
+  }
+  ont <- pathway_df %>% .[["go_type"]] %>% unique()
+  if (any(!ont %in% c("BP", "CC", "MF"))) {
+    stop("Column go_type does not contain the recognised sub-ontologies, c(\"BP\", \"CC\", \"MF\")")
+  }
+  go_similarity <- setNames(object = vector(mode = "list", 
+                                            length = length(ont)), nm = ont)
+  for (i in 1:length(ont)) {
+    print(stringr::str_c("Reducing sub-ontology: ", ont[i]))
+    hsGO <- GOSemSim::godata(annoDb = orgdb, ont = ont[i], 
+                             computeIC = computeIC)
+    terms <- pathway_df %>% dplyr::filter(.data$go_type == 
+                                            ont[i]) %>% .[["go_id"]] %>% unique()
+    sim <- GOSemSim::mgoSim(GO1 = terms, GO2 = terms, semData = hsGO, 
+                            measure = measure, combine = NULL)
+    go_similarity[[i]] <- rrvgo::reduceSimMatrix(simMatrix = sim, 
+                                                 threshold = threshold, orgdb = orgdb, scores = scores) %>% 
+      tibble::as_tibble() %>% dplyr::rename(parent_id = .data$parent, 
+                                            parent_term = .data$parentTerm, parent_sim_score = .data$score)
+  }
+  go_sim_df <- go_similarity %>% qdapTools::list_df2df(col1 = "go_type")
+  pathway_go_sim_df <- pathway_df %>% dplyr::inner_join(go_sim_df %>% 
+                                                          dplyr::select(.data$go_type, go_id = .data$go, contains("parent")), 
+                                                        by = c("go_type", "go_id")) %>% dplyr::arrange(.data$go_type, 
+                                                                                                       .data$parent_id, -.data$parent_sim_score)
+  return(pathway_go_sim_df)
+}
+
+dge_df_path <- dge_df_list[1]
+cont <- "Macro_domin - other_roi_type"
+dt_group <- 'stroma_post'
+
+dir.create(file.path(dge_dir_path, 'go_enrichment'))
 
 # loop through all dge results
 for(dge_df_path in dge_df_list){
   
-  dge_inp_data <- gsub(paste0( '_',dge_name, '.csv'), '', basename(dge_df_path))
+  dge_inp_data <- gsub(paste0( '_', dge_name, '.csv'), '', basename(dge_df_path))
   print(paste0('##### ', dge_inp_data, ' #####'))
   
-  dir.create(file.path(dge_dir_path, 'go_enrichment_fdr', dge_inp_data))
+  dir.create(file.path(dge_dir_path, 'go_enrichment', dge_inp_data))
   
   # read DGE results --------------------------------------------------------
   
@@ -272,8 +358,6 @@ for(dge_df_path in dge_df_list){
       print(dge_subset_name)
       
       # subset to differential genes using set up thresholds
-      #dge_sub_signif_pos <- dge_sub[dge_sub$Estimate >= fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
-      #dge_sub_signif_neg <- dge_sub[dge_sub$Estimate <= -fc_thr & dge_sub$`Pr(>|t|)` <= pval_thr, ]
       dge_sub_signif_pos <- dge_sub[dge_sub$Estimate >= fc_thr & dge_sub$FDR <= pval_thr, ]
       dge_sub_signif_neg <- dge_sub[dge_sub$Estimate <= -fc_thr & dge_sub$FDR <= pval_thr, ]
       
@@ -300,65 +384,124 @@ for(dge_df_path in dge_df_list){
           go_res <- go_res_obj@result
           go_res <- go_res[go_res$p.adjust <= pval_thr, ]
           
-          ##########################################
+          go_res$generatio_nr <- sapply(go_res$GeneRatio, function(gr){
+            as.numeric(unlist(strsplit(gr, split='/'))[1])/as.numeric(unlist(strsplit(gr, split='/'))[2])
+          })
+          
+          #########################################
           # reducing go terms redundancy
-          go_res$go_type <- 'BP'
-          go_res$go_id <- go_res$ID
-          go_res$neglog10_pval <- -log10(go_res$p.adjust)
-          go_res <- dplyr::arrange(go_res, -neglog10_pval)
-          
-          named_rank <- go_res$neglog10_pval
-          names(named_rank) <- go_res$go_id
-          
-          go_res_reduced_05 <- go_reduce(
-            go_res[, c('go_type', 'go_id')],
-            orgdb = "org.Hs.eg.db",
-            threshold = 0.5,
-            scores = named_rank,
-            measure = "Wang"
-          )
-          
-          go_res_reduced_07 <- go_reduce(
-            go_res[, c('go_type', 'go_id')],
-            orgdb = "org.Hs.eg.db",
-            threshold = 0.7,
-            scores = named_rank,
-            measure = "Wang"
-          )
-          
-          colnames(go_res_reduced_05) <- c('ontology_type', 'ID', 'parent_ID_05', 'parent_sim_score_05', 'parent_term_05')
-          colnames(go_res_reduced_07) <- c('ontology_type', 'ID', 'parent_ID_07', 'parent_sim_score_07', 'parent_term_07')
-          
-          go_res <- left_join(go_res, go_res_reduced_05) %>%
-            left_join(go_res_reduced_07[, -1])
-          
-          ###########################3
-          # GO enrichment with redundant pathways cleaning with evoGO
-          # works but doesn't reduce too much
-          # go_res_evogo <- calcGOenrichment(goAnnotation, 
-          #                                  deGenes = as.character(gene_entrez_universe$ensembl_gene_id[gene_entrez_universe$external_gene_name %in% dge_sub_signif$Gene]), 
-          #                                  domain = "BP", 
-          #                                  universe = as.character(gene_entrez_universe$ensembl_gene_id))
-          # 
-          # go_res_evogo <- go_res_evogo[go_res_evogo$fisher.pvalue <= pval_thr, ]
-          # go_res_evogo2 <- go_res_evogo[go_res_evogo$evogo.pvalue <= pval_thr, ]
-          
+          if(nrow(go_res) > 2){
+
+            go_res$go_type <- 'BP'
+            go_res$go_id <- go_res$ID
+            go_res$neglog10_pval <- -log10(go_res$p.adjust)
+            go_res <- dplyr::arrange(go_res, -neglog10_pval)
+            
+            named_rank <- go_res$neglog10_pval
+            names(named_rank) <- go_res$go_id
+            
+            go_res_reduced_05 <- go_reduce2(
+              go_res[, c('go_type', 'go_id')],
+              orgdb = "org.Hs.eg.db",
+              threshold = 0.5,
+              scores = named_rank,
+              measure = "Wang"
+            )
+            
+            go_res_reduced_07 <- go_reduce2(
+              go_res[, c('go_type', 'go_id')],
+              orgdb = "org.Hs.eg.db",
+              threshold = 0.7,
+              scores = named_rank,
+              measure = "Wang"
+            )
+            
+            colnames(go_res_reduced_05) <- c('ontology_type', 'ID', 'parent_ID_05', 'parent_sim_score_05', 'parent_term_05')
+            colnames(go_res_reduced_07) <- c('ontology_type', 'ID', 'parent_ID_07', 'parent_sim_score_07', 'parent_term_07')
+            
+            go_res <- left_join(go_res, go_res_reduced_05) %>%
+              left_join(go_res_reduced_07[, -1])
+            
+            # select highest represented pathway per group
+            go_res_clust <- go_res %>%
+              group_by(parent_ID_07) %>%
+              filter(generatio_nr == max(generatio_nr)) %>%
+              filter(p.adjust == min(p.adjust)) %>%
+              arrange(-generatio_nr) %>%
+              mutate(description_both = ifelse(Description != parent_term_07, paste0(Description, '/', parent_term_07), Description)) %>%
+              mutate(description_both = as.factor(description_both))
+            
+
+            # bubleplot for all
+            ggplot(go_res_clust, aes(x = generatio_nr, y = factor(description_both, levels = rev(go_res_clust$description_both)))) +
+              geom_point(aes(color = p.adjust, size = Count)) +
+              theme_classic() +
+              xlab('Gene Ratio') +
+              ylab(NULL) +
+              ggtitle("Enriched GO terms ", dir)
+            
+            ggsave(file.path(dge_dir_path, 'go_enrichment', dge_inp_data,
+                             paste0('dotplot_go_clustterms_all', dge_inp_data, '_', dge_subset_name, '_', 
+                                    dge_signif_name, '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')),
+                   width = 12, height = 8, units = 'in')
+
+            
+            if(nrow(go_res_clust) > 15){
+              ggplot(go_res_clust[1:15, ], aes(x = generatio_nr, y = factor(description_both, levels = rev(go_res_clust$description_both[1:15])))) +
+                geom_point(aes(color = p.adjust, size = Count)) +
+                scale_size_area(max_size = 15) +
+                theme_classic() +
+                theme(axis.text=element_text(size=12), axis.title=element_text(size=10)) +
+                xlab('Gene Ratio') +
+                ylab(NULL) +
+                ggtitle("Top 15 enriched GO terms ", dir)
+              
+              ggsave(file.path(dge_dir_path, 'go_enrichment', dge_inp_data,
+                               paste0('dotplot_go_clustterms_top15', dge_inp_data, '_', dge_subset_name, '_', 
+                                      dge_signif_name, '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')),
+                     width = 12, height = 8, units = 'in')
+            }
+          }
+
           ##############################
           
           if(nrow(go_res) > 0){
             
             print(paste0(dge_signif_name, " - nr of significant go terms: ", as.character(nrow(go_res))))
             
+            if(nrow(go_res > 15)){
+              go_res_top <- tail(go_res, 15) %>%
+                mutate(Description = as.factor(Description))
+            } else{
+              go_res_top <- go_res
+            }
+          
+            #TODO if > 15 ordering goes wrong
             # make visualisation plot
-            png(filename=file.path(dge_dir_path, 'go_enrichment_fdr', dge_inp_data,
-                                   paste0('dotplot_go_', dge_inp_data, '_', dge_subset_name, '_', dge_signif_name,
-                                                                         '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')), 
-                width=12, height=6,units="in",res=1000)
+            ggplot(go_res_top, aes(x = generatio_nr, y = factor(Description, levels = rev(go_res_top$Description)))) +
+              geom_point(aes(color = p.adjust, size = Count)) +
+              scale_size_area(max_size = 15) +
+              theme_classic() +
+              theme(axis.text=element_text(size=12), axis.title=element_text(size=10)) +
+              xlab('Gene Ratio') +
+              ylab(NULL) +
+              ggtitle("Top 15 enriched GO terms ", dir)
             
-            plot(dotplot(go_res_obj, x = "GeneRatio", color = "p.adjust", title = paste0("Top 15 of GO Enrichment", dge_signif_name),
-                    showCategory = 15, label_format = 80))
-            dev.off()
-            
+            ggsave(file.path(dge_dir_path, 'go_enrichment', dge_inp_data,
+                             paste0('dotplot_go_', dge_inp_data, '_', dge_subset_name, '_', 
+                                    dge_signif_name, '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')),
+                   width = 12, height = 8, units = 'in')
+
+
+            # png(filename=file.path(dge_dir_path, 'go_enrichment', dge_inp_data,
+            #                        paste0('dotplot_go_', dge_inp_data, '_', dge_subset_name, '_', dge_signif_name,
+            #                                                              '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')),
+            #     width=12, height=6,units="in",res=1000)
+            # 
+            # plot(dotplot(go_res_obj, x = "GeneRatio", color = "p.adjust", title = paste0("Top 15 of GO Enrichment ", dge_signif_name),
+            #         showCategory = 15, label_format = 80))
+            # dev.off()
+
             go_res$data_group <- dt_group
             go_res$Contrast <- cont
             go_res$direction <- dge_signif_name
@@ -377,10 +520,10 @@ for(dge_df_path in dge_df_list){
   # combine into 1 df
   go_res_all_flat <- list_flatten(list_flatten(go_res_all)) # flatten to single list of dfs
   go_res_all_flat <- keep(go_res_all_flat, ~ is.data.frame(.x)) # keep only not-null
-  go_res_all_fin <- do.call(rbind, go_res_all_flat)
+  go_res_all_fin <- do.call(rbind.fill, go_res_all_flat)
   
   if(!is.null(go_res_all_fin)){
-    fwrite(go_res_all_fin, file.path(dge_dir_path, 'go_enrichment_fdr',
+    fwrite(go_res_all_fin, file.path(dge_dir_path, 'go_enrichment',
                                    paste0('go_dge_', dge_inp_data, '_fc', as.character(fc_thr),'_pval', as.character(pval_thr), '.csv')))
   } else{
     print('no GO enrichment for this DEG list')
@@ -610,48 +753,47 @@ for(dge_df_path in dge_df_list){
 # cl1 <- names(path_clust[path_clust == 1])
 # cl2 <- names(path_clust[path_clust == 2])
 
+################################################################
+###############################################################
+###########################3
+# GO enrichment with redundant pathways cleaning with evoGO
+# works but doesn't reduce too much
+# go_res_evogo <- calcGOenrichment(goAnnotation, 
+#                                  deGenes = as.character(gene_entrez_universe$ensembl_gene_id[gene_entrez_universe$external_gene_name %in% dge_sub_signif$Gene]), 
+#                                  domain = "BP", 
+#                                  universe = as.character(gene_entrez_universe$ensembl_gene_id))
+# 
+# go_res_evogo <- go_res_evogo[go_res_evogo$fisher.pvalue <= pval_thr, ]
+# go_res_evogo2 <- go_res_evogo[go_res_evogo$evogo.pvalue <= pval_thr, ]
+
+
 #############################################################################
-#############################################################################
-# change go_reduce function from https://rhreynolds.github.io/rutils/index.html
-# to adjust to the new column naming in rrvgo package
-
-go_reduce <- function (pathway_df, orgdb = "org.Hs.eg.db", threshold = 0.7, 
-                       scores = NULL, measure = "Wang") 
-{
-  if (!measure %in% c("Resnik", "Lin", "Rel", "Jiang", "Wang")) {
-    stop("Chosen measure is not one of the recognised measures, c(\"Resnik\", \"Lin\", \"Rel\", \"Jiang\", \"Wang\").")
-  }
-  if (measure == "Wang") {
-    computeIC <- FALSE
-  }
-  else {
-    computeIC <- TRUE
-  }
-  ont <- pathway_df %>% .[["go_type"]] %>% unique()
-  if (any(!ont %in% c("BP", "CC", "MF"))) {
-    stop("Column go_type does not contain the recognised sub-ontologies, c(\"BP\", \"CC\", \"MF\")")
-  }
-  go_similarity <- setNames(object = vector(mode = "list", 
-                                            length = length(ont)), nm = ont)
-  for (i in 1:length(ont)) {
-    print(stringr::str_c("Reducing sub-ontology: ", ont[i]))
-    hsGO <- GOSemSim::godata(annoDb = orgdb, ont = ont[i], 
-                             computeIC = computeIC)
-    terms <- pathway_df %>% dplyr::filter(.data$go_type == 
-                                            ont[i]) %>% .[["go_id"]] %>% unique()
-    sim <- GOSemSim::mgoSim(GO1 = terms, GO2 = terms, semData = hsGO, 
-                            measure = measure, combine = NULL)
-    go_similarity[[i]] <- rrvgo::reduceSimMatrix(simMatrix = sim, 
-                                                 threshold = threshold, orgdb = orgdb, scores = scores) %>% 
-      tibble::as_tibble() %>% dplyr::rename(parent_id = .data$parent, 
-                                            parent_term = .data$parentTerm, parent_sim_score = .data$score)
-  }
-  go_sim_df <- go_similarity %>% qdapTools::list_df2df(col1 = "go_type")
-  pathway_go_sim_df <- pathway_df %>% dplyr::inner_join(go_sim_df %>% 
-                                                          dplyr::select(.data$go_type, go_id = .data$go, contains("parent")), 
-                                                        by = c("go_type", "go_id")) %>% dplyr::arrange(.data$go_type, 
-                                                                                                       .data$parent_id, -.data$parent_sim_score)
-  return(pathway_go_sim_df)
-}
 
 
+##############################
+# dir <- 'neg'
+# kk <- fread("/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/dge/dge_within_slide_Segment_bin_FALSE__NACT_status/go_enrichment/go_dge_dge_deconv_Macrophages_Monocytes_fc0.5_pval0.05.csv")
+# kk <- kk[kk$data_group == 'post' & kk$direction == dir, ]
+# kk$generatio_nr <- sapply(kk$GeneRatio, function(gr){
+#   as.numeric(unlist(strsplit(gr, split='/'))[1])/as.numeric(unlist(strsplit(gr, split='/'))[2])
+# })
+# 
+# # select highest represented pathway per group
+# ll <- kk %>%
+#   group_by(parent_ID_07) %>%
+#   filter(generatio_nr == max(generatio_nr)) %>%
+#   filter(p.adjust == min(p.adjust)) %>%
+#   arrange(-generatio_nr) %>%
+#   mutate(description_both = ifelse(Description != parent_term_07, paste0(Description, '/', parent_term_07), Description)) %>%
+#   mutate(description_both = as.factor(description_both))
+#   
+# 
+# # bubleplot
+#   ggplot(ll[1:15, ], aes(x = generatio_nr, y = factor(description_both, levels = rev(ll$description_both[1:15])))) +
+#   geom_point(aes(color = p.adjust, size = Count)) +
+#   theme_classic() +
+#   xlab('Gene Ratio') +
+#   ylab(NULL) +
+#   ggtitle("Top 15 enriched GO terms ", dir)
+# 
+# ggsave(file.path(output_dir, outp2, paste0('dotplot_', var_name, '_clustterms_all.png')))
