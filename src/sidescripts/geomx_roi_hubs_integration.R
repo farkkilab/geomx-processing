@@ -19,16 +19,17 @@ library(tidyr)
 
 # cell fraction from deconv below that lvl will be changed to 0 
 # max nr of cells = 300 so 0.005 cell fraction is 1 cell/200 cells 1,5 cell/300 cells
-min_frac <- 0.005
-min_label_frac <- 0.05
+min_frac <- 0.01
+min_label_frac <- 0.1
 cycif_main_ct_label <- 'consensus_label_clean_all_ct'
-hubs_labels_list <- c('network_hub_type', 'community_cluster_label') # before with 'interaction_hub_type'
+hubs_labels_list <- c('component_label', 'community_cluster_label') # before with 'interaction_hub_type'
 
 batch_name <- 'batch3tls'
 proj_dir <<- '~/Documents/phd/st'
 data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
 anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+metadt_path <- file.path(output_dir, 'metadata_full_SENSITIVE.csv')
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_updated_ct_fraction.csv')
@@ -37,27 +38,29 @@ sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 's
 # all cells within ROIs with hubs annotations computed with geomx_cycif_integration.R
 #hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt15171517_ct15_dt300_res0015_.csv")
 #hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_dt1517151715_ct15_dt300.csv"))
-hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_dt1515151717_ct10_dt300.csv"))
+hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_combined_myeloids_15151517_ct10_dt300.csv"))
 
 ##############
 # output files
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_frac_comparison_b3tls_bcells_ct10')
+outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_frac_comparison_b3tls_bcells_combined_myeloids_ct10')
 dir.create(outp_plot_dir, recursive = T)
 dir.create(file.path(outp_plot_dir,'hmaps'), recursive = T)
 
 output_ct_frac_deconv_path <- file.path(output_dir, 'cycif_integration', 'b123_ct_frac_deconv_bcells.csv')
 output_ct_frac_deconv_roi_path <- file.path(output_dir, 'cycif_integration', 'b123_ct_frac_deconv_roi_bcells.csv')
 
-output_ct_frac_cycif_roi_path <- file.path(output_dir, 'cycif_integration',  paste0(batch_name, '_ct_frac_cycif_roi_bcells.csv'))
-output_ct_frac_all_roi_path <- file.path(output_dir, 'cycif_integration', paste0(batch_name, '_ct_frac_all_roi_bcells.csv'))
+output_ct_frac_cycif_roi_path <- file.path(output_dir, 'cycif_integration',  paste0(batch_name, '_ct_frac_cycif_roi_bcells_combined_myeloids.csv'))
+output_ct_frac_all_roi_path <- file.path(output_dir, 'cycif_integration', paste0(batch_name, '_ct_frac_all_roi_bcells_combined_myeloids.csv'))
+output_roi_labels_path <- file.path(output_dir, 'cycif_integration', paste0(batch_name, '_roi_labels_bcells_combined_myeloids.csv'))
 
 ##############
-meta_names <- c('dcc_filename', 'Sample', 'Annotation_cell', 'Roi_geomx', 
+meta_names <- c('dcc_filename', 'Sample', 'Annotation_cell', 'Roi_geomx', "roi_cluster_label_gmm", "roi_cluster_label_hclust",
                 'Segment_geomx',  'Segment', 'tCycIF_preselection_initial_label') 
 
-meta_names_per_roi <- c('Sample', 'Segment_geomx', 'Annotation_cell', 'tCycIF_preselection_initial_label')
+meta_names_per_roi <- c('Sample', 'Segment_geomx', 'Annotation_cell', 'tCycIF_preselection_initial_label', 
+                        "roi_cluster_label_gmm", "roi_cluster_label_hclust")
 
 ct_names_all <- c("tumor", "Bcells", "Tcells_CD4", "Tcells_other", "Tcells_CD8", 
                   "Fibroblasts_Mesothelial", "Macrophages_Monocytes", "Mast_cells",
@@ -67,8 +70,8 @@ ct_names_all <- c("tumor", "Bcells", "Tcells_CD4", "Tcells_other", "Tcells_CD8",
 ct_names_stroma <- c("Fibroblasts_Mesothelial", "Endothelial_cells")
 
 # main immune cells from deconv - also counted in cycif phenotyping
-ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "Macrophages_Monocytes", "NKcells", "DCs", "Bcells") # no Bcells in basic phenotyping eg b1b2 
-ct_names_myeloids <- c("Macrophages_Monocytes", "DCs")
+ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Bcells", "Myeloids", "NKcells", "Macrophages_Monocytes") # , , no Bcells in basic phenotyping eg b1b2 
+ct_names_myeloids <- c("Myeloids") # "Macrophages_Monocytes", "DCs"
 ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8")
 
 # additional cells from deconv not counted in phenotyping and should be treated as 'other'
@@ -76,14 +79,10 @@ ct_names_other <- c("Tcells_other", "Mast_cells") # "Bcells" goes here when basi
 
 # load geomx, merge with cleaned metadata ---------------------------------
 # TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
-meta_geomx <- pData(readRDS(geomx_norm_batch_eff_rm_path))
-meta_cleaned <- read_excel(anno_path)
-
-metadt <- left_join(meta_geomx[, c('dcc_filename', 'Slide_Name')], meta_cleaned) # join ensuring order
-metadt$sample_roi <- paste0(metadt$Sample, '_', metadt$Roi_geomx)
-
-rm(meta_geomx)
-rm(meta_cleaned)
+geomx_dcc <- colnames(readRDS(geomx_norm_batch_eff_rm_path))
+metadt <- as.data.frame(fread(metadt_path))
+metadt <- metadt[metadt$dcc_filename %in% geomx_dcc, ]
+rownames(metadt) <- NULL
 
 # load deconv and transform to long format --------------------------------
 
@@ -157,11 +156,10 @@ fwrite(ct_frac_deconv_long_roi, output_ct_frac_deconv_roi_path)
 # calculate cell nr/fractions from phenotyped cells in cycif --------------
 
 hubs_cells_inroi <- fread(hubs_inroi_path)
-hubs_cells_inroi$sample_roi <- gsub(' ', '', hubs_cells_inroi$sample_roi)
 
 # rename cells to match deconvolution
 hubs_cells_inroi$cell_type <-  mapvalues(hubs_cells_inroi[[cycif_main_ct_label]], 
-                                         from = c("Macrophages", "CD4Tcells", "CD8Tcells",
+                                         from = c("Macrophages", "CD4_Tcells", "CD8_Tcells",
                                                   "Tumor", "CD11c", "Undefined", "NK", 
                                                   "Stroma", "CD31+_Endothelial", "HEV+_Endothelial", "Bcells"),
                                          to=c("Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8",
@@ -172,8 +170,12 @@ ct_frac_cycif_roi <- as.data.frame(dcast(hubs_cells_inroi, sample_roi ~ cell_typ
 ct_frac_cycif_roi$total_cell_nr_cycif <- rowSums(ct_frac_cycif_roi[, -1])
 ct_frac_cycif_roi$immune <- rowSums(ct_frac_cycif_roi[, intersect(ct_names_immune, colnames(ct_frac_cycif_roi))])
 ct_frac_cycif_roi$immune_other <- rowSums(ct_frac_cycif_roi[, c(intersect(ct_names_immune, colnames(ct_frac_cycif_roi)), "other")])
-ct_frac_cycif_roi$myeloids <- rowSums(ct_frac_cycif_roi[, ct_names_myeloids])
 ct_frac_cycif_roi$lymphoids <- rowSums(ct_frac_cycif_roi[, ct_names_lymphoids])
+if(length(ct_names_myeloids) > 1){
+  ct_frac_cycif_roi$myeloids <- rowSums(ct_frac_cycif_roi[, ct_names_myeloids])
+} else{
+  ct_frac_cycif_roi$myeloids <- ct_frac_cycif_roi[, ct_names_myeloids]
+}
 
 # transform to long
 ct_frac_cycif_long_roi <- melt(setDT(ct_frac_cycif_roi), id.vars = 'sample_roi', variable.name = "cell_type", value.name = "ct_nr_cycif")
@@ -192,7 +194,7 @@ fwrite(ct_frac_cycif_long_roi, output_ct_frac_cycif_roi_path)
 # count fractions of cells with given hub label ---------------------------
 
 hubs_inroi_labs <- dplyr::select(hubs_cells_inroi, sample_roi, !!hubs_labels_list) %>%
-  dplyr::mutate(across(hubs_labels_list, clean_labs)) %>%
+  dplyr::mutate(across(c('component_label'), clean_labs)) %>%
   #dplyr::mutate(across(c(network_hub_type), clean_labs)) %>% # if 'cluster_N' as names - should't be claaned
   dplyr::mutate(across(hubs_labels_list, ~replace(., . ==  '' , 'notinhub')))
 
@@ -223,13 +225,13 @@ hubs_inroi_labs_frequent <- hubs_inroi_labs_immunefrac %>%
 # merge network labels in roi
 hubs_inroi_labs_frequent <- hubs_inroi_labs_frequent %>%
   group_by(sample_roi) %>%
-  mutate(network_hub_type = paste0(unique(na.omit(network_hub_type)), collapse = "_")) %>%
+  mutate(component_label = paste0(unique(na.omit(component_label)), collapse = "_")) %>%
   distinct() %>%
-  mutate(across(hubs_labels_list[!hubs_labels_list == 'network_hub_type'], ~paste0(unique(na.omit(.)), collapse = "|"))) %>%
+  mutate(across(hubs_labels_list[!hubs_labels_list == 'component_label'], ~paste0(unique(na.omit(.)), collapse = "|"))) %>%
   distinct() 
 
 # relabel after merging to ensure ordering
-hubs_inroi_labs_frequent$network_hub_type <- clean_labs(hubs_inroi_labs_frequent$network_hub_type)
+hubs_inroi_labs_frequent$component_label <- clean_labs(hubs_inroi_labs_frequent$component_label)
 
 colnames(hubs_inroi_labs_frequent) <- c('sample_roi', paste0(hubs_labels_list, '_freq', as.character(min_label_frac)))
 
@@ -244,19 +246,19 @@ colnames(hubs_inroi_labs_frequent) <- c('sample_roi', paste0(hubs_labels_list, '
 
 # remove cells without labels
 hubs_inroi <- dplyr::select(hubs_cells_inroi, sample_roi, !!hubs_labels_list) %>%
-  dplyr::mutate(across(hubs_labels_list[!hubs_labels_list == 'network_hub_type'], clean_labs)) %>%
+  dplyr::mutate(across(c('component_label'), clean_labs)) %>%
   dplyr::filter(if_any(hubs_labels_list, ~!. == '')) %>%
   distinct()
 
 # group by rois and merge labels
 hubs_inroi <- hubs_inroi %>%
   group_by(sample_roi) %>%
-  mutate(network_hub_type = paste0(unique(na.omit(network_hub_type)), collapse = "_")) %>%
+  mutate(component_label = paste0(unique(na.omit(component_label)), collapse = "_")) %>%
   distinct() %>%
-  mutate(across(hubs_labels_list[!hubs_labels_list == 'network_hub_type'], ~paste0(unique(na.omit(.)), collapse = "|"))) %>%
+  mutate(across(hubs_labels_list[!hubs_labels_list == 'component_label'], ~paste0(unique(na.omit(.)), collapse = "|"))) %>%
   distinct() 
 
-hubs_inroi$network_hub_type <- clean_labs(hubs_inroi$network_hub_type) # relabel after merging to ensure ordering
+hubs_inroi$component_label <- clean_labs(hubs_inroi$component_label) # relabel after merging to ensure ordering
 
 # merge all information together ------------------------------------------
 
@@ -303,7 +305,7 @@ ct_frac_all$tCycIF_preselection_initial_label_cleaned <- ifelse(ct_frac_all$tCyc
                                                                 ct_frac_all$tCycIF_preselection_initial_label_cleaned)
 
 label_vars <- c("Annotation_cell", hubs_labels_list, paste0(hubs_labels_list, '_freq', as.character(min_label_frac)),
-                "tCycIF_preselection_initial_label_cleaned")
+                "tCycIF_preselection_initial_label_cleaned", "roi_cluster_label_gmm", "roi_cluster_label_hclust")
 
 ##########################################################
 # scatterplot with geomx vs cycif total cell count
@@ -431,9 +433,10 @@ labs_all <- ct_frac_all %>%
 labs_all[labs_all==""]<- "nolabel"
 labs_all[is.na(labs_all)]<- "nolabel"
 
+fwrite(labs_all, output_roi_labels_path)
 
-lab_name1 <- 'community_cluster_label_freq0.05'
-lab_name2 <- 'network_hub_type_freq0.05'
+lab_name1 <- 'roi_cluster_label_hclust'
+lab_name2 <- 'component_label'
 
 # compute cross-frequencies of different labels
 labs_cross <- table(labs_all[[lab_name1]], labs_all[[lab_name2]])

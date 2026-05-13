@@ -505,6 +505,7 @@ clean_labs <- function(x, nk=F, bcells=T){
   y <- ifelse(grepl('CD8', x), paste(y, 'CD8', sep = '_'), y)
   y <- ifelse(grepl('CD11', x), paste(y, 'CD11', sep = '_'), y)
   y <- ifelse(grepl('Iba1|Macrophages', x), paste(y, 'Iba1', sep = '_'), y)
+  y <- ifelse(grepl('Myeloids', x), paste(y, 'Iba1CD11', sep = '_'), y)
   if(bcells){  y <- ifelse(grepl('Bcells|CD20', x), paste(y, 'CD20', sep = '_'), y)}
   if(nk){y <- ifelse(grepl('NK|hub', x), paste(y, 'NK', sep = '_'), y)}
   y <- gsub('^_', '', y)
