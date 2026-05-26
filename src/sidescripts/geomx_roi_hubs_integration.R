@@ -9,6 +9,7 @@ library(readxl)
 library(ggpmisc)
 library(circlize)
 library(tidyr)
+library(gtools)
 
 # TODO ct_frac_cycif_roi 129 ROI, but 126 in the final ct_frac_all - probably without hub labs - to check
 # TODO ensure # "S130_iOme_5" "S130_iOme_6" "S197_iOme_1" - everywhere in metadata - probably removed during QC
@@ -19,41 +20,61 @@ library(tidyr)
 
 # cell fraction from deconv below that lvl will be changed to 0 
 # max nr of cells = 300 so 0.005 cell fraction is 1 cell/200 cells 1,5 cell/300 cells
-min_frac <- 0.01
-min_label_frac <- 0.1
-cycif_main_ct_label <- 'consensus_label_clean_all_ct'
+min_frac <- 0.01 
+min_label_frac <- 0.05 # min fraction of immune cells with given component/community label to give a label to whole ROI
+# TODO 'consensus_label_clean_all_ct' when taking bcells!!
+cycif_main_ct_label <- 'consensus_label_clean' 
 hubs_labels_list <- c('component_label', 'community_cluster_label') # before with 'interaction_hub_type'
 
-batch_name <- 'batch3tls'
+# main immune cells from deconv - also counted in cycif phenotyping
+#TODO decide if B_cells should be counted as immune or as other
+ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes") # , , no Bcells in basic phenotyping eg b1b2 
+ct_names_myeloids <- c("Macrophages_Monocytes", "DCs")
+ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8")
+# additional cells from deconv not counted in phenotyping and should be treated as 'other'
+ct_names_other <- c("Tcells_other", "Mast_cells", "Bcells", "NKcells") # "Bcells" goes here when basic phenotyping b1b2 and 'consensus_label_clean'
+
+###########
 proj_dir <<- '~/Documents/phd/st'
-data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+
 metadt_path <- file.path(output_dir, 'metadata_full_SENSITIVE.csv')
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_updated_ct_fraction.csv')
 sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 'sd_res_mid_lvl_ct_updated_geomxfiltpc_ct_fraction.csv')
 
-# all cells within ROIs with hubs annotations computed with geomx_cycif_integration.R
-#hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch2_hubs_cells_inroi_dt15171517_ct15_dt300_res0015_.csv")
-#hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_dt1517151715_ct15_dt300.csv"))
-hubs_inroi_path <- file.path(output_dir, "cycif_integration", paste0(batch_name, "_hubs_cells_inroi_bcells_combined_myeloids_15151517_ct10_dt300.csv"))
+# all cells within ROIs with components/communities annotations computed with geomx_cycif_integration.R
+# combined myeloids, no bcells,  min 2 components, forced mixing
+hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv")
+hubs_outname <- "batch3tls_combined_myeloids_min2comp_mixed"
+ct_frac_deconv_outname <- "b123_ct_frac_deconv"
+
+# # combined myeloids, no bcells,  min 2 components, no mixing
+# hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_nomix_dt171715_ct10_dt300.csv")
+# hubs_outname <- "batch3tls_combined_myeloids_min2comp_nomix"
+# ct_frac_deconv_outname <- "b123_ct_frac_deconv"
+
+# bcells + combined myeloids, min 3 components, old distances from centroids
+# hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_bcells_combined_myeloids_15151517_ct10_dt300.csv")
+# hubs_outname <- "batch3tls_bcells_combined_myeloids_15151517_ct10"
+# ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells" # bcells are counted separately not as 'other_immune'
 
 ##############
 # output files
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-outp_plot_dir <- file.path(output_dir, 'cycif_integration', 'ct_frac_comparison_b3tls_bcells_combined_myeloids_ct10')
+outp_plot_dir <- file.path(output_dir, 'cycif_integration', paste0('ct_frac_comparison_', hubs_outname))
 dir.create(outp_plot_dir, recursive = T)
 dir.create(file.path(outp_plot_dir,'hmaps'), recursive = T)
+dir.create(file.path(outp_plot_dir,'ct_distribution'), recursive = T)
 
-output_ct_frac_deconv_path <- file.path(output_dir, 'cycif_integration', 'b123_ct_frac_deconv_bcells.csv')
-output_ct_frac_deconv_roi_path <- file.path(output_dir, 'cycif_integration', 'b123_ct_frac_deconv_roi_bcells.csv')
+output_ct_frac_deconv_path <- file.path(outp_plot_dir, paste0(ct_frac_deconv_outname, '.csv'))
+output_ct_frac_deconv_roi_path <- file.path(outp_plot_dir, paste0(ct_frac_deconv_outname, '_roi.csv'))
 
-output_ct_frac_cycif_roi_path <- file.path(output_dir, 'cycif_integration',  paste0(batch_name, '_ct_frac_cycif_roi_bcells_combined_myeloids.csv'))
-output_ct_frac_all_roi_path <- file.path(output_dir, 'cycif_integration', paste0(batch_name, '_ct_frac_all_roi_bcells_combined_myeloids.csv'))
-output_roi_labels_path <- file.path(output_dir, 'cycif_integration', paste0(batch_name, '_roi_labels_bcells_combined_myeloids.csv'))
+output_ct_frac_cycif_roi_path <- file.path(outp_plot_dir,  paste0('ct_frac_cycif_roi_', hubs_outname, '.csv'))
+output_ct_frac_all_roi_path <- file.path(outp_plot_dir, paste0('ct_frac_all_roi_', hubs_outname, '.csv'))
+output_roi_labels_path <- file.path(outp_plot_dir, paste0('roi_labels_', hubs_outname, '.csv'))
 
 ##############
 meta_names <- c('dcc_filename', 'Sample', 'Annotation_cell', 'Roi_geomx', "roi_cluster_label_gmm", "roi_cluster_label_hclust",
@@ -68,14 +89,6 @@ ct_names_all <- c("tumor", "Bcells", "Tcells_CD4", "Tcells_other", "Tcells_CD8",
 
 # ct from deconv counted as stroma in cycif
 ct_names_stroma <- c("Fibroblasts_Mesothelial", "Endothelial_cells")
-
-# main immune cells from deconv - also counted in cycif phenotyping
-ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Bcells", "Myeloids", "NKcells", "Macrophages_Monocytes") # , , no Bcells in basic phenotyping eg b1b2 
-ct_names_myeloids <- c("Myeloids") # "Macrophages_Monocytes", "DCs"
-ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8")
-
-# additional cells from deconv not counted in phenotyping and should be treated as 'other'
-ct_names_other <- c("Tcells_other", "Mast_cells") # "Bcells" goes here when basic phenotyping b1b2
 
 # load geomx, merge with cleaned metadata ---------------------------------
 # TODO run once again in 1811 with already cleaned metadata and just load meta from geomx
@@ -159,10 +172,10 @@ hubs_cells_inroi <- fread(hubs_inroi_path)
 
 # rename cells to match deconvolution
 hubs_cells_inroi$cell_type <-  mapvalues(hubs_cells_inroi[[cycif_main_ct_label]], 
-                                         from = c("Macrophages", "CD4_Tcells", "CD8_Tcells",
+                                         from = c("Macrophages", "Myeloids", "CD4_Tcells", "CD8_Tcells",
                                                   "Tumor", "CD11c", "Undefined", "NK", 
                                                   "Stroma", "CD31+_Endothelial", "HEV+_Endothelial", "Bcells"),
-                                         to=c("Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8",
+                                         to=c("Macrophages_Monocytes", "Macrophages_Monocytes", "Tcells_CD4", "Tcells_CD8",
                                               "tumor", "DCs", "other", "NKcells", "stroma", "stroma", "stroma", "Bcells"))
 
 # count nr of cells per ROI and AOI
@@ -170,11 +183,11 @@ ct_frac_cycif_roi <- as.data.frame(dcast(hubs_cells_inroi, sample_roi ~ cell_typ
 ct_frac_cycif_roi$total_cell_nr_cycif <- rowSums(ct_frac_cycif_roi[, -1])
 ct_frac_cycif_roi$immune <- rowSums(ct_frac_cycif_roi[, intersect(ct_names_immune, colnames(ct_frac_cycif_roi))])
 ct_frac_cycif_roi$immune_other <- rowSums(ct_frac_cycif_roi[, c(intersect(ct_names_immune, colnames(ct_frac_cycif_roi)), "other")])
-ct_frac_cycif_roi$lymphoids <- rowSums(ct_frac_cycif_roi[, ct_names_lymphoids])
-if(length(ct_names_myeloids) > 1){
-  ct_frac_cycif_roi$myeloids <- rowSums(ct_frac_cycif_roi[, ct_names_myeloids])
+ct_frac_cycif_roi$lymphoids <- rowSums(ct_frac_cycif_roi[, intersect(ct_names_lymphoids, colnames(ct_frac_cycif_roi))])
+if(length(intersect(ct_names_myeloids, colnames(ct_frac_cycif_roi))) > 1){
+  ct_frac_cycif_roi$myeloids <- rowSums(ct_frac_cycif_roi[, intersect(ct_names_myeloids, colnames(ct_frac_cycif_roi))])
 } else{
-  ct_frac_cycif_roi$myeloids <- ct_frac_cycif_roi[, ct_names_myeloids]
+  ct_frac_cycif_roi$myeloids <- ct_frac_cycif_roi[, intersect(ct_names_myeloids, colnames(ct_frac_cycif_roi))]
 }
 
 # transform to long
@@ -275,31 +288,6 @@ fwrite(ct_frac_all, output_ct_frac_all_roi_path)
 
 # compare cell fractions --------------------------------------------------
 
-# TODO just to compare 2 versions of community labels
-# ct_frac_all300 <- fread(file.path(output_dir, 'cycif_integration', paste0(batch_name, '_ct_frac_all_roi_dt300.csv')))
-# ct_frac_all500 <- fread(file.path(output_dir, 'cycif_integration', paste0(batch_name, '_ct_frac_all_roi_dt500.csv')))
-# 
-# ct_frac_all300 <- dplyr::rename(ct_frac_all300, community_cluster_300 = community_cluster_label, 
-#                          community_cluster_freq0.05_300 = community_cluster_label_freq0.05)
-# ct_frac_all500 <- dplyr::rename(ct_frac_all500, community_cluster_500 = community_cluster_label, 
-#                                 community_cluster_freq0.05_500 = community_cluster_label_freq0.05)
-# 
-# ct_frac_all <- left_join(ct_frac_all300, 
-#                          ct_frac_all500[, c('sample_roi','cell_type', 'community_cluster_500', 'community_cluster_freq0.05_500')],
-#                          by = c('sample_roi', 'cell_type'))
-# 
-# ct_frac_all <- left_join(ct_frac_all, unique(metadt[, c('sample_roi', 'tCycIF_preselection_initial_label')])) %>%
-#   mutate(tCycIF_preselection_initial_label = clean_labs(tCycIF_preselection_initial_label))
-# 
-# #label_names <- c('network_hub_type', 'community_cluster')
-# 
-# label_vars <- c("Annotation_cell", "interaction_hub_type", "network_hub_type",
-#                 "community_cluster_300", paste0("interaction_hub_type_freq", as.character(min_label_frac)),
-#                 paste0("network_hub_type_freq", as.character(min_label_frac)),
-#                 paste0("community_cluster_freq", as.character(min_label_frac), "_300"), "community_cluster_500",
-#                 paste0("community_cluster_freq", as.character(min_label_frac), "_500"),
-#                 'tCycIF_preselection_initial_label')
-
 ct_frac_all$tCycIF_preselection_initial_label_cleaned <- clean_labs(ct_frac_all$tCycIF_preselection_initial_label)
 ct_frac_all$tCycIF_preselection_initial_label_cleaned <- ifelse(ct_frac_all$tCycIF_preselection_initial_label_cleaned == '', 'otherlabel',
                                                                 ct_frac_all$tCycIF_preselection_initial_label_cleaned)
@@ -318,7 +306,7 @@ cell_count_scatter <- ggplot(data = cell_count_roi, aes(x = total_cell_nr_cycif,
   geom_smooth(method='lm', formula= y~x) +
   stat_correlation(method = 'pearson')
 
-ggsave(file.path(outp_plot_dir, paste0('total_cellnr_cycif_vs_geomx.png')),
+ggsave(file.path(outp_plot_dir,'ct_distribution', paste0('total_cellnr_cycif_vs_geomx.png')),
        width = 2000, height = 2000, unit = 'px')
 
 
@@ -345,7 +333,7 @@ for(value_comb in c('bp_sd', 'bp_cycif', 'sd_cycif')){
         labs(title = paste(ct_name, comp_type, vals[1], 'vs', vals[2]),
              x = paste0(comp_type, '_', vals[1]), y = paste0(comp_type, '_', vals[2]), color = color_var)
 
-      ggsave(file.path(outp_plot_dir, paste0('scatter_', ct_name, '_', vals[1], '_', vals[2], '_', comp_type, '_', color_var, '.png')),
+      ggsave(file.path(outp_plot_dir, 'ct_distribution', paste0('scatter_', ct_name, '_', vals[1], '_', vals[2], '_', comp_type, '_', color_var, '.png')),
              width = 2000, height = 2000, unit = 'px')
     }
   }
@@ -358,7 +346,7 @@ for(value_comb in c('bp_sd', 'bp_cycif', 'sd_cycif')){
     stat_correlation(method = 'pearson', output.type = 'text') +
     labs(title = paste(comp_type, vals[1], 'vs', vals[2]), x = paste0(comp_type, '_', vals[1]), y = paste0(comp_type, '_', vals[2]))
   
-  ggsave(file.path(outp_plot_dir, paste0('scatter_all_', vals[1], '_', vals[2], '_', comp_type, '.png')),
+  ggsave(file.path(outp_plot_dir, 'ct_distribution', paste0('scatter_all_', vals[1], '_', vals[2], '_', comp_type, '.png')),
          width = 2000, height = 2000, unit = 'px')
 }
 
@@ -387,7 +375,7 @@ for(comp_type in c('ct_frac', 'ct_nr')){
         scale_x_discrete(guide = guide_axis(angle = 45))
       
       
-      ggsave(file.path(outp_plot_dir, paste0('boxpl_', ct_name, '_', label_var, '_', comp_type, '.png')),
+      ggsave(file.path(outp_plot_dir,'ct_distribution', paste0('boxpl_', ct_name, '_', label_var, '_', comp_type, '.png')),
              width = 1500, height = 2000, unit = 'px')
     }
   }
@@ -406,7 +394,7 @@ for(method_name in unique(ct_frac_all_method_long$method_type)){
       scale_x_discrete(guide = guide_axis(angle = 90))
     
     
-    ggsave(file.path(outp_plot_dir, paste0('label_boxpl_allct_', label_var, '_', method_name, '.png')),
+    ggsave(file.path(outp_plot_dir,'ct_distribution', paste0('label_boxpl_allct_', label_var, '_', method_name, '.png')),
            width = 1500, height = 3000, unit = 'px')
     
     # filtered to immune
@@ -418,7 +406,7 @@ for(method_name in unique(ct_frac_all_method_long$method_type)){
       scale_x_discrete(guide = guide_axis(angle = 90))
     
     
-    ggsave(file.path(outp_plot_dir, paste0('label_boxpl_immune_', label_var, '_', method_name, '.png')),
+    ggsave(file.path(outp_plot_dir,'ct_distribution', paste0('label_boxpl_immune_', label_var, '_', method_name, '.png')),
            width = 1500, height = 3000, unit = 'px')
   }
 }
@@ -435,26 +423,78 @@ labs_all[is.na(labs_all)]<- "nolabel"
 
 fwrite(labs_all, output_roi_labels_path)
 
-lab_name1 <- 'roi_cluster_label_hclust'
-lab_name2 <- 'component_label'
+####################################################
+####################################################
+# give preliminary labels to 20 clusters with bcell and myeloids together ct 10
+# clust_names <- paste0('cluster_', seq(0, 19))
+# clust_manualnames <- c('Macro', 'Macro_loCD4_loCD8', 'Macro_loCD8_loBcells', 'CD4', 'loMacro_Bcells',
+#                        'Macro_CD8', 'Macro_loMixed', 'Macro_loCD8', 'loMacro_CD4', 'CD8', 'Macro_loBcells',
+#                        'loCD4_CD8', 'Macro_loCD8', 'Bcells_loCD8', 'Macro_CD8', 'loMacro_loCD4_loBcells',
+#                        'loMacro_CD8_loBcells', 'Macro_loCD4', 'Bcells', 'loMacro_Bcells')
 
-# compute cross-frequencies of different labels
-labs_cross <- table(labs_all[[lab_name1]], labs_all[[lab_name2]])
-labs_cross <- matrix(labs_cross, ncol=ncol(labs_cross), dimnames=dimnames(labs_cross))
-labs_cross <- labs_cross[, order(colnames(labs_cross))]
-labs_cross <- labs_cross[order(rownames(labs_cross)), ]
+# give preliminary labels to myeloids together, nobcells, min2 comm mixed
+# batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv
+clust_names <- paste0('cluster_', seq(0, 16))
+clust_manualnames <- c('loCD8_Macro', 'CD8_loMacro', 'CD4_Macro', 'CD4_CD8', 'CD8_Macro', 'loCD4_Macro',
+                       'loCD4_loCD8_loMacro', 'loCD4_loCD8_Macro', 'loCD8_Macro', 'CD4_loMacro',
+                       'loCD4_loCD8_Macro', 'loCD4_CD8', 'loCD4_CD8_loMacro', 'loCD4_Macro',
+                       'loCD4_loCD8_loMacro', 'loCD8_Macro', 'CD4_loCD8')
+
+# give preliminary labels to myeloids together, nobcells, min2 comm no mixing
+# clust_names <- paste0('cluster_', seq(0, 16))
+# clust_manualnames <- c('loCD8_Macro', 
+#                        'loCD4_CD8_loMacro', 'CD4', 'Macro', 'CD4_Macro', 'CD8_Macro',
+#                        'CD8_Macro', 'CD8', 'loCD4_loCD8_Macro', 'CD8_Macro', 'CD4_CD8', 
+#                        'CD4_CD8_Macro', 'CD4_CD8_Macro', 'CD4_CD8_Macro', 'CD4_Macro', 'CD8_Macro',
+#                        'CD4_CD8')
+# 
 
 
-# do heatmap
-col_fun = colorRamp2(c(0, max(labs_cross)), c("white", "red"))
+##################################################
+###################################################
 
-ht <- Heatmap(labs_cross, col = col_fun, show_heatmap_legend = FALSE,
-              cluster_rows = FALSE, cluster_columns = FALSE, row_title = lab_name1, column_title = lab_name2)
 
-at = seq(0, max(labs_cross), by = 1)
-lgd = Legend(at = at, title = "nr_of_matched_labels", legend_gp = gpar(fill = col_fun(at)))
+labs_all$community_cluster_label_manualnames <- labs_all$community_cluster_label
+labs_all$community_cluster_label_manualnames_freq0.05 <- labs_all$community_cluster_label_freq0.05
 
-png(filename = file.path(outp_plot_dir, 'hmaps', paste0('heatmap_labels_', lab_name1, '_', lab_name2, '.png')), width=1000, height=750)
-draw(ht, heatmap_legend_list = lgd)
-dev.off()
+for(i in 1:length(clust_names)){
+  labs_all$community_cluster_label_manualnames <- gsub(paste0(clust_names[i], '$'), clust_manualnames[i], labs_all$community_cluster_label_manualnames)
+  labs_all$community_cluster_label_manualnames <- gsub(paste0(clust_names[i], '\\|'), paste0(clust_manualnames[i], '|'), labs_all$community_cluster_label_manualnames)
+  
+  labs_all$community_cluster_label_manualnames_freq0.05 <- gsub(paste0(clust_names[i], '$'), clust_manualnames[i], labs_all$community_cluster_label_manualnames_freq0.05)
+  labs_all$community_cluster_label_manualnames_freq0.05 <- gsub(paste0(clust_names[i], '\\|'), paste0(clust_manualnames[i], '|'), labs_all$community_cluster_label_manualnames_freq0.05)
+  }
+
+
+####################################################
+labs_to_heat <- c("component_label", "community_cluster_label_manualnames",
+                  "component_label_freq0.05", "community_cluster_label_manualnames_freq0.05", 
+                  "roi_cluster_label_gmm", "roi_cluster_label_hclust")
+
+labs_comb <- combinations(length(labs_to_heat), 2, labs_to_heat)
+
+apply(labs_comb, 1, function(x){
+  lab_name1 <- x[1]
+  lab_name2 <- x[2]
+  
+  # compute cross-frequencies of different labels
+  labs_cross <- table(labs_all[[lab_name1]], labs_all[[lab_name2]])
+  labs_cross <- matrix(labs_cross, ncol=ncol(labs_cross), dimnames=dimnames(labs_cross))
+  labs_cross <- labs_cross[, order(colnames(labs_cross))]
+  labs_cross <- labs_cross[order(rownames(labs_cross)), ]
+  
+  
+  # do heatmap
+  col_fun = colorRamp2(c(0, max(labs_cross)), c("white", "red"))
+  
+  ht <- Heatmap(labs_cross, col = col_fun, show_heatmap_legend = FALSE,
+                cluster_rows = FALSE, cluster_columns = FALSE, row_title = lab_name1, column_title = lab_name2)
+  
+  at = seq(0, max(labs_cross), by = 1)
+  lgd = Legend(at = at, title = "nr_of_matched_labels", legend_gp = gpar(fill = col_fun(at)))
+  
+  png(filename = file.path(outp_plot_dir, 'hmaps', paste0('heatmap_labels_', lab_name1, '_', lab_name2, '.png')), width=1000, height=750)
+  draw(ht, heatmap_legend_list = lgd)
+  dev.off()
+})
 
