@@ -1,4 +1,5 @@
-# integrates cycif cell counts + hubs labels by ROI coordinates
+# integrates tCycIF phenotyped cells + components and communties labels
+# select cells within corresponding GeoMx ROI 
 
 library(data.table)
 library(plyr)
@@ -13,46 +14,43 @@ library(tools)
 library(tidyr)
 
 # define paths ------------------------------------------------------------
-# from master script
-proj_dir <<- '~/Documents/phd/st'
-data_dir <<- '~/Documents/phd/st/data/geomx/batch123/' # batch1 2 and 3
-anno_path <<- file.path(data_dir, 'metadata', 'dcc_metadata_batch123_no_tls_cleaned.xlsx') #batch1 and 2 and 3
-metadt_path <- file.path(output_dir, 'metadata_full_SENSITIVE.csv')
-output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
-eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT"
-geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
-
-
-# cell count and hubs for cycif images pathways 
-#cycif_cell_count_dir <- file.path(eyemt_pdrive_dir, "Data/cycif/batch2_adjacent_slides/phenotyped_cells/tribus/stardist/final_labels_after_NK_gating")
-#hubs_dir <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_interaction_hubs")
-#hubs_comm_dir <- file.path(eyemt_pdrive_dir, "/Data_analysis/spatial_analysis/SPACEstat/batch2_communities")
-hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPACEstat/batch3_communities")
-
-# hubs files
-dt_hubparam <- '15151517' # version of distances metrics used for hubs 
-ct_hubparam <- 'ct10'
-dt_comm_hubparam <- 'dt300'
-#hubs_cells_path <- file.path(hubs_dir, paste0("eyemt_batch2_cells_", dt_hubparam, "_", ct_hubparam,  ".csv")) # hubs per cell
-hubs_cells_path <- file.path(hubs_comm_dir, paste0("eyemt_batch3_cells_combined_myeloids_", dt_hubparam, "_", ct_hubparam, "_", dt_comm_hubparam,  ".csv")) # hubs per cell
-#hubs_inter_path <- file.path(hubs_dir, paste0("eyemt_batch2_interactions_", dt_hubparam, "_", ct_hubparam,  ".csv")) # interaction hubs
-#hubs_comm_path <- file.path(hubs_comm_dir, paste0("eyemt_batch2_communities_with_annotations_", ct_hubparam, "_", dt_comm_hubparam,  "_", res_hubparam, "_leiden_cmp.csv"))
-hubs_comm_path <- file.path(hubs_comm_dir, paste0("eyemt_batch3_components_and_communities_combined_myeloids_", dt_hubparam, "_", ct_hubparam, "_",  dt_comm_hubparam,  ".csv"))
 
 um_to_pix_ratio <- 0.65 #0.325 for b2, 0.65 for b3TLS
 
+# from master script
+proj_dir <<- '~/Documents/phd/st'
+output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
+eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT"
+
+metadt_path <- file.path(output_dir, 'metadata_full_SENSITIVE.csv')
+geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
+
+# phenotyped cells + components + communities
+hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPACEstat/batch3_communities")
+
+#############################
+# hubs files
+# combined myeloids, no bcells,  min 2 components, forced mixing
+hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cells_combined_myeloids_dt171715_ct10_dt300.csv")
+hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_combined_myeloids_dt171715_ct10_dt300.csv")
+hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv"
+
+# # combined myeloids, no bcells,  min 2 components, no mixing
+# hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cells_df_nomix_dt171715_ct10_dt300.csv")
+# hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_nomix_dt171715_ct10_dt300.csv")
+# hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_nomix_dt171715_ct10_dt300.csv"
+
+# bcells + combined myeloids, min 3 components, old distances from centroids
+# hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cells_combined_myeloids_15151517_ct10_dt300.csv")
+# hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_combined_myeloids_15151517_ct10_dt300.csv") 
+# hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_bcells_combined_myeloids_15151517_ct10_dt300.csv"
+
+######################################
+
 # output dirs and paths 
 dir.create(file.path(output_dir, "cycif_integration"))
-#out_path_cell_count <- file.path(output_dir, "cycif_integration", "batch2_cycif_cell_count_per_roi_stardist.csv")
-# out_path_hubs_cells <- file.path(output_dir, "cycif_integration", 
-#                                  paste("batch2_hubs_cells", dt_hubparam, ct_hubparam, dt_comm_hubparam, res_hubparam, ".csv", sep = '_'))
-# out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", 
-#                                        paste("batch2_hubs_cells_inroi", dt_hubparam, ct_hubparam, dt_comm_hubparam, res_hubparam, ".csv", sep = '_'))
-# out_path_hubs_cells <- file.path(output_dir, "cycif_integration", 
-#                                  paste("batch3tls_hubs_cells_bcells_", dt_hubparam, dt_comm_hubparam, ".csv", sep = '_'))
-out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", 
-                                       paste0("batch3tls_hubs_cells_inroi_bcells_combined_myeloids_", dt_hubparam, '_', ct_hubparam,
-                                             '_', dt_comm_hubparam, ".csv"))
+
+out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", hubs_cellsinroi_outname)
 
 ####################################
 # quickfix
@@ -81,33 +79,30 @@ length(unique(metadt$sample_roi))
 
 
 # merge all hubs labels per cell ------------------------------------------
-hubs_cells <- fread(hubs_cells_path) %>%
-  dplyr::rename(component_id = "component id")
-#colnames(hubs_cells)[colnames(hubs_cells) == "component id"] <- "component_id"
-hubs_comm <- fread(hubs_comm_path) %>%
-  dplyr::rename(component_label = 'label', component_size = "component size")
+hubs_cells <- fread(hubs_cells_path)
+hubs_comm <- fread(hubs_comm_path)
 
-double_hubs <- hubs_cells[grepl(',', hubs_cells$component_id), ] # double components to keep just in case
-
+# for the old version, when 1 cell might be assigned to > 1 components
+# only 1st component of double component is kept
 # in b2 for 294 cells  >1 hub - keep one
 # in b3tls for 121 cells  >1 hub - keep one
 # in b3tls with bcells for 366 cells >1 hub - keep one
 # in b3tls with bcells and ct10 for 856 cells > keep one
-# TODO think about this strategy
-hubs_cells$component_id <- gsub(",.*", "", hubs_cells$component_id)
+# double_hubs <- hubs_cells[grepl(',', hubs_cells$component_id), ] # double components to keep just in case
+# hubs_cells$component_id <- gsub(",.*", "", hubs_cells$component_id)
+
 
 # TODO it might be changed back to pix in the original files
 hubs_cells$X_centroid_px <- hubs_cells$X_centroid / um_to_pix_ratio
 hubs_cells$Y_centroid_px <- hubs_cells$Y_centroid / um_to_pix_ratio
 
 if(!('cluster_label' %in% colnames(hubs_comm))){
-  hubs_comm$community_cluster_label <- paste0('cluster_', hubs_comm$cluster)
+  hubs_comm$community_cluster_label <- paste0('cluster_', hubs_comm$community_cluster)
 }
  
 # join with network hubs and communities
-hubs_cells <- left_join(hubs_cells, hubs_comm[, c('component_id', 'component_label', 'component_size', 'residency', 'community', 'cluster', 'community_cluster_label')], 
+hubs_cells <- left_join(hubs_cells, hubs_comm[, c('component_id', 'component_label', 'component_size', 'residency', 'community_id', 'community_cluster', 'community_cluster_label')], 
                         by = c('component_id'))
-hubs_cells <-  dplyr::rename(hubs_cells, community_id = community, community_cluster = cluster)
 
 #TODO change imageid to Sample - already handled during phenotyping
 hubs_cells$Sample <- mapvalues(hubs_cells$imageid, 
@@ -119,7 +114,7 @@ hubs_cells <- hubs_cells[hubs_cells$Sample %in% b3tls_samplename, ]
 # fwrite(hubs_cells, out_path_hubs_cells)
 
 # filter to cells within ROIs ---------------------------------------------
- 
+
 hubs_cells_inroi <- lapply(unique(hubs_cells$Sample), function(sample_name){
   print(sample_name)
   
@@ -129,6 +124,8 @@ hubs_cells_inroi <- lapply(unique(hubs_cells$Sample), function(sample_name){
   roi_coords_sample <- metadt[metadt$Sample == sample_name, c("sample_roi", "Roi_geomx", 'Annotation_cell',"roi_cluster_label_gmm", "roi_cluster_label_hclust",
                                                               "roi_c1_X_cycif", "roi_c1_Y_cycif", "roi_c2_X_cycif", "roi_c2_Y_cycif",
                                                               "roi_c3_X_cycif", "roi_c3_Y_cycif", "roi_c4_X_cycif", "roi_c4_Y_cycif")]
+  
+  roi_coords_sample <- distinct(roi_coords_sample)
   
   cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
     
@@ -140,6 +137,7 @@ hubs_cells_inroi <- lapply(unique(hubs_cells$Sample), function(sample_name){
                                     as.numeric(Y_centroid_px) >= min(as.numeric(row[['roi_c4_Y_cycif']]), as.numeric(row[['roi_c3_Y_cycif']])) &
                                     as.numeric(Y_centroid_px) <= max(as.numeric(row[['roi_c1_Y_cycif']]), as.numeric(row[['roi_c2_Y_cycif']])))
 
+    
     cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
     return(cells_in_roi)
   })
