@@ -22,17 +22,17 @@ library(gtools)
 # max nr of cells = 300 so 0.005 cell fraction is 1 cell/200 cells 1,5 cell/300 cells
 min_frac <- 0.01 
 min_label_frac <- 0.05 # min fraction of immune cells with given component/community label to give a label to whole ROI
-# TODO 'consensus_label_clean_all_ct' when taking bcells!!
-cycif_main_ct_label <- 'consensus_label_clean' 
+# TODO 'consensus_label_clean_all_ct' when taking bcells!!, or final_label in new Elias files
+cycif_main_ct_label <- 'final_label' 
 hubs_labels_list <- c('component_label', 'community_cluster_label') # before with 'interaction_hub_type'
 
 # main immune cells from deconv - also counted in cycif phenotyping
 #TODO decide if B_cells should be counted as immune or as other
-ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes") # , , no Bcells in basic phenotyping eg b1b2 
+ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes", "Bcells") # , , no Bcells in basic phenotyping eg b1b2 
 ct_names_myeloids <- c("Macrophages_Monocytes", "DCs")
 ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8")
 # additional cells from deconv not counted in phenotyping and should be treated as 'other'
-ct_names_other <- c("Tcells_other", "Mast_cells", "Bcells", "NKcells") # "Bcells" goes here when basic phenotyping b1b2 and 'consensus_label_clean'
+ct_names_other <- c("Tcells_other", "Mast_cells", "NKcells") # "Bcells" goes here when basic phenotyping b1b2 and 'consensus_label_clean'
 
 ###########
 proj_dir <<- '~/Documents/phd/st'
@@ -44,23 +44,58 @@ geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_updated_ct_fraction.csv')
 sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 'sd_res_mid_lvl_ct_updated_geomxfiltpc_ct_fraction.csv')
 
+######################
 # all cells within ROIs with components/communities annotations computed with geomx_cycif_integration.R
-# combined myeloids, no bcells,  min 2 components, forced mixing
-hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv")
-hubs_outname <- "batch3tls_combined_myeloids_min2comp_mixed"
-ct_frac_deconv_outname <- "b123_ct_frac_deconv"
 
+# # combined myeloids, no bcells,  min 20 cells components, no mixing
+hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300.csv")
+hubs_outname <- "batch3tls_combined_myeloids_min20cells_nomix"
+ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells"
+clust_names <- paste0('cluster_', seq(0, 16))
+clust_manualnames <- c('CD4_Macro',
+                       'CD8_Macro', 'loCD8_Macro', 'CD8', 'CD4_CD8', 'Macro',
+                       'loCD8_Macro', 'CD4', 'loCD4_CD8', 'loCD4_CD8_loMacro', 'CD8_loMacro',
+                       'CD4_loMacro', 'loCD4_loCD8_Macro', 'loCD4_loCD8_loMacro', 'loCD4_Macro', 'loCD8_Macro',
+                       'loCD8_Macro')
+
+#####################
 # # combined myeloids, no bcells,  min 2 components, no mixing
 # hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_nomix_dt171715_ct10_dt300.csv")
 # hubs_outname <- "batch3tls_combined_myeloids_min2comp_nomix"
-# ct_frac_deconv_outname <- "b123_ct_frac_deconv"
+# ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells"
+# clust_names <- paste0('cluster_', seq(0, 16))
+# clust_manualnames <- c('loCD8_Macro',
+#                        'loCD4_CD8_loMacro', 'CD4', 'Macro', 'CD4_Macro', 'CD8_Macro',
+#                        'CD8_Macro', 'CD8', 'loCD4_loCD8_Macro', 'CD8_Macro', 'CD4_CD8',
+#                        'CD4_CD8_Macro', 'CD4_CD8_Macro', 'CD4_CD8_Macro', 'CD4_Macro', 'CD8_Macro',
+#                        'CD4_CD8')
 
+#####################
+# combined myeloids, no bcells,  min 2 components, forced mixing
+# hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv")
+# hubs_outname <- "batch3tls_combined_myeloids_min2comp_mixed"
+# ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells"
+# clust_names <- paste0('cluster_', seq(0, 16))
+# clust_manualnames <- c('loCD8_Macro', 'CD8_loMacro', 'CD4_Macro', 'CD4_CD8', 'CD8_Macro', 'loCD4_Macro',
+#                        'loCD4_loCD8_loMacro', 'loCD4_loCD8_Macro', 'loCD8_Macro', 'CD4_loMacro',
+#                        'loCD4_loCD8_Macro', 'loCD4_CD8', 'loCD4_CD8_loMacro', 'loCD4_Macro',
+#                        'loCD4_loCD8_loMacro', 'loCD8_Macro', 'CD4_loCD8')
+
+#####################
 # bcells + combined myeloids, min 3 components, old distances from centroids
 # hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_bcells_combined_myeloids_15151517_ct10_dt300.csv")
 # hubs_outname <- "batch3tls_bcells_combined_myeloids_15151517_ct10"
 # ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells" # bcells are counted separately not as 'other_immune'
+# clust_names <- paste0('cluster_', seq(0, 19))
+# clust_manualnames <- c('Macro', 'Macro_loCD4_loCD8', 'Macro_loCD8_loBcells', 'CD4', 'loMacro_Bcells',
+#                        'Macro_CD8', 'Macro_loMixed', 'Macro_loCD8', 'loMacro_CD4', 'CD8', 'Macro_loBcells',
+#                        'loCD4_CD8', 'Macro_loCD8', 'Bcells_loCD8', 'Macro_CD8', 'loMacro_loCD4_loBcells',
+#                        'loMacro_CD8_loBcells', 'Macro_loCD4', 'Bcells', 'loMacro_Bcells')
 
-##############
+
+##################################################
+###################################################
+
 # output files
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
@@ -208,7 +243,6 @@ fwrite(ct_frac_cycif_long_roi, output_ct_frac_cycif_roi_path)
 
 hubs_inroi_labs <- dplyr::select(hubs_cells_inroi, sample_roi, !!hubs_labels_list) %>%
   dplyr::mutate(across(c('component_label'), clean_labs)) %>%
-  #dplyr::mutate(across(c(network_hub_type), clean_labs)) %>% # if 'cluster_N' as names - should't be claaned
   dplyr::mutate(across(hubs_labels_list, ~replace(., . ==  '' , 'notinhub')))
 
 # count nr of each labels 
@@ -276,6 +310,8 @@ hubs_inroi$component_label <- clean_labs(hubs_inroi$component_label) # relabel a
 # merge all information together ------------------------------------------
 
 # immune_other = all immune + 'other'
+label_vars <- c("Annotation_cell", hubs_labels_list, paste0(hubs_labels_list, '_freq', as.character(min_label_frac)),
+                "tCycIF_preselection_initial_label_cleaned", "roi_cluster_label_gmm", "roi_cluster_label_hclust")
 
 # join cycif and deconv ct fraction tables, add metadata and hubs info
 ct_frac_all <- left_join(ct_frac_cycif_long_roi, ct_frac_deconv_long_roi, by = c('sample_roi', 'cell_type')) %>%
@@ -284,18 +320,45 @@ ct_frac_all <- left_join(ct_frac_cycif_long_roi, ct_frac_deconv_long_roi, by = c
   left_join(hubs_inroi_labs_frequent, by = 'sample_roi')
 
 ct_frac_all[ct_frac_all == ""] <- NA
-fwrite(ct_frac_all, output_ct_frac_all_roi_path)
 
-# compare cell fractions --------------------------------------------------
-
+# clean labels
 ct_frac_all$tCycIF_preselection_initial_label_cleaned <- clean_labs(ct_frac_all$tCycIF_preselection_initial_label)
 ct_frac_all$tCycIF_preselection_initial_label_cleaned <- ifelse(ct_frac_all$tCycIF_preselection_initial_label_cleaned == '', 'otherlabel',
                                                                 ct_frac_all$tCycIF_preselection_initial_label_cleaned)
 
-label_vars <- c("Annotation_cell", hubs_labels_list, paste0(hubs_labels_list, '_freq', as.character(min_label_frac)),
-                "tCycIF_preselection_initial_label_cleaned", "roi_cluster_label_gmm", "roi_cluster_label_hclust")
+ct_frac_all <- ct_frac_all %>%
+  dplyr::mutate(across(label_vars, ~replace(., is.na(.) , 'nolabel')))
 
-##########################################################
+ct_frac_all$community_cluster_label_manualnames <- ct_frac_all$community_cluster_label
+ct_frac_all[[paste0('community_cluster_label_manualnames_freq', as.character(min_label_frac))]] <- ct_frac_all[[paste0('community_cluster_label_freq', as.character(min_label_frac))]]
+
+
+for(i in 1:length(clust_names)){
+  ct_frac_all$community_cluster_label_manualnames <- gsub(paste0(clust_names[i], '$'), clust_manualnames[i], ct_frac_all$community_cluster_label_manualnames)
+  ct_frac_all$community_cluster_label_manualnames <- gsub(paste0(clust_names[i], '\\|'), paste0(clust_manualnames[i], '|'), ct_frac_all$community_cluster_label_manualnames)
+  
+  ct_frac_all[[paste0('community_cluster_label_manualnames_freq', as.character(min_label_frac))]] <- gsub(paste0(clust_names[i], '$'), clust_manualnames[i], ct_frac_all[[paste0('community_cluster_label_manualnames_freq', as.character(min_label_frac))]])
+  ct_frac_all[[paste0('community_cluster_label_manualnames_freq', as.character(min_label_frac))]] <- gsub(paste0(clust_names[i], '\\|'), paste0(clust_manualnames[i], '|'), ct_frac_all[[paste0('community_cluster_label_manualnames_freq', as.character(min_label_frac))]])
+}
+
+fwrite(ct_frac_all, output_ct_frac_all_roi_path)
+
+labs_all <- ct_frac_all %>%
+  select(sample_roi, !!label_vars, !!c('community_cluster_label_manualnames', 
+                                       paste0('community_cluster_label_manualnames_freq', as.character(min_label_frac)))) %>%
+  distinct()
+
+labs_all[labs_all==""]<- "nolabel"
+labs_all[is.na(labs_all)]<- "nolabel"
+
+fwrite(labs_all, output_roi_labels_path)
+
+# compare cell fractions --------------------------------------------------
+
+label_vars_forplots <- c("Annotation_cell", "component_label", paste0('component_label_freq', as.character(min_label_frac)),
+                         "roi_cluster_label_gmm", "roi_cluster_label_hclust", 'community_cluster_label_manualnames', 
+                         paste0('community_cluster_label_manualnames_freq', as.character(min_label_frac)))
+
 # scatterplot with geomx vs cycif total cell count
 cell_count_roi <- select(ct_frac_all, sample_roi, Segment_geomx, total_cell_nr_cycif, total_cell_nr_geomx) %>%
   distinct()
@@ -320,7 +383,7 @@ for(value_comb in c('bp_sd', 'bp_cycif', 'sd_cycif')){
   
   print(value_comb)
   # per cell type
-  for(color_var in c('Annotation_cell')){
+  for(color_var in label_vars_forplots){
     print(color_var)
     for(ct_name in unique(ct_frac_all$cell_type)){
       print(ct_name)
@@ -354,15 +417,15 @@ for(value_comb in c('bp_sd', 'bp_cycif', 'sd_cycif')){
 # boxplots with cell nr/fractions per different labels
 
 # make long dataframe for sd/bp/cycif methods
-ct_frac_all_method <- select(ct_frac_all, sample_roi, Segment_geomx, cell_type, !!label_vars, starts_with('ct_frac'), starts_with('ct_nr'))
-ct_frac_all_method_long <- melt(setDT(ct_frac_all_method), id.vars = c('sample_roi', 'Segment_geomx', 'cell_type', label_vars),
+ct_frac_all_method <- select(ct_frac_all, sample_roi, Segment_geomx, cell_type, !!label_vars_forplots, starts_with('ct_frac'), starts_with('ct_nr'))
+ct_frac_all_method_long <- melt(setDT(ct_frac_all_method), id.vars = c('sample_roi', 'Segment_geomx', 'cell_type', label_vars_forplots),
                                 variable.name = "method_type")
 
 # for each ct faceted by method
 for(comp_type in c('ct_frac', 'ct_nr')){
   ct_frac_all_method_comp <- ct_frac_all_method_long[grepl(comp_type, ct_frac_all_method_long$method_type), ]
   
-  for(label_var in label_vars){
+  for(label_var in label_vars_forplots){
     for(ct_name in unique(ct_frac_all$cell_type)){
       
       ct_frac_all_method_comp_ct <- ct_frac_all_method_comp[ct_frac_all_method_comp$cell_type == ct_name, ]
@@ -385,7 +448,7 @@ for(comp_type in c('ct_frac', 'ct_nr')){
 for(method_name in unique(ct_frac_all_method_long$method_type)){
   ct_frac_all_method_sel <- ct_frac_all_method_long[ct_frac_all_method_long$method_type == method_name, ]
   
-  for(label_var in label_vars){
+  for(label_var in label_vars_forplots){
     ggplot(ct_frac_all_method_sel, aes(x = cell_type, y = value)) + 
       geom_boxplot(alpha = .2) +
       geom_point(size = 0.2) + 
@@ -414,64 +477,7 @@ for(method_name in unique(ct_frac_all_method_long$method_type)){
 
 # compare labels ----------------------------------------------------------
 
-labs_all <- ct_frac_all %>%
-  select(sample_roi, !!label_vars) %>%
-  distinct()
-
-labs_all[labs_all==""]<- "nolabel"
-labs_all[is.na(labs_all)]<- "nolabel"
-
-fwrite(labs_all, output_roi_labels_path)
-
-####################################################
-####################################################
-# give preliminary labels to 20 clusters with bcell and myeloids together ct 10
-# clust_names <- paste0('cluster_', seq(0, 19))
-# clust_manualnames <- c('Macro', 'Macro_loCD4_loCD8', 'Macro_loCD8_loBcells', 'CD4', 'loMacro_Bcells',
-#                        'Macro_CD8', 'Macro_loMixed', 'Macro_loCD8', 'loMacro_CD4', 'CD8', 'Macro_loBcells',
-#                        'loCD4_CD8', 'Macro_loCD8', 'Bcells_loCD8', 'Macro_CD8', 'loMacro_loCD4_loBcells',
-#                        'loMacro_CD8_loBcells', 'Macro_loCD4', 'Bcells', 'loMacro_Bcells')
-
-# give preliminary labels to myeloids together, nobcells, min2 comm mixed
-# batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv
-clust_names <- paste0('cluster_', seq(0, 16))
-clust_manualnames <- c('loCD8_Macro', 'CD8_loMacro', 'CD4_Macro', 'CD4_CD8', 'CD8_Macro', 'loCD4_Macro',
-                       'loCD4_loCD8_loMacro', 'loCD4_loCD8_Macro', 'loCD8_Macro', 'CD4_loMacro',
-                       'loCD4_loCD8_Macro', 'loCD4_CD8', 'loCD4_CD8_loMacro', 'loCD4_Macro',
-                       'loCD4_loCD8_loMacro', 'loCD8_Macro', 'CD4_loCD8')
-
-# give preliminary labels to myeloids together, nobcells, min2 comm no mixing
-# clust_names <- paste0('cluster_', seq(0, 16))
-# clust_manualnames <- c('loCD8_Macro', 
-#                        'loCD4_CD8_loMacro', 'CD4', 'Macro', 'CD4_Macro', 'CD8_Macro',
-#                        'CD8_Macro', 'CD8', 'loCD4_loCD8_Macro', 'CD8_Macro', 'CD4_CD8', 
-#                        'CD4_CD8_Macro', 'CD4_CD8_Macro', 'CD4_CD8_Macro', 'CD4_Macro', 'CD8_Macro',
-#                        'CD4_CD8')
-# 
-
-
-##################################################
-###################################################
-
-
-labs_all$community_cluster_label_manualnames <- labs_all$community_cluster_label
-labs_all$community_cluster_label_manualnames_freq0.05 <- labs_all$community_cluster_label_freq0.05
-
-for(i in 1:length(clust_names)){
-  labs_all$community_cluster_label_manualnames <- gsub(paste0(clust_names[i], '$'), clust_manualnames[i], labs_all$community_cluster_label_manualnames)
-  labs_all$community_cluster_label_manualnames <- gsub(paste0(clust_names[i], '\\|'), paste0(clust_manualnames[i], '|'), labs_all$community_cluster_label_manualnames)
-  
-  labs_all$community_cluster_label_manualnames_freq0.05 <- gsub(paste0(clust_names[i], '$'), clust_manualnames[i], labs_all$community_cluster_label_manualnames_freq0.05)
-  labs_all$community_cluster_label_manualnames_freq0.05 <- gsub(paste0(clust_names[i], '\\|'), paste0(clust_manualnames[i], '|'), labs_all$community_cluster_label_manualnames_freq0.05)
-  }
-
-
-####################################################
-labs_to_heat <- c("component_label", "community_cluster_label_manualnames",
-                  "component_label_freq0.05", "community_cluster_label_manualnames_freq0.05", 
-                  "roi_cluster_label_gmm", "roi_cluster_label_hclust")
-
-labs_comb <- combinations(length(labs_to_heat), 2, labs_to_heat)
+labs_comb <- combinations(length(label_vars_forplots), 2, label_vars_forplots)
 
 apply(labs_comb, 1, function(x){
   lab_name1 <- x[1]

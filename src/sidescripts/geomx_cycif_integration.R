@@ -30,15 +30,21 @@ hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPA
 
 #############################
 # hubs files
-# combined myeloids, no bcells,  min 2 components, forced mixing
-hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cells_combined_myeloids_dt171715_ct10_dt300.csv")
-hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_combined_myeloids_dt171715_ct10_dt300.csv")
-hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv"
+# # combined myeloids, no bcells,  min 2 components, no mixing
+hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cell_df_nomix_comfiltct20_dt171715_ct10_dt300.csv")
+hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_nomix_comfiltct20_dt171715_ct10_dt300.csv")
+hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300.csv"
+
 
 # # combined myeloids, no bcells,  min 2 components, no mixing
 # hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cells_df_nomix_dt171715_ct10_dt300.csv")
 # hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_nomix_dt171715_ct10_dt300.csv")
 # hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_nomix_dt171715_ct10_dt300.csv"
+
+# combined myeloids, no bcells,  min 2 components, forced mixing
+# hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cells_combined_myeloids_dt171715_ct10_dt300.csv")
+# hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_combined_myeloids_dt171715_ct10_dt300.csv")
+# hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min2comp_mixed_dt171715_ct10_dt300.csv"
 
 # bcells + combined myeloids, min 3 components, old distances from centroids
 # hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cells_combined_myeloids_15151517_ct10_dt300.csv")
@@ -166,7 +172,7 @@ length(unique(hubs_cells_inroi$sample_roi))
 # rois without any cells found
 setdiff(metadt$sample_roi, hubs_cells_inroi$sample_roi) 
 
-hubs_cells_inroi_innet <- hubs_cells_inroi[hubs_cells_inroi$component_id != 'not in a component', ]
+hubs_cells_inroi_innet <- hubs_cells_inroi[hubs_cells_inroi$component_id != 'not_in_a_component', ]
 hubs_cells_inroi_incomm <- hubs_cells_inroi_innet[hubs_cells_inroi_innet$community_cluster != 'undefined', ]
 
 table(hubs_cells_inroi$Sample, hubs_cells_inroi$Roi_geomx)
