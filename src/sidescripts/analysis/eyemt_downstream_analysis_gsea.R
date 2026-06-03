@@ -48,6 +48,7 @@ gsea_out_dir <- file.path(output_dir, 'pathway_analysis', 'gsea')
 
 # names of pathways of interest
 sigs_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'eyemt_immune', 'immune_pathways_names.csv')
+sigs_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'eyemt_immune', 'immune_pathways_names_reactome.csv')
 # RDS object with list of pathways and their genes
 signs_genes_list_path <- file.path(proj_dir, 'geomx-processing', 'data', 'signatures', 'eyemt_immune', 'sign_list_immune.RDS')
 
@@ -61,28 +62,31 @@ dir.create(out_dir, recursive = T, showWarnings = F)
 geomx_dcc <- colnames(readRDS(geomx_path))
 metadt <- as.data.frame(fread(metadt_path))
 metadt <- metadt[metadt$dcc_filename %in% geomx_dcc, ]
+rownames(metadt) <- NULL
 
 # load and filter gsea signatures -----------------------------------------
 
 # load signatures and remove the ones which are subset of others
 # check which pathways are subsets of other pathways - choose longest
 sigs <- fread(sigs_path)
-sign_genes_list <- readRDS(signs_genes_list_path)
 
-unique_paths <- unlist(sapply(1:length(sign_genes_list), function(i){
-  sign <- sign_genes_list[[i]]
-  sign_inters <- sapply(sign_genes_list[-i], function(sign2){
-    length(intersect(sign, sign2))
-  })
-  
-  if(max(sign_inters) < length(sign)){
-    return(names(sign_genes_list)[i])
-  } else{
-    return()
-  }
-}))
 
-sigs <- sigs[sigs$pathway %in% unique_paths, ]
+# sign_genes_list <- readRDS(signs_genes_list_path)
+# 
+# unique_paths <- unlist(sapply(1:length(sign_genes_list), function(i){
+#   sign <- sign_genes_list[[i]]
+#   sign_inters <- sapply(sign_genes_list[-i], function(sign2){
+#     length(intersect(sign, sign2))
+#   })
+#   
+#   if(max(sign_inters) < length(sign)){
+#     return(names(sign_genes_list)[i])
+#   } else{
+#     return()
+#   }
+# }))
+# 
+# sigs <- sigs[sigs$pathway %in% unique_paths, ]
 
 # load all gsea results filter to signatures and cells of interest, merge with sigs
 gsea_all <- lapply(list.files(gsea_out_dir, pattern = 'csv', full.names = T), function(x){
@@ -116,7 +120,7 @@ gsea_all <- rbind(gsea_all[gsea_all$expr_signal == 'all', ], do.call(rbind, gsea
 # create paths and dcc annotations ----------------------------------------
 
 path_annots <- c('path_cell_type', 'immune_effect', 'additional')
-path_annots <- c('path_cell_type', 'immune_effect')
+path_annots <- c('path_cell_type', 'additional')
 dcc_annots <- c('Segment', 'Segment_geomx', 'HRP_status', 'NACT_status', 'roi_cluster_label_gmm')
 
 # row annotations based on pathways
@@ -135,7 +139,7 @@ dcc_annot <- metadt %>%
 
 # hmaps with pathways activity across all ROIs ----------------------------
 
-top_var_nr <- 50 # nr of top variable pathways for clustering, NULL for all pathways
+top_var_nr <- 20 # nr of top variable pathways for clustering, NULL for all pathways
 
 ################
 # for testing
@@ -223,7 +227,8 @@ for(expr_type in unique(gsea_all$expr_signal)){
           path_ha = HeatmapAnnotation(df = path_annot_toplot, which = 'row', na_col = "grey")
           
           # define colors
-          col_fun <- colorRamp2(c(min(gsea_sel_wide), 0, max(gsea_sel_wide)), c("blue", "white", "red"))
+          scalemin <- ifelse(min(gsea_sel_wide) < 0, min(gsea_sel_wide), -0.01) # to keep the color scale b-r
+          col_fun <- colorRamp2(c(scalemin, 0, max(gsea_sel_wide)), c("blue", "white", "red"))
           
           # do the hmap
           png(filename=file.path(out_dir, paste0('hmap_scores_',out_name, '.png')), width=11, height=7,units="in",res=1000)
@@ -357,8 +362,8 @@ for(expr_type in unique(gsea_all$expr_signal)){
                                           legend_direction = "horizontal", 
                                           legend_width = unit(2, "in")),
                                         show_column_names = T,
-                                        row_names_gp = gpar(fontsize = ifelse(nrow(gsea_corr) < 20, 6, 4)),
-                                        column_names_gp = gpar(fontsize = ifelse(ncol(gsea_corr) < 20, 6, 4)),
+                                        row_names_gp = gpar(fontsize = ifelse(nrow(gsea_corr) < 20, 8, 6)),
+                                        column_names_gp = gpar(fontsize = ifelse(ncol(gsea_corr) < 20, 8, 6)),
                                         row_names_max_width = unit(5, "in"),
                                         col = col_fun
               )
@@ -498,29 +503,27 @@ for(cells_comb in combn(ct_of_interest, 2, simplify = F)){
 # TODO boxplots with tuckey test
 # TODO hmap/dotplot with gsea scores + tuckey as stars - but to what since they're many groups?
 
-top_var_nr <- 20
-clust_type <- paste0(clust_types[1], '_label')
+top_var_nr <- NULL
+clust_type <- 'roi_cluster_label_gmm'
 
 # TODO repetition - put all plots to main loop
 expr_type <- unique(gsea_all$expr_signal)[1]
-pathways_type <- unique(gsea_all$path_type)[1]
 seg <- 'stroma'
 nact_status <- 'post'
 
-for(expr_type in unique(gsea_all$expr_signal)[7:8]){
-  for(pathways_type in unique(gsea_all$path_type)){
+for(expr_type in unique(gsea_all$expr_signal)){
     for(seg in c('stroma', 'tumor')){
       for(nact_status in c('pre', 'post')){
         
-        out_name <- paste(expr_type, pathways_type, seg, nact_status, sep ='_')
+        out_name <- paste(expr_type, seg, nact_status, sep ='_')
         print(out_name)
         
         # filter to all signal, cell state/process, segment and nact status
-        gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type & gsea_all$path_type == pathways_type, ]
+        gsea_sel_paths <- gsea_all[gsea_all$expr_signal == expr_type, ]
         gsea_sel_paths_seg <- gsea_sel_paths[gsea_sel_paths$dcc_filename %in% 
-                                               metadt_labels$dcc_filename[metadt_labels$Segment == seg & metadt_labels$NACT_status == nact_status], ]
+                                               metadt$dcc_filename[metadt$Segment == seg & metadt$NACT_status == nact_status], ]
         
-        gsea_sel_paths_seg <- left_join(gsea_sel_paths_seg, metadt_labels_deconv[, c('dcc_filename', clust_type, 'Sample')])
+        gsea_sel_paths_seg <- left_join(gsea_sel_paths_seg, metadt[, c('dcc_filename', clust_type, 'Sample')])
         
         # calculate mean ssgsea score per cluster
         gsea_sel_clust_mean <- gsea_sel_paths_seg %>%
@@ -568,7 +571,8 @@ for(expr_type in unique(gsea_all$expr_signal)[7:8]){
           
           # define colors
           # TODO maybe min/max(gsea_all) to have the same scale over all hmaps?
-          col_fun <- colorRamp2(c(min(gsea_sel_clust_mean_wide), 0, max(gsea_sel_clust_mean_wide)), c("blue", "white", "red"))
+          scalemin <- ifelse(min(gsea_sel_clust_mean_wide) < 0, min(gsea_sel_clust_mean_wide), -0.01) # to keep the color scale b-r
+          col_fun <- colorRamp2(c(scalemin, 0, max(gsea_sel_clust_mean_wide)), c("blue", "white", "red"))
           
           # do the hmap
           png(filename=file.path(out_dir, paste0('hmap_mean_clust_',out_name, '.png')), width=11, height=7,units="in",res=1000)
@@ -592,7 +596,6 @@ for(expr_type in unique(gsea_all$expr_signal)[7:8]){
         }
       }
     }
-  }
 }
 
 
@@ -680,118 +683,5 @@ for(path_name in unique(gsea_sel_paths_clust$pathway)){
 
 ################################################
 ################################################
+# TODO should be moved to separate downstream script
 
-# clusters distributions vs ct frac and clinical vars ---------------------
-
-# each ct freq in tumor/stroma segment across nact status + freq cluster
-#clust_type <- paste0(clust_types[1], '_label')
-clust_type <- 'roi_cluster_label_hclust'
-clust_type_name <- 'hclust' # for plotting
-
-aoi_ctfrac_long <- metadt %>%
-  dplyr::select('dcc_filename', starts_with('ct_frac_sd_aoi')) %>%
-  pivot_longer(cols = starts_with('ct_frac_sd_aoi'), names_to = 'cell_type', values_to = 'ct_frac_sd_aoi') %>%
-  mutate(cell_type = gsub('ct_frac_sd_aoi_', '', cell_type)) %>%
-  left_join(metadt[, c('dcc_filename', 'Segment', 'NACT_status', clust_type)]) %>%
-  mutate(segment_nact = paste0(Segment, '_', NACT_status)) %>%
-  filter(cell_type %in% !!ct_names_immune)
-
-
-# boxpl all cells at once, color by segment_nact
-ggplot(aoi_ctfrac_long, aes(x = factor(cell_type), y = ct_frac_sd_aoi, fill = factor(segment_nact))) +
-  geom_boxplot() +
-  labs(title = 'ct freq aross segment and nact status', x = "cell type", y = "ct frac sd in AOI") +
-  theme_minimal()
-
-ggsave(file.path(out_dir, paste0('ct_frac_aoi_segment_nact.png')))
-
-# boxpl faceted by cell, color by segment_nact all clusters at once
-ggplot(aoi_ctfrac_long, aes(x = factor(get(clust_type)), y = ct_frac_sd_aoi, fill = factor(segment_nact))) +
-  geom_boxplot() +
-  labs(title = 'ct freq aross segment and nact status', x = "cell type", y = "ct frac sd in AOI") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  facet_wrap(~cell_type, scales = "fixed", dir="v")
-
-ggsave(file.path(out_dir, paste0('ct_frac_aoi_per_cluster_', clust_type_name, '_segment_nact.png')))
-
-
-###########################################
-# ct frac clusters distribution across samples (pre, post, HRD, PFS, OS)
-
-vars_labels <- c('NACT_status', 'HRP_status', 'primary_treatment_response')
-vars_cont <- c('TMB', 'ovaHRDscar_score', 'PFS_days', 'OS_days')
-
-# count total nr of clusters in dataset (for ordering)
-cluster_labels_count <- metadt %>%
-  select(dcc_filename, Sample, !!vars_labels, !!vars_cont, !!clust_type) %>%
-  group_by(get(clust_type)) %>%   
-  mutate(clust_name_occur_total = n()) %>%
-  ungroup() %>%
-  as.data.frame()
-
-# all combinations
-clust_allcombs <- tidyr::expand(metadt, Sample, get(clust_type))
-colnames(clust_allcombs) <- c('Sample', clust_type) #fixing stupid names
-
-# count ROI label frequency per sample (per ROI not AOIs!)
-cluster_freqs_per_sample <- metadt[, c('Sample', 'sample_roi', clust_type)] %>%
-  distinct() %>%
-  group_by(Sample, get(clust_type)) %>%
-  mutate(clust_nr_per_sample = n()) %>%
-  ungroup() %>%
-  group_by(Sample) %>%
-  mutate(clust_freq_per_sample = clust_nr_per_sample/n()) %>%
-  select(Sample, !!clust_type, clust_nr_per_sample, clust_freq_per_sample) %>%
-  distinct() %>%
-  full_join(clust_allcombs, by = c('Sample', clust_type)) %>% # join with all combs to get 0
-  replace(is.na(.), 0) %>%
-  left_join(distinct(metadt[, c('Sample', vars_labels, vars_cont)]))
-
-
-# stacked barplot for nr of clusters across samples faceted by discrete vars
-for(label_var in vars_labels){
-
-  # nrs of AOIs from given ROI cluster 
-  ggplot(cluster_labels_count, aes(x = reorder(Sample, clust_name_occur_total), fill = get(clust_type))) +
-    geom_bar(stat = "count") +
-    labs(title = paste0("nr of AOIs per sample across ", label_var), x = "Sample", y = "AOI nr", fill='ROI cluster type') +
-    theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1, size = 8)) +
-    facet_wrap(~get(label_var), dir="v", scales = "free")
-  
-  ggsave(file.path(out_dir, paste0('aoi_nr_cluster_', clust_type_name, '_color_', label_var, '.png')))
-  
-  # frequencies of ROIs clusters - stacked barplots
-  ggplot(cluster_freqs_per_sample, aes(x = Sample, y = clust_freq_per_sample, fill = get(clust_type))) +
-    geom_bar(stat = "identity") +
-    labs(title = paste0("frequencies of ROI clusters per sample across ", label_var), x = "Sample", y = "ROI cluster frequency", fill='ROI cluster type') +
-    theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1, size = 8)) +
-    facet_wrap(~get(label_var), dir="v", scales = "free")
-  
-  ggsave(file.path(out_dir, paste0('roi_freq_cluster_', clust_type_name, '_color_', label_var, '.png')))
-  
-  # frequencies of ROIs clusters - boxplots
-  ggplot(cluster_freqs_per_sample, aes(x = get(clust_type), y = clust_freq_per_sample, fill = get(label_var))) +
-    geom_boxplot() +
-    geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
-               size= 0.5, alpha = 0.6) +
-    geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
-    labs(title = paste0("frequencies of ROI clusters per sample across ", label_var), x = "ROI cluster", y = "ROI cluster frequency", fill= paste0(label_var)) +
-    theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1, size = 8))
-  
-  ggsave(file.path(out_dir, paste0('roi_freq_cluster_', clust_type_name, '_boxpl_color_', label_var, '.png')))
-}
-
-# scatterplots for continuous vars
-for(cont_var in vars_cont){
-  
-  ggplot(cluster_freqs_per_sample, aes(x = clust_freq_per_sample, y = get(cont_var), color = get(clust_type))) +
-    geom_point(size = 3) +
-    xlab("ROI cluster frequency in sample") +
-    ylab(cont_var) +
-    scale_color_discrete(name = clust_type) +
-    theme_bw()
-  
-  ggsave(file.path(out_dir, paste0('roi_freq_cluster_', clust_type_name, '_scatter_color_', cont_var, '.png')))
-}
-
-#fwrite(metadt_labels_count, file.path(out_dir, 'metadt_labels.csv'))
