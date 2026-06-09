@@ -286,8 +286,8 @@ dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 # bp - bayes prism deconvoluted data
 
 #ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells", "DCs")
-ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Bcells", "Fibroblasts_Mesothelial")
-ct_of_interest <<- c("Tcells_CD8")
+ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Fibroblasts_Mesothelial")
+ct_of_interest <<- c("Macrophages_Monocytes", "Tcells_CD8", "DCs", "Tcells_CD4")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
@@ -316,7 +316,7 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 labs <- c("CD8_Macro_domin", "mixed_w_CD4", "mixed_w_others", "Macro_domin", "Bcell_domin")
 main_var_main_val <<- NULL
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('Segment', 'NACT_status')
+dge_categories <<- c('NACT_status', 'Segment')
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

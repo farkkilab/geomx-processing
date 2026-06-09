@@ -23,12 +23,14 @@
 norm_type <- 'harmony_batch_corr_q3_norm' 
 
 cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
-
 # remove samples with <2 nr of each AOI comparison group (not enough to compare, only adds noise)
-min_aoi_nr <- 2
+min_aoi_nr <- 1
 
 # for deconvolution DGE: remove AOIs with lower ct fraction - too unstable
 min_ct_fraction <- 0.01
+
+# if main_var_is_bin - wheter it should be used as regex or as it is
+main_val_use_regex <- F
 
 # make dirs and source functions ------------------------------------------
 
@@ -178,7 +180,7 @@ lapply(names(expr_list), function(expr_name){
   pData(geomx_obj_dge) <- pData(geomx_obj)[pData(geomx_obj)[[aoi_id]] %in% colnames(expr_list[[expr_name]]), ]
   
   pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj_dge), main_var_name, main_var_is_bin, main_var_main_val,
-                                               dge_categories, cofounder_name) 
+                                               dge_categories, cofounder_name, main_val_use_regex) 
   
   # if dge is computed for deconv results, choose model with ct correction and change colname
   if(expr_name == 'dge_all'){

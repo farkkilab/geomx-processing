@@ -97,9 +97,11 @@ print(paste0(length(sign_list), ' signatures will be used'))
 
 # load dge files ----------------------------------------------------------
 
-dge_df_path <- dge_df_list[4]
-cont <- "Bcell_domin - Macro_domin"
-dt_group <- 'stroma_post'
+dge_df_path <- dge_df_list[3]
+cont <- "stroma - tumor"
+dt_group <- 'post'
+
+clust_forplot <- '15' # c('1', '12', '15')
 
 # loop through all dge results
 for(dge_df_path in dge_df_list){
@@ -138,6 +140,11 @@ for(dge_df_path in dge_df_list){
   })
   
   gsea_res_all <- do.call(rbind, unlist(gsea_res_all, recursive=FALSE))
+  gsea_res_all$leadingEdge <- sapply(gsea_res_all$leadingEdge, function(x){
+    if(length(x) > 1){
+      return(paste(unname(unlist(x)), collapse = '|'))}
+    else{return(x)}
+    })
   
   if(!is.null(gsea_res_all)){
     fwrite(gsea_res_all, file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
@@ -181,21 +188,23 @@ for(dge_df_path in dge_df_list){
             
             # visualise clustered paths
             gsea_subset_bestclust <- gsea_subset %>%
+              mutate(path_cluster_cut_12 = paste0(ifelse(NES > 0, 'pos_', 'neg_'), as.character(path_cluster_cut_12))) %>%
               group_by(path_cluster_cut_12) %>%
-              filter(NES == max(abs(NES))) %>%
+              mutate(NES_abs = abs(NES)) %>%
+              filter(NES_abs == max(NES_abs)) %>%
               arrange(NES) %>%
               mutate(pathway = as.factor(pathway))
             
-            ggplot(gsea_subset_bestclust, aes(x = NES, y = factor(pathway, levels = rev(gsea_subset_bestclust$pathway)))) +
+            ggplot(gsea_subset_bestclust, aes(x = NES, y = factor(pathway, levels = gsea_subset_bestclust$pathway))) +
               geom_point(aes(color = padj, size = size)) +
-              scale_size_area(max_size = 15)
+              scale_size_area(max_size = 15) +
               theme_classic() +
               xlab('size') +
               ylab(NULL) +
               ggtitle("all pathways", dir)
             
             ggsave(file.path(dge_dir_path, 'gsea_enrichment', dge_inp_data,
-                             paste0('bubbleplot_bestclust_', gsea_subset_name, '_', out_name, '_', dge_inp_data, '.png')),
+                             paste0('bubbleplot_bestclust_', gsea_subset_name, '_', out_name, '_', dge_inp_data, '_clustcut12.png')),
                    width = 12, height = 8, units = 'in')
           }
           
@@ -204,7 +213,7 @@ for(dge_df_path in dge_df_list){
             arrange(NES) %>%
             mutate(pathway = as.factor(pathway))
 
-          ggplot(gsea_subset, aes(x = NES, y = factor(pathway, levels = rev(gsea_subset$pathway)))) +
+          ggplot(gsea_subset_toplot, aes(x = NES, y = factor(pathway, levels = gsea_subset_toplot$pathway))) +
             geom_point(aes(color = padj, size = size)) +
             scale_size_area(max_size = 15)
             theme_classic() +
