@@ -21,7 +21,7 @@ library(ggpubr)
 # max nr of cells = 300 so 0.005 cell fraction is 1 cell/200 cells 1,5 cell/300 cells
 min_frac <- 0.01 
 #scrna_anno <<- 'mid_lvl_ct_updated' # deconvolution lvl
-scrna_anno <- 'cell_type'
+scrna_anno <- 'mid_lvl_ct_updated'
 
 # input files
 proj_dir <<- '~/Documents/phd/st'
@@ -33,15 +33,15 @@ geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))
 sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', paste0('sd_res_', scrna_anno, '_geomxfiltpc_ct_fraction.csv'))
 
-#deconv_list <- list(bp = bp_cellcounts_path, sd = sd_cellcounts_path)
-deconv_list <- list(sd = sd_cellcounts_path)
+deconv_list <- list(bp = bp_cellcounts_path, sd = sd_cellcounts_path)
+#deconv_list <- list(sd = sd_cellcounts_path)
 
 # output files
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 
-output_ct_frac_deconv_path <- file.path(output_dir, 'deconvolution', paste0('ct_frac_deconv_', scrna_anno, '.csv'))
-output_ct_frac_deconv_roi_path <- file.path(output_dir, 'deconvolution', paste0('ct_frac_deconv_roi_', scrna_anno, '.csv'))
-output_ct_frac_deconv_both_wide_path <- file.path(output_dir, 'deconvolution', paste0('ct_frac_deconv_aoiroi_wide_', scrna_anno, '.csv'))
+output_ct_frac_deconv_path <- file.path(output_dir, 'deconvolution', paste0('ct_frac_deconv_', scrna_anno, '_4mainimmune.csv'))
+output_ct_frac_deconv_roi_path <- file.path(output_dir, 'deconvolution', paste0('ct_frac_deconv_roi_', scrna_anno, '_4mainimmune.csv'))
+output_ct_frac_deconv_both_wide_path <- file.path(output_dir, 'deconvolution', paste0('ct_frac_deconv_aoiroi_wide_', scrna_anno, '_4mainimmune.csv'))
 
 ##############
 # setting up ct names for counting
@@ -58,31 +58,49 @@ if(scrna_anno == 'mid_lvl_ct_updated'){
   ct_names_stroma <- c("Fibroblasts_Mesothelial", "Endothelial_cells")
   
   # main immune cells from deconv - also counted in cycif phenotyping
-  ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Bcells", "NKcells", "Macrophages_Monocytes") # , , no Bcells in basic phenotyping eg b1b2 
+  ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes") # , , no Bcells in basic phenotyping eg b1b2 
   ct_names_myeloids <- c("Macrophages_Monocytes", "DCs")
   ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8")
   
+  #TODO organise it better to work both here and in comparison with deconv
   # additional cells from deconv not counted in phenotyping and should be treated as 'other'
-  ct_names_other <- c("Tcells_other", "Mast_cells") # "Bcells" goes here when basic phenotyping b1b2 and 'consensus_label_clean'
+  ct_names_other <- c("Tcells_other", "Mast_cells", "Bcells", "NKcells") # "Bcells" goes here when basic phenotyping b1b2 and 'consensus_label_clean'
   
 } else if(scrna_anno == 'cell_type'){
-  ct_names_all <- c("tumor", "Fibroblasts", 'Endothelial.cells', "Mesothelial.cells",
-                    'Plasma.cells', 'Naive.B.cells', "Tcm.Naive.helper.T.cells",
-                    "Regulatory.T.cells", "Tem.Trm.cytotoxic.T.cells", "Macrophages", "Classical.monocytes",
-                    "Migratory.DCs", "pDC", "CD16..NK.cells.1")
   
+  # vaharautio
+  # ct_names_all <- c("tumor", "Fibroblasts", 'Endothelial.cells', "Mesothelial.cells",
+  #                   'Plasma.cells', 'Naive.B.cells', "Tcm.Naive.helper.T.cells",
+  #                   "Regulatory.T.cells", "Tem.Trm.cytotoxic.T.cells", "Macrophages", "Classical.monocytes",
+  #                   "Migratory.DCs", "pDC", "CD16..NK.cells.1")
+  # 
+  # # stroma
+  # ct_names_stroma <- c("Fibroblasts", 'Endothelial.cells', "Mesothelial.cells")
+  # 
+  # # main immune cells
+  # ct_names_immune <- c('Plasma.cells', 'Naive.B.cells', "Tcm.Naive.helper.T.cells",
+  #                      "Regulatory.T.cells", "Tem.Trm.cytotoxic.T.cells", "Macrophages", "Classical.monocytes",
+  #                      "Migratory.DCs", "pDC", "CD16..NK.cells.1") 
+  # ct_names_myeloids <- c("Macrophages", "Classical.monocytes", "Migratory.DCs", "pDC")
+  # ct_names_lymphoids <- c("Tcm.Naive.helper.T.cells", "Regulatory.T.cells", "Tem.Trm.cytotoxic.T.cells")
+  
+  # hautaniemi
+  ct_names_all <- c("tumor", "CAF_3", "Mesothelial", "CAF_1", "CAF_2", "Endothelial",             
+                    "Tcells_CD8_NaiveLike", "Tcells_Treg", "Plasma_cells", "Tcells_CD4_Tfh",
+                    "DC_2", "B_cells", "Tcells_CD8_EffectorMemory", "Tcells_CD8_EarlyActiv",
+                    "Macrophages", "pDC", "ILC")
+
   # stroma
-  ct_names_stroma <- c("Fibroblasts", 'Endothelial.cells', "Mesothelial.cells")
-  
+  ct_names_stroma <- c("CAF_3", "Mesothelial", "CAF_1", "CAF_2", "Endothelial")
+
   # main immune cells
-  ct_names_immune <- c('Plasma.cells', 'Naive.B.cells', "Tcm.Naive.helper.T.cells",
-                       "Regulatory.T.cells", "Tem.Trm.cytotoxic.T.cells", "Macrophages", "Classical.monocytes",
-                       "Migratory.DCs", "pDC", "CD16..NK.cells.1") 
-  ct_names_myeloids <- c("Macrophages", "Classical.monocytes", "Migratory.DCs", "pDC")
-  ct_names_lymphoids <- c("Tcm.Naive.helper.T.cells", "Regulatory.T.cells", "Tem.Trm.cytotoxic.T.cells")
-  
-  # additional cells from deconv not counted in phenotyping and should be treated as 'other'
-  #ct_names_other <- c("Tcells_other", "Mast_cells")
+  ct_names_immune <- c("Tcells_CD8_NaiveLike", "Tcells_Treg", "Plasma_cells", "Tcells_CD4_Tfh",
+                       "DC_2", "B_cells", "Tcells_CD8_EffectorMemory", "Tcells_CD8_EarlyActiv",
+                       "Macrophages", "pDC", "ILC")
+  ct_names_myeloids <- c("Macrophages", "pDC", "DC_2")
+  ct_names_lymphoids <- c("Tcells_CD8_NaiveLike", "Tcells_Treg", "Tcells_CD4_Tfh", 
+                          "Tcells_CD8_EffectorMemory", "Tcells_CD8_EarlyActiv")
+
 }
 
 # load geomx, merge with cleaned metadata ---------------------------------
@@ -103,8 +121,8 @@ ct_frac_deconv_long <- lapply(1:length(deconv_list), function(n){
   
   ct_frac_deconv$stroma <- rowSums(ct_frac_deconv[, ct_names_stroma])
   ct_frac_deconv$immune <- rowSums(ct_frac_deconv[, ct_names_immune])
-  #ct_frac_deconv$other <- rowSums(ct_frac_deconv[, ct_names_other])
-  #ct_frac_deconv$immune_other <- rowSums(ct_frac_deconv[, c(ct_names_immune, ct_names_other)])
+  ct_frac_deconv$other <- rowSums(ct_frac_deconv[, ct_names_other])
+  ct_frac_deconv$immune_other <- rowSums(ct_frac_deconv[, c(ct_names_immune, ct_names_other)])
   ct_frac_deconv$myeloids <- rowSums(ct_frac_deconv[, ct_names_myeloids])
   ct_frac_deconv$lymphoids <- rowSums(ct_frac_deconv[, ct_names_lymphoids])
   
@@ -146,21 +164,23 @@ file.path(output_dir, 'cycif_integration', 'b123_ct_frac_rois_incomplete.csv')
 # assume 50/50 ct number in both AOIs - double numbers
 # cell fractions stay the same
 # TODO remember about it
+#TODO summarise depends if bp was there..
 ct_frac_deconv_long_roi_incomplete <- ct_frac_deconv_long %>%
   filter(dcc_filename %in% roi_incomplete$dcc_filename) %>% # get 20 incomplete ROIs
   group_by(sample_roi, cell_type) %>%
-  # summarise(total_cell_nr_geomx = total_cell_nr_geomx*2, ct_nr_bp = ct_nr_bp*2, ct_nr_sd = ct_nr_sd*2,
-  #           ct_frac_bp = ct_frac_bp, ct_frac_sd = ct_frac_sd) %>%
-  summarise(total_cell_nr_geomx = total_cell_nr_geomx*2, ct_nr_sd = ct_nr_sd*2, ct_frac_sd = ct_frac_sd) %>%
+  summarise(total_cell_nr_geomx = total_cell_nr_geomx*2, ct_nr_bp = ct_nr_bp*2, ct_nr_sd = ct_nr_sd*2,
+            ct_frac_bp = ct_frac_bp, ct_frac_sd = ct_frac_sd) %>%
+  #summarise(total_cell_nr_geomx = total_cell_nr_geomx*2, ct_nr_sd = ct_nr_sd*2, ct_frac_sd = ct_frac_sd) %>%
   ungroup()
 
 # merge per ROI
+#TODO summarise depends if bp was there..
 ct_frac_deconv_long_roi <- ct_frac_deconv_long %>%
   filter(!(dcc_filename %in% roi_incomplete$dcc_filename)) %>% # rmv 20 AOIs from incomplete ROIs
   group_by(sample_roi, cell_type) %>%
-  # summarise(total_cell_nr_geomx = sum(total_cell_nr_geomx), ct_nr_bp = sum(ct_nr_bp), ct_nr_sd = sum(ct_nr_sd),
-  #           ct_frac_bp = mean(ct_frac_bp), ct_frac_sd = mean(ct_frac_sd)) %>%
-  summarise(total_cell_nr_geomx = sum(total_cell_nr_geomx), ct_nr_sd = sum(ct_nr_sd), ct_frac_sd = mean(ct_frac_sd)) %>%
+  summarise(total_cell_nr_geomx = sum(total_cell_nr_geomx), ct_nr_bp = sum(ct_nr_bp), ct_nr_sd = sum(ct_nr_sd),
+            ct_frac_bp = mean(ct_frac_bp), ct_frac_sd = mean(ct_frac_sd)) %>%
+  #summarise(total_cell_nr_geomx = sum(total_cell_nr_geomx), ct_nr_sd = sum(ct_nr_sd), ct_frac_sd = mean(ct_frac_sd)) %>%
   ungroup()
 
 ct_frac_deconv_long_roi <- rbind(ct_frac_deconv_long_roi, ct_frac_deconv_long_roi_incomplete)
@@ -194,7 +214,6 @@ ct_frac_both <- left_join(ct_frac_aoi, ct_frac_roi) %>%
 
 fwrite(ct_frac_both, output_ct_frac_deconv_both_wide_path)
 
-
 #####################################################################
 # clusters distributions vs ct frac and clinical vars ---------------------
 
@@ -203,7 +222,7 @@ fwrite(ct_frac_both, output_ct_frac_deconv_both_wide_path)
 clust_type <- 'roi_cluster_label_gmm'
 clust_type_name <- 'gmm' # for plotting
 
-out_dir_clust <- file.path('~/Documents/phd/st/geomx-processing/results/batch123-2808/downstream/roi_clusters_freq_finegrained_deconv', clust_type_name)
+out_dir_clust <- file.path('~/Documents/phd/st/geomx-processing/results/batch123-2808/downstream/roi_clusters_freq_finegrained_deconv_hautaniemi', clust_type_name)
 dir.create(out_dir_clust, recursive = T)
 
 #######
@@ -262,7 +281,8 @@ ggplot(ct_immunefrac_roi_long, aes(x = sample_roi, y = ct_immunefrac_sd_roi, fil
   theme(axis.text.x=element_blank()) +
   facet_wrap(~ get(clust_type), scales = "free", ncol = 2)
 
-ggsave(file.path(out_dir_clust, paste0('barplot_clust_immunefrac_', clust_type,  '.png')))
+ggsave(file.path(out_dir_clust, paste0('barplot_clust_immunefrac_', clust_type,  '.png')),
+       width = 12, height = 12, units = c("in"))
 
 
 ct_frac_clust_mean <- ct_immunefrac_roi_long %>%

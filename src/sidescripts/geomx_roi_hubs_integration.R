@@ -38,7 +38,7 @@ ct_names_other <- c("Tcells_other", "Mast_cells", "NKcells") # "Bcells" goes her
 proj_dir <<- '~/Documents/phd/st'
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
 
-metadt_path <- file.path(output_dir, 'metadata_full_SENSITIVE.csv')
+metadt_path <- file.path(proj_dir,'data', 'geomx', 'metadata_full_SENSITIVE.csv')
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
 bp_cellcounts_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 'bp_res_mid_lvl_ct_updated_ct_fraction.csv')
@@ -48,8 +48,8 @@ sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 's
 # all cells within ROIs with components/communities annotations computed with geomx_cycif_integration.R
 
 # # combined myeloids, no bcells,  min 20 cells components, no mixing
-hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300.csv")
-hubs_outname <- "batch3tls_combined_myeloids_min20cells_nomix"
+hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv")
+hubs_outname <- "batch3tls_combined_myeloids_min20cells_nomix_new_polygons"
 ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells"
 clust_names <- paste0('cluster_', seq(0, 16))
 clust_manualnames <- c('CD4_Macro',
@@ -504,3 +504,52 @@ apply(labs_comb, 1, function(x){
   dev.off()
 })
 
+
+################################################
+# metadt <- fread(file.path(output_dir, 'metadata_full_SENSITIVE.csv'))
+# # mixed
+# # ct_frac_all <- fread('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/ct_frac_comparison_batch3tls_combined_myeloids_min2comp_mixed/ct_frac_all_roi_batch3tls_combined_myeloids_min2comp_mixed.csv')
+# # roi_labels <- fread('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/ct_frac_comparison_batch3tls_combined_myeloids_min2comp_mixed/roi_labels_batch3tls_combined_myeloids_min2comp_mixed.csv')
+# # roi_nolabel_ct_frac_outpath <- '/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/ct_frac_comparison_batch3tls_combined_myeloids_min2comp_mixed/roi_nolabel_ct_nr_cycif.csv'
+# # 
+# 
+# # nomix
+# ct_frac_all <- fread('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/ct_frac_comparison_batch3tls_combined_myeloids_min20cells_nomix/ct_frac_all_roi_batch3tls_combined_myeloids_min20cells_nomix.csv')
+# roi_labels <- fread('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/ct_frac_comparison_batch3tls_combined_myeloids_min20cells_nomix/roi_labels_batch3tls_combined_myeloids_min20cells_nomix.csv')
+# roi_nolabel_ct_frac_outpath <- '/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/ct_frac_comparison_batch3tls_combined_myeloids_min20cells_nomix/roi_nolabel_ct_nr_cycif.csv'
+# 
+# table(roi_labels$community_cluster_label_manualnames_freq0.05, roi_labels$roi_cluster_label_gmm)
+# 
+# ############################
+# # ROIs without any labels
+# # 47 ROIs wo labels - 6 has some component (but less than 0.5 freq), 1 - cluster undefined
+# 
+# roi_nolabel <- roi_labels[roi_labels$community_cluster_label_manualnames_freq0.05 == 'nolabel', ]
+# 
+# ct_frac_nolabel <- ct_frac_all[ct_frac_all$sample_roi %in% roi_nolabel$sample_roi[roi_nolabel$component_label == 'nolabel']]
+# 
+# ct_frac_nolabel_long <- spread(ct_frac_nolabel[, c('sample_roi', 'cell_type', 'ct_nr_cycif')], key = cell_type, value = ct_nr_cycif) %>%
+#   mutate(total_nr = immune + stroma + tumor + other)
+# 
+# fwrite(ct_frac_nolabel_long, roi_nolabel_ct_frac_outpath)
+# 
+# # distribution of cells through rois without labels
+# hist(distinct(ct_frac_nolabel[, c('sample_roi', 'total_cell_nr_cycif')])$total_cell_nr_cycif, breaks = 50)
+# 
+# ggplot(ct_frac_nolabel, aes(x=ct_nr_cycif, color = cell_type)) + 
+#   geom_density() +
+#   ylim(0, 0.15)
+# 
+# ############################
+# # mixed_w_CD4 ROIs without community with CD4
+# # 49 ROIs mixed_w_CD4, 10 wo label, 22 off-labelled, 17 with ok label
+# table(roi_labels$roi_cluster_label_gmm)
+# 
+# CD4_off <- roi_labels[roi_labels$roi_cluster_label_gmm == 'mixed_w_CD4' & !grepl('CD4', roi_labels$community_cluster_label_manualnames_freq0.05)]
+# CD4_off_comp <- roi_labels[roi_labels$roi_cluster_label_gmm == 'mixed_w_CD4' & !grepl('CD4', roi_labels$component_label_freq0.05)]
+# 
+# 
+# CD4_off_wlab <- CD4_off[CD4_off$component_label != 'nolabel']
+# 
+# ct_frac_CD4off <- ct_frac_all[ct_frac_all$sample_roi %in% CD4_off_wlab$sample_roi]
+# ct_frac_CD4off_long <- spread(ct_frac_CD4off[, c('sample_roi', 'cell_type', 'ct_nr_cycif')], key = cell_type, value = ct_nr_cycif)

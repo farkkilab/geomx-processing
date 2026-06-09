@@ -14,7 +14,8 @@ library(raster)
 
 # define paths ------------------------------------------------------------
 
-um_to_pix_ratio <- 1 #0.325 for b2, 0.65 for b3TLS 1 if already in pix
+um_to_pix_ratio <- 1 #0.325 for b2, 0.65 for b3TLS, 1 if already in pix
+batchname <- 'batch3tls'
 
 # from master script
 proj_dir <<- '~/Documents/phd/st'
@@ -32,7 +33,7 @@ phenotyped_cells_dirs_paths <- c(file.path(eyemt_pdrive_dir, 'Data/cycif/batch1_
                                  file.path(eyemt_pdrive_dir, 'Data/cycif/batch3_adjacent_slides/phenotyped_cells/tribus'))
 
 
-out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration","batch123_tribus") #  "batch3tls_tribus_and_manualgating"
+out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", paste0(batchname, "_tribus_and_manualgating_new_polygons")) #  "batch3tls_tribus_and_manualgating"
 outp_plot_dir <- file.path(out_path_hubs_cells_inroi, 'plots_newpolygons')
 dir.create(outp_plot_dir, recursive = T)
 
@@ -65,14 +66,16 @@ metadt$Sample_fixed <- ifelse(metadt$main_batch_nr == 1,
                                                'S084_iOme','S084_pAdn', 'S139_iOme', 'S139_pPer')),
                               metadt$Sample)
 
+meta_weird_coords <- metadt[metadt$roi_c1_X_cycif >= metadt$roi_c2_X_cycif | metadt$roi_c4_X_cycif >= metadt$roi_c3_X_cycif |
+                            metadt$roi_c1_Y_cycif <= metadt$roi_c4_Y_cycif | metadt$roi_c2_Y_cycif <= metadt$roi_c3_Y_cycif, ]
 
 # iterate through samples and select cells within ROIs --------------------
 
-pheno_dir <- phenotyped_cells_dirs_paths[1]
-sample_name <- 'S053_iOme'
+pheno_dir <- phenotyped_cells_dirs_paths[3]
+sample_name <- 'S032_pOme'
   
 # iterate through batches dirs
-pheno_cells_inroi_all <- lapply(phenotyped_cells_dirs_paths, function(pheno_dir){
+pheno_cells_inroi_all <- lapply(phenotyped_cells_dirs_paths[2:3], function(pheno_dir){
   batchnr <- as.numeric(substr(gsub('.*batch', '', pheno_dir), 1, 1))
   batch_pheno_all_files <- list.files(pheno_dir, pattern = "tribus_annotated", full.names = T)
   
@@ -81,11 +84,12 @@ pheno_cells_inroi_all <- lapply(phenotyped_cells_dirs_paths, function(pheno_dir)
   #iterate through samples in batch
   lapply(unique(metadt_batch$Sample_fixed), function(sample_name){
     
+    print('###################################')
     print(sample_name)
     pheno_cells_sample_path <- batch_pheno_all_files[grepl(sample_name, batch_pheno_all_files)]
     print(pheno_cells_sample_path)
     
-    if(length(pheno_cells_sample_path) == 0){
+    if(length(pheno_cells_sample_path) == 0 | sample_name == 'S032_pOme'){
       return(NULL)
     } else{
       pheno_cells_sample <- fread(pheno_cells_sample_path)
@@ -101,36 +105,45 @@ pheno_cells_inroi_all <- lapply(phenotyped_cells_dirs_paths, function(pheno_dir)
       
       roi_coords_sample <- distinct(roi_coords_sample)
       
+      # old implementation
+      # cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
+      #   # find cells within range
+      #   # coordinates are not longer rectangles, they're a bit rotated - the cells are found inside longer edges of rectangle
+      #   cells_in_roi <- dplyr::filter(pheno_cells_sample,
+      #                                 as.numeric(X_centroid_px) >= min(as.numeric(row[['roi_c1_X_cycif']]), as.numeric(row[['roi_c4_X_cycif']])) &
+      #                                   as.numeric(X_centroid_px) <= max(as.numeric(row[['roi_c2_X_cycif']]), as.numeric(row[['roi_c3_X_cycif']])) &
+      #                                   as.numeric(Y_centroid_px) >= min(as.numeric(row[['roi_c4_Y_cycif']]), as.numeric(row[['roi_c3_Y_cycif']])) &
+      #                                   as.numeric(Y_centroid_px) <= max(as.numeric(row[['roi_c1_Y_cycif']]), as.numeric(row[['roi_c2_Y_cycif']])))
+      # 
+      # 
+      #   cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
+      #   return(cells_in_roi)
+      # })
+      # 
+      # cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
+      # print(nrow(cells_in_roi_all))
+      # table(cells_in_roi_all$Roi_geomx)
+      
+      # new implementation
       cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
-        
-        #######################################
-        # find cells within range
-        # coordinates are not longer rectangles, they're a bit rotated - the cells are found inside longer edges of rectangle
-        # cells_in_roi <- dplyr::filter(pheno_cells_sample,
-        #                               as.numeric(X_centroid_px) >= min(as.numeric(row[['roi_c1_X_cycif']]), as.numeric(row[['roi_c4_X_cycif']])) &
-        #                                 as.numeric(X_centroid_px) <= max(as.numeric(row[['roi_c2_X_cycif']]), as.numeric(row[['roi_c3_X_cycif']])) &
-        #                                 as.numeric(Y_centroid_px) >= min(as.numeric(row[['roi_c4_Y_cycif']]), as.numeric(row[['roi_c3_Y_cycif']])) &
-        #                                 as.numeric(Y_centroid_px) <= max(as.numeric(row[['roi_c1_Y_cycif']]), as.numeric(row[['roi_c2_Y_cycif']])))
-        # 
-        # 
-        # cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-        #######################################
-        # new finding cells implementation rewritten from python shapely package to sp R package
+
+        #new finding cells implementation rewritten from python shapely package to sp R package
         poly_x <- c(row[['roi_c1_X_cycif']], row[['roi_c2_X_cycif']], row[['roi_c3_X_cycif']], row[['roi_c4_X_cycif']])
         poly_y <- c(row[['roi_c1_Y_cycif']], row[['roi_c2_Y_cycif']], row[['roi_c3_Y_cycif']], row[['roi_c4_Y_cycif']])
 
         cells_in_roi <- dplyr::filter(pheno_cells_sample, sp::point.in.polygon(point.x = as.numeric(X_centroid_px),
-                                                                                point.y = as.numeric(Y_centroid_px), 
+                                                                                point.y = as.numeric(Y_centroid_px),
                                                                                 pol.x = poly_x, pol.y = poly_y) != 0)
-        
+
         cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-        #######################################
         return(cells_in_roi)
       })
       
       cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
       print(nrow(cells_in_roi_all))
       table(cells_in_roi_all$Roi_geomx)
+
+      #TODO choose here which implementation to use
       return(cells_in_roi_all)
     }
   })
@@ -147,15 +160,15 @@ pheno_cells_inroi_all_df$cell_type <- mapvalues(pheno_cells_inroi_all_df$cell_ty
                                                         from = c("Tumor", "Dcs", "CD8_Tcells", "Stroma", "Macrophages", "CD4_Tcells"),
                                                         to = c("tumor", "DCs", "Tcells_CD8", "stroma", "Macrophages_Monocytes", "Tcells_CD4"))
 
-fwrite(pheno_cells_inroi_all_df, file.path(out_path_hubs_cells_inroi, 'batch123_cells_in_roi_new_polygons.csv'))
+fwrite(pheno_cells_inroi_all_df, file.path(out_path_hubs_cells_inroi, paste0(batchname, '_cells_in_roi_new_polygons.csv')))
 
 #########################################
 # to check b3TLS 
-# pheno_cells_inroi_all_df <- fread('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300.csv')
-# pheno_cells_inroi_all_df$cell_type <- ifelse(grepl('undefined|other|Undefined', pheno_cells_inroi_all_df$consensus_label_clean), 'other', pheno_cells_inroi_all_df$consensus_label_clean)
-# pheno_cells_inroi_all_df$cell_type <- mapvalues(pheno_cells_inroi_all_df$cell_type, 
-#                                                 from = c("Tumor", "Dcs", "CD8_Tcells", "Stroma", "Macrophages", "CD4_Tcells"),
-#                                                 to = c("tumor", "DCs", "Tcells_CD8", "stroma", "Macrophages_Monocytes", "Tcells_CD4"))
+pheno_cells_inroi_all_df <- fread('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv')
+pheno_cells_inroi_all_df$cell_type <- ifelse(grepl('undefined|other|Undefined', pheno_cells_inroi_all_df$consensus_label_clean), 'other', pheno_cells_inroi_all_df$consensus_label_clean)
+pheno_cells_inroi_all_df$cell_type <- mapvalues(pheno_cells_inroi_all_df$cell_type,
+                                                from = c("Tumor", "Dcs", "CD8_Tcells", "Stroma", "Macrophages", "CD4_Tcells"),
+                                                to = c("tumor", "DCs", "Tcells_CD8", "stroma", "Macrophages_Monocytes", "Tcells_CD4"))
 
 ##########################################
 
@@ -181,7 +194,7 @@ ct_frac_cycif_long_roi <- left_join(ct_frac_cycif_long_roi, ct_frac_cycif_roi[, 
   mutate(ct_frac_cycif = ct_nr_cycif / total_cell_nr_cycif) %>%
   filter(sample_roi %in% metadt$sample_roi) # rmv roi not in metadata eg removed during qc
 
-fwrite(ct_frac_cycif_long_roi, file.path(out_path_hubs_cells_inroi,  'batch123_ct_frac_cycif_roi_new_polygons.csv'))
+fwrite(ct_frac_cycif_long_roi, file.path(out_path_hubs_cells_inroi,  paste0(batchname, '_ct_frac_cycif_roi_new_polygons.csv')))
 
 
 # merge with cells counted from deconv ------------------------------------

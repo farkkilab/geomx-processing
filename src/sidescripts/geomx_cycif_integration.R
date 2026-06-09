@@ -33,7 +33,7 @@ hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPA
 # # combined myeloids, no bcells,  min 2 components, no mixing
 hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cell_df_nomix_comfiltct20_dt171715_ct10_dt300.csv")
 hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_nomix_comfiltct20_dt171715_ct10_dt300.csv")
-hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300.csv"
+hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv"
 
 
 # # combined myeloids, no bcells,  min 2 components, no mixing
@@ -122,6 +122,7 @@ hubs_cells <- hubs_cells[hubs_cells$Sample %in% b3tls_samplename, ]
 # filter to cells within ROIs ---------------------------------------------
 
 hubs_cells_inroi <- lapply(unique(hubs_cells$Sample), function(sample_name){
+  print('##############')
   print(sample_name)
   
   hubs_cells_sample <- hubs_cells[hubs_cells$Sample == sample_name, ]
@@ -133,8 +134,8 @@ hubs_cells_inroi <- lapply(unique(hubs_cells$Sample), function(sample_name){
   
   roi_coords_sample <- distinct(roi_coords_sample)
   
-  cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
-    
+  cells_in_roi_all_old <- apply(roi_coords_sample, 1, function(row){
+
     # find cells within range
     # coordinates are not longer rectangles, they're a bit rotated - the cells are found inside longer edges of rectangle
     cells_in_roi <- dplyr::filter(hubs_cells_sample,
@@ -143,12 +144,32 @@ hubs_cells_inroi <- lapply(unique(hubs_cells$Sample), function(sample_name){
                                     as.numeric(Y_centroid_px) >= min(as.numeric(row[['roi_c4_Y_cycif']]), as.numeric(row[['roi_c3_Y_cycif']])) &
                                     as.numeric(Y_centroid_px) <= max(as.numeric(row[['roi_c1_Y_cycif']]), as.numeric(row[['roi_c2_Y_cycif']])))
 
+
+    cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
+    return(cells_in_roi)
+  })
+  
+  cells_in_roi_all_old <- do.call(rbind, cells_in_roi_all_old)
+  print(nrow(cells_in_roi_all_old))
+  table(cells_in_roi_all_old$Roi_geomx)
+  
+  cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
+    
+    #new finding cells implementation rewritten from python shapely package to sp R package
+    poly_x <- c(row[['roi_c1_X_cycif']], row[['roi_c2_X_cycif']], row[['roi_c3_X_cycif']], row[['roi_c4_X_cycif']])
+    poly_y <- c(row[['roi_c1_Y_cycif']], row[['roi_c2_Y_cycif']], row[['roi_c3_Y_cycif']], row[['roi_c4_Y_cycif']])
+    
+    cells_in_roi <- dplyr::filter(hubs_cells_sample, sp::point.in.polygon(point.x = as.numeric(X_centroid_px),
+                                                                           point.y = as.numeric(Y_centroid_px),
+                                                                           pol.x = poly_x, pol.y = poly_y) != 0)
     
     cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
     return(cells_in_roi)
   })
   
   cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
+  print(nrow(cells_in_roi_all))
+  table(cells_in_roi_all$Roi_geomx)
   return(cells_in_roi_all)
 })
 
