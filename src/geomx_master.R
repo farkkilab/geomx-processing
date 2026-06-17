@@ -287,7 +287,7 @@ dge_inp_data_type <<- c('bp') # within c('all', 'bp')
 
 #ct_of_interest <<- c("tumor", "Tcells", "Fibroblasts", "Macrophages", "Endothelial cells", "DCs")
 ct_of_interest <<- c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Fibroblasts_Mesothelial")
-ct_of_interest <<- c("Macrophages_Monocytes", "Tcells_CD8", "DCs", "Tcells_CD4")
+ct_of_interest <<- c("Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs")
 # if running for 'bp' (bayes prism deconvolution results) 
 # specifies for which cell types GSEA should be computed (as in scrna_anno column in scRNAseq reference ds)
 # if ct_of_interest <<- NULL - GSEA will be computed for all cell types
@@ -298,7 +298,7 @@ ct_of_interest <<- c("Macrophages_Monocytes", "Tcells_CD8", "DCs", "Tcells_CD4")
 # if not needed, set to NULL
 #custom_metadt_path <<- file.path(output_dir, 'deconvolution/bayes_prism/bp_hitum_in_stroma.csv')
 #custom_metadt_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv', 'dcc_deconv_clusters.csv')
-custom_metadt_path <<- "~/Documents/phd/st/geomx-processing/results/batch123-2808/metadata_full_SENSITIVE.csv"
+custom_metadt_path <<- "~/Documents/phd/st/data/geomx/metadata_full_SENSITIVE.csv"
 
 # DGE parameters
 comparison_type <<- 'within' 
@@ -306,7 +306,7 @@ comparison_type <<- 'within'
 # between - comparisons between slides
 
 #'roi_cluster_label_gmm'
-main_var_name <<-  'roi_cluster_label_gmm'# main variable to make comparison between
+main_var_name <<-  'Segment'# main variable to make comparison between
 main_var_is_bin <<- FALSE # should variable be compared with all others at once (TRUE) or with each other separately
 # if FALSE all labels in main_var_name will be compared as they are
 
@@ -315,8 +315,9 @@ main_var_is_bin <<- FALSE # should variable be compared with all others at once 
 #main_var_main_val <<- 'CD8_.*Iba1' # if main_var_is_bin - TRUE - name of the main value (or regex - careful!)
 labs <- c("CD8_Macro_domin", "mixed_w_CD4", "mixed_w_others", "Macro_domin", "Bcell_domin")
 main_var_main_val <<- NULL
+
 #dge_categories <<- c('Segment', 'NACT_status') # categories to divide to when making DGE separately
-dge_categories <<- c('NACT_status', 'Segment')
+dge_categories <<- c('NACT_status')
 
 # don't change it - identifier of dge run
 dge_name <<- paste0('dge_', comparison_type, '_slide_', main_var_name, 

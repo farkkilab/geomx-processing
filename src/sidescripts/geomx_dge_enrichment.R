@@ -452,7 +452,7 @@ for(dge_df_path in dge_df_list){
             ggsave(file.path(dge_dir_path, 'go_enrichment', dge_inp_data,
                              paste0('dotplot_go_clustterms_all', dge_inp_data, '_', dge_subset_name, '_', 
                                     dge_signif_name, '_fc', as.character(fc_thr), '_pval', as.character(pval_thr), '.png')),
-                   width = 12, height = 8, units = 'in')
+                   width = 12, height = 14, units = 'in')
 
             
             if(nrow(go_res_clust) > 15){

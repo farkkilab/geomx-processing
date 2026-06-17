@@ -20,7 +20,7 @@
 ###############
 
 # best on batch-effect corrected data: 'limma_batch_corr' or 'harmony_batch_corr' (both log)
-norm_type <- 'harmony_batch_corr_q3_norm' 
+norm_type <- 'harmony_batch_corr_deseq2_vst' 
 
 cofounder_name <- sample_name # better don't change - is added as a cofounder (random intercept in LLM model)
 # remove samples with <2 nr of each AOI comparison group (not enough to compare, only adds noise)
@@ -37,6 +37,7 @@ main_val_use_regex <- F
 dir.create(file.path(output_dir, 'dge'), showWarnings = T, recursive = T)
 dir.create(file.path(output_dir, 'dge', dge_name), showWarnings = T, recursive = T)
 
+#TODO fix this - causing issues for dge_all
 norm_is_log <- ifelse(norm_type %in% c('exprs', 'q3_norm', 'deseq2_norm'), FALSE, TRUE)
 norm_name <- ifelse(norm_is_log, norm_type, paste0("log_", norm_type)) # TODO needed?
 
@@ -47,7 +48,7 @@ scrna_ref_cleaned_path <- file.path(output_dir, 'deconvolution', gsub('.RDS', '_
 #TODO adjust to new naming and parse with deconv norm and batch corr
 deconv_bp_path <- ifelse(grepl('harmony', norm_type), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
-                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_q3_norm_harmony_corr.RDS')), 
+                                   paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_deseq2_vst_harmony_corr.RDS')), 
                          file.path(output_dir, 'deconvolution', 'bayes_prism', 
                                    paste0('bp_res_', scrna_anno, '_expr_mtx_cleaned_deseq2_vst_limma_corr_', 
                                           primary_batch_var, secondary_batch_var,
@@ -69,6 +70,8 @@ if(!is.null(custom_metadt_path)){
   if(aoi_id %in% colnames(custom_metadt)){
     pData(geomx_obj) <- left_join(pData(geomx_obj), custom_metadt, by = aoi_id, suffix = c("_orig", ""))
     colnames(geomx_obj) <- pData(geomx_obj)[[aoi_id]] # returning lost colnames
+    pData(geomx_obj)[['Roi_geomx_factor']] <- as.factor(pData(geomx_obj)[[roi_id]])
+    pData(geomx_obj)[['sample_roi_factor']] <- as.factor(pData(geomx_obj)[['sample_roi']])
   } else{
     stop('custom_metadt have to contain aoi_id column to be merged with metadata')
   }
@@ -126,36 +129,20 @@ if('bp' %in% dge_inp_data_type){
   expr_list <- c(expr_list, deconv_ct_list_filt)
 } 
 
-# else if('bp_pulled' %in% dge_inp_data_type){
-#   
-#   deconv_res <- as.matrix(fread(deconv_bp_pulled_path), rownames = 1)
-#   
-#   # filter to cell types of interest
-#   if(!is.null(ct_of_interest)){
-#     deconv_res <- deconv_res[, which(grepl(paste(ct_of_interest, collapse = '|'), colnames(deconv_res)))]
-#   }
-#   
-#   deconv_list <- list(deconv_res)
-#   names(deconv_list) <- 'dge_deconv'
-#   
-#   expr_list <- c(expr_list, deconv_list)
-# }
-
-
 # DGE with main variable comparison ---------------------------------------
 
 # create formula for the LLM model:
 # Sample is used as a mixed effect (cofounder)
 if(comparison_type == 'within'){
   # within slide analysis - with random slope in LMM
-  model_formula_base <- ~ main_var_factor + (1 + main_var_factor | cofounder_factor) # random slope + random intercept
+  model_formula <- ~ main_var_factor + (1 + main_var_factor | cofounder_factor) # random slope + random intercept
   # correction for ct fraction in deconv
-  model_formula_ctfrac_corr <- ~ main_var_factor + ct_fraction + (1 + main_var_factor | cofounder_factor) 
+  #model_formula_ctfrac_corr <- ~ main_var_factor + ct_fraction + (1 + main_var_factor | cofounder_factor) 
   #reduced_model_formula <- ~ (1 + main_var_factor | cofounder_factor) # for testing if model add any information
 } else if(comparison_type == 'between'){
-  model_formula_base <- ~ main_var_factor + (1 | cofounder_factor) # random intercept
+  model_formula <- ~ main_var_factor + (1 | cofounder_factor) # random intercept
   # correction for ct fraction in deconv
-  model_formula_ctfrac_corr <- ~ main_var_factor + ct_fraction + (1 | cofounder_factor) 
+  #model_formula_ctfrac_corr <- ~ main_var_factor + ct_fraction + (1 | cofounder_factor) 
   #reduced_model_formula <- ~ (1 | cofounder_factor)
 } else{stop('comparison type can be either "within" or "between"')}
 
@@ -181,14 +168,6 @@ lapply(names(expr_list), function(expr_name){
   
   pData(geomx_obj_dge) <- prepare_dge_metadata(pData(geomx_obj_dge), main_var_name, main_var_is_bin, main_var_main_val,
                                                dge_categories, cofounder_name, main_val_use_regex) 
-  
-  # if dge is computed for deconv results, choose model with ct correction and change colname
-  if(expr_name == 'dge_all'){
-    model_formula <- model_formula_base
-  } else{
-    model_formula <- model_formula_ctfrac_corr
-    pData(geomx_obj_dge)$ct_fraction <- round(pData(geomx_obj_dge)[[paste0(gsub('dge_deconv_', '', expr_name), '_aoi_ct_frac')]], 2)
-  }
   
   
   dge_results <- data.frame()

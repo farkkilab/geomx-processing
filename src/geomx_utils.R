@@ -882,11 +882,17 @@ remove_low_complex_and_noncoding_genes <- function(geomx_obj, scrna_ref_obj, raw
 #   (data.frame) Modified metadata with adjusted groupings and factors for DGE.
 # 
 prepare_dge_metadata <- function(metadt, main_var_name, main_var_is_bin, main_var_main_val,
-                                 dge_categories, cofounder_name){
+                                 dge_categories, cofounder_name, main_val_use_regex = F){
   if(main_var_is_bin){
     # make binary vector - either main variable has the desired value or not
-    metadt$main_var <- ifelse(grepl(main_var_main_val, metadt[, main_var_name]),
-                              main_var_main_val, 'other_roi_type')
+    if(main_val_use_regex){
+      metadt$main_var <- ifelse(grepl(main_var_main_val, metadt[, main_var_name]),
+                                main_var_main_val, 'other_roi_type')
+    } else{
+      metadt$main_var <- ifelse(metadt[, main_var_name] == main_var_main_val,
+                                main_var_main_val, 'other_roi_type')
+    }
+
   } else{
     metadt$main_var <- metadt[[main_var_name]]
   }
