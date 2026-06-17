@@ -48,7 +48,7 @@ ct_frac_deconv_roi_immunefrac_path <- file.path(output_dir, 'deconvolution', 're
 # ROI clusters based on deconvolution ct fractions from geomx_relabel_roi_2nd_approach
 # TODO change clust_type if needed - also , 'clusters_hclust_cut2' is ok
 ct_frac_clust_path <- file.path(output_dir, 'deconvolution', 'relabel-roi-deconv-dimred', 'sd_mye_lymph_b_all_clustering_results.csv')
-clust_type <- 'clusters_gmm_clustnr_5'
+clust_types <- c('clusters_gmm_clustnr_5', 'clusters_hclust_cut2')
 # descriptive labels for clusters - IN THIS CASE BOTH METHODS HAS THE SAME CLUSTERS DESCRIPTION
 clust_labels <- list(CD8_Macro_domin = 1, mixed_w_CD4 = 2, mixed_w_others = 3, Macro_domin = 4, Bcell_domin = 5)
 
@@ -82,10 +82,14 @@ colnames(ct_immunefrac_roi) <- paste0('ct_immunefrac_sd_roi_', colnames(ct_immun
 colnames(ct_immunefrac_roi)[1] <- 'sample_roi'
 
 # clusters labels
-roi_clust <- fread(ct_frac_clust_path, select = c('sample_roi', clust_type))
-roi_clust$roi_cluster_label <- mapvalues(roi_clust[[clust_type]], 
+#TODO change if different labels
+roi_clust <- fread(ct_frac_clust_path, select = c('sample_roi', clust_types))
+roi_clust$roi_cluster_label_gmm <- mapvalues(roi_clust[[clust_types[[1]]]], 
                                       from=c(unname(unlist(clust_labels))),
                                       to=c(names(clust_labels)))
+roi_clust$roi_cluster_label_hclust <- mapvalues(roi_clust[[clust_types[[2]]]], 
+                                             from=c(unname(unlist(clust_labels))),
+                                             to=c(names(clust_labels)))
 
 
 # merge data --------------------------------------------------------------
@@ -95,7 +99,7 @@ metadt <- left_join(metadt, clindt) %>%
   left_join(ct_frac_aoi) %>%
   left_join(ct_frac_roi) %>%
   left_join(ct_immunefrac_roi) %>%
-  left_join(roi_clust[, c('sample_roi', 'roi_cluster_label')]) %>%
+  left_join(roi_clust[, c('sample_roi', 'roi_cluster_label_gmm', 'roi_cluster_label_hclust')]) %>%
   as.data.frame()
 
 

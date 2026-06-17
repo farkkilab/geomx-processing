@@ -47,6 +47,20 @@ meta_cleaned$Roi_geomx_original <- as.character(meta_cleaned$Roi_geomx_original)
 meta_cleaned$main_batch_nr <- as.character(meta_cleaned$main_batch_nr)
 meta_cleaned$sample_roi <- paste0(meta_cleaned$Sample, '_', meta_cleaned$Roi_geomx)
 
+b1_sample_names <- c('S015_post', 'S015_pre', 'S027_post', 'S027_pre', 'S032_post', 'S032_pre',
+                     'S053_post', 'S057_post', 'S065_post', 'S072_post', 'S073_post', 'S076_post',
+                     'S084_post','S084_pre', 'S139_post', 'S139_pre')
+
+b1_sample_names_orig <- c('S015_iOme', 'S015_pPer', 'S027_iOme', 'S027_pOme', 'S032_iOval', 'S032_pOme',
+                          'S053_iOme', 'S057_iOme', 'S065_iOme', 'S072_iOme', 'S073_iOme', 'S076_iOme',
+                          'S084_iOme','S084_pAdn', 'S139_iOme', 'S139_pPer')
+
+meta_cleaned$Sample_fixed <- ifelse(meta_cleaned$main_batch_nr == 1, 
+                              mapvalues(meta_cleaned$Sample, 
+                                        from = b1_sample_names,
+                                        to = b1_sample_names_orig),
+                              meta_cleaned$Sample)
+
 # clean and calculate cycif coordinates for b2 and 3 ----------------------
 
 col_order <- c("main_batch_nr", "Sample", "Roi_geomx", "sample_roi", "roi_name",
@@ -58,7 +72,7 @@ col_order <- c("main_batch_nr", "Sample", "Roi_geomx", "sample_roi", "roi_name",
 # b2 and b3 ROIs are not rectangles but polygons.
 # width+height are calculated as longer one from 2 possible height/width edges
 
-for(batch_name in c('batch2', 'batch3')){
+for(batch_name in c('batch1', 'batch2', 'batch3')){
   roi_coords_dir <- file.path(eyemt_geomx_dir, batch_name, coords_dir)
   roi_coords_geomx_dir <- file.path(eyemt_geomx_dir, batch_name, coords_geomx_dir)
   sample_names <- file_path_sans_ext(basename(list.files(roi_coords_dir, pattern = ".csv")))
@@ -86,17 +100,37 @@ for(batch_name in c('batch2', 'batch3')){
     roi_coords <- mutate_at(roi_coords, vars(matches("c[0-9]")), as.numeric)
     roi_coords$Sample <- sample_name
     
-    # add original geomx roi coords
-    if(batch_name == 'batch2'){
-      coords_path <- file.path(roi_coords_geomx_dir, paste0(sample_name, '_GeoMx_ROIs.csv'))
-    } else if(batch_name == 'batch3'){
-      coords_path <- file.path(roi_coords_geomx_dir, paste0(sample_name, '.csv'))
+    if(batch_name == 'batch1'){
+      # change names and re-map sample names back to unique
+      roi_coords$roi_name <- gsub('ROI', '', roi_coords$roi_name)
+      roi_coords$Sample <- mapvalues(roi_coords$Sample, 
+                from = b1_sample_names_orig,
+                to = b1_sample_names)
     }
-
-    roi_coords_geomx <- as.data.frame(fread(coords_path, select = c('Roi', 'ROI_Coordinate_X', 'ROI_Coordinate_Y', 'Width', 'Height'), 
-                                            col.names = c('roi_name', "roi_c1_X_geomx", "roi_c1_Y_geomx", 
-                                                          "roi_width_geomx", "roi_height_geomx")))
-
+    
+    # add original geomx roi coords
+    #TODO just using the previously made table (from latter part of the code)
+    # change it in a one neat code in the future
+    if(batch_name == 'batch1'){
+      coords_path <- file.path(roi_coords_geomx_dir, 'batch1_geomx_coordinates.csv')
+      roi_coords_geomx <- as.data.frame(fread(coords_path, select = c('Sample', 'roi_name', "roi_c1_X_geomx", "roi_c1_Y_geomx", 
+                                                                      "roi_width_geomx", "roi_height_geomx")))
+      roi_coords_geomx <- as.data.frame(fread(coords_path, select = c('Sample', 'roi_name', "roi_c1_X_geomx", "roi_c1_Y_geomx", 
+                                                                      "roi_width_geomx", "roi_height_geomx"))) %>%
+        dplyr::filter(Sample == unique(roi_coords$Sample)) %>%
+        select(-Sample)
+    } else{
+      if(batch_name == 'batch2'){
+        coords_path <- file.path(roi_coords_geomx_dir, paste0(sample_name, '_GeoMx_ROIs.csv'))
+      } else if(batch_name == 'batch3'){
+        coords_path <- file.path(roi_coords_geomx_dir, paste0(sample_name, '.csv'))
+      }
+      
+      roi_coords_geomx <- as.data.frame(fread(coords_path, select = c('Roi', 'ROI_Coordinate_X', 'ROI_Coordinate_Y', 'Width', 'Height'), 
+                                              col.names = c('roi_name', "roi_c1_X_geomx", "roi_c1_Y_geomx", 
+                                                            "roi_width_geomx", "roi_height_geomx")))
+    }
+    
     roi_coords_geomx$roi_name <- as.character(roi_coords_geomx$roi_name)
     roi_coords <- left_join(roi_coords, roi_coords_geomx)
 
@@ -111,7 +145,7 @@ for(batch_name in c('batch2', 'batch3')){
   roi_coords_all$main_batch_nr <- gsub("batch", "", batch_name)
   
   # merge with other metadata to ensure roi_geomx naming
-  if(batch_name == 'batch2'){
+  if(batch_name %in% c('batch1', 'batch2')){
     roi_coords_all <- left_join(roi_coords_all, meta_cleaned[, c('Roi_geomx_original', 'Sample', 'main_batch_nr', 'Roi_geomx')], 
                                 by = c('roi_name' = 'Roi_geomx_original', 'Sample', 'main_batch_nr')) %>%
       distinct()
@@ -131,7 +165,11 @@ for(batch_name in c('batch2', 'batch3')){
   fwrite(roi_coords_all, file.path(output_dir, "cycif_integration", paste0("geomx_cycif_coordinates_", batch_name, ".csv")))
 }
 
-
+########################################################################################3
+########################################################################################3
+# LEGACY: this code was used to produce h30492/farkkilab2/9_EyeMT/Data/geomx/batch1/roi_coordinates_cycif/geomx_coordinates.csv
+# based on the old format of cycif coordinates
+# With the new format, geomx width and height generated using this code was just introduced to the main loop above
 # combine cycif coordinates for b1 ----------------------------------------
 
 # b1 are just rectangles calculated from c1 coords + width/height
