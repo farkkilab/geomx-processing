@@ -7,30 +7,55 @@
 # https://github.com/sqjin/CellChat/issues/300
 # https://htmlpreview.github.io/?https://github.com/jinworks/CellChat/blob/master/tutorial/CellChat-vignette.html
 
+library(igraph, quietly =T)
+library(dplyr, quietly =T)
+library(scales, quietly =T)
+library(circlize, quietly =T)
+library(pheatmap, quietly =T)
+library(ComplexHeatmap, quietly =T)
+
+library(NMF)
+library(DESeq2, quietly =T)
+library(CellChat, quietly =T)
+library(patchwork, quietly =T)
+library(ggh4x)
+library(rlang)
+library(presto)
 
 # define parameters -------------------------------------------------------
 
 # common params
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 sample_name <- 'Sample'
-grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
+grouping_var_col_ids <- c("Segment", "NACT_status", "roi_cluster_label_gmm") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
 
 # parameters for CellChat and MultiNicheNet : Single cell approaches
 # names of cells to fin
 #cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
-cell_types_selected <- NULL
+cell_types_selected <- c("tumor", "Bcells", "Tcells_CD4", "Tcells_other", "Tcells_CD8", 
+                         "Fibroblasts_Mesothelial", "Macrophages_Monocytes", "DCs")
+
+# TODO rmv later
+# exclude Mast cells - too little 
 
 # parameters for Cellchat
-# TODO rerun with 0.01
-cell_frac_cutoff = 0.01 # 0.01 or 0.005
-min_cells = 10 # Number of minimum cells in each cell group
 
-thresh_fc = 0.1 # min FC between cell types to count as diff expr
-thresh_p = 0.05 # min pval of selected lr pairs
+# creating a 'pseudosc dataset'
+# libsize_log is CC default, but adjusted to sc, deseq2 is standard for bulk, deseq2_vst is suggested norm method for BP
+# TODO !! deseq2_vst produce negative numbers which causes CellChat error
+norm_type <- 'deseq2' # c('deseq2', 'deseq2_vst', 'libsize_log') 
+cell_frac_cutoff = 0.01 # 0.01 or 0.005 AOI for given cell will be removed if ct fraction < thr 
+
+min_cells = 10 # Number of minimum cells in each cell group for DGE
+
+thresh_fc = 0.01 # min FC between cell types to count as diff expr
+thresh_pval = 0.05 # min pval of selected lr pairs
+
+custom_metadt_path <<- "~/Documents/phd/st/data/geomx/metadata_full_SENSITIVE.csv"
 
 # variables to merge the final csv with
-meta_names <- c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
-                grouping_var_col_ids, main_batch_var, secondary_batch_var)
+meta_names <- unique(c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
+                grouping_var_col_ids, main_batch_var, secondary_batch_var, 'roi_cluster_label_gmm'))
 
 
 # path to raw BP results and cell fractions
@@ -40,10 +65,14 @@ bp_res_path <- file.path(output_dir, 'deconvolution', 'bayes_prism',
 bp_ct_frac_path <- file.path(output_dir, 'deconvolution', 'bayes_prism', 
                                        paste0('bp_res_', scrna_anno, '_ct_fraction.csv'))
 
+norm_type_name <- ifelse(norm_type == 'deseq2', 'deseq2_log', norm_type)
 # path to the prepared normalized pseudo scRNaseq dataset from all bpres
 bp_pseudosc_path <- file.path(output_dir, 'lr_interactions', 
-                              paste0('bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_norm.csv'))
+                              paste0('bp_res_pseudosc_', scrna_anno, '_ct_frac_', cell_frac_cutoff,'_', norm_type_name, '_harmony.csv'))
 
+source(file.path(proj_dir, 'geomx-processing', 'src', 'lr-analysis', 'cellChat_util.R'))
+
+########################
 # output paths
 outct <- ifelse(!is.null(cell_types_selected), paste(cell_types_selected, collapse = '_'), 'all')
 
@@ -61,10 +90,15 @@ cc_path_df_path <- file.path(output_dir, 'lr_interactions', 'cell_chat',
                              paste0('CellChat_df_', paste(grouping_var_col_ids, collapse = '_'),
                                     '_', outct, '_pathway.csv'))
 
+plot_dir = file.path(output_dir, 'lr_interactions', 'cell_chat', 'plots_and_csv_files')
+dir.create(plot_dir , recursive = T, showWarnings = F)
+
 # load geomx metadata -----------------------------------------------------
 
 geomx_obj <<- readRDS(geomx_norm_batch_eff_rm_path) # batch effect corrected Geomx Object
-meta_data_all <- sData(geomx_obj)[, unique(meta_names)]
+custom_metadt <- fread(custom_metadt_path)
+meta_data_all <- left_join(pData(geomx_obj), custom_metadt, by = aoi_id, suffix = c("_orig", "")) %>%
+  dplyr::select(c('dcc_filename', unique(meta_names)))
 
 # TODO code repetition from BSR Analysis
 # make variable with all categories from grouping_var_col_ids
@@ -81,19 +115,23 @@ gc()
 
 # create normalised pseudo scRNAseq dataset -------------------------------
 
-# TODO adjust - now create_norm_pseudosc_from_deconv() for deseq2 normal metadata
-# create a combined 'artificial pseudo-bulk scRNAseq' dataset with all ct specific counts 
+# create a combined 'artificial pseudo-bulk scRNAseq' dataset by merging all ct specific counts for all AOIs
+# ct specific counts are merged only if their corresponding ct fraction is > cell_frac_cutoff
+# output is after normalisation, log, and harmony batch effect correction
 if(file.exists(bp_pseudosc_path)){
-  bprism_res_norm <- as.matrix(fread(bp_pseudosc_path), rownames=1)
+  bprism_res_norm_batchcorr <- as.matrix(fread(bp_pseudosc_path), rownames=1)
 } else{
-  bprism_res_norm <- create_norm_pseudosc_from_deconv(bp_res_path, bp_ct_frac_path, scrna_anno, cell_frac_cutoff, bp_pseudosc_path)
+  bprism_res_norm_batchcorr <- create_norm_pseudosc_from_deconv(bp_res_path, bp_ct_frac_path, scrna_anno, cell_frac_cutoff, 
+                                                                bp_pseudosc_path, meta_data_all, norm_type, 
+                                                                aoi_segment_var, main_experimental_condition,
+                                                                primary_batch_var, secondary_batch_var)
 }
 
 # make metadata -----------------------------------------------------------
 
 # make metadata with dcc_cell type
-dcc_ct <- data.frame('dcc_filename' = gsub('_.*', '', colnames(bprism_res_norm)), 
-                     'dcc_ct' = colnames(bprism_res_norm))
+dcc_ct <- data.frame('dcc_filename' = gsub('_.*', '', colnames(bprism_res_norm_batchcorr)), 
+                     'dcc_ct' = colnames(bprism_res_norm_batchcorr))
 meta_data_ct <- left_join(dcc_ct, meta_data_all)
 meta_data_ct$ct_label <- gsub('^[^_]*', '', meta_data_ct$dcc_ct)
 meta_data_ct$ct_label <- gsub('^_', '', meta_data_ct$ct_label)
@@ -105,23 +143,30 @@ meta_data_ct$samples <- meta_data_ct[[sample_name]]
 if(!is.null(cell_types_selected)) { 
   # filter to interesting cells
   meta_data_sel <- meta_data_ct[grepl(paste0(cell_types_selected, collapse = '|'), meta_data_ct$dcc_ct), ]
-  bprism_res_sel <- bprism_res_norm[, meta_data_sel$dcc_ct]
+  bprism_res_sel <- bprism_res_norm_batchcorr[, meta_data_sel$dcc_ct]
 } else{
   # If the cell types are not defined take all the cell types in the bprism object
   meta_data_sel <- meta_data_ct
-  bprism_res_sel <- bprism_res_norm
+  bprism_res_sel <- bprism_res_norm_batchcorr
 }
 
-rm(bprism_res_norm)
+rm(bprism_res_norm_batchcorr)
 gc()
-
-bprism_res_sel <- bprism_res_sel[, !grepl('Mast_cells', colnames(bprism_res_sel))]
-meta_data_sel <- meta_data_sel[meta_data_sel$ct_label != 'Mast_cells', ]
 
 #TODO until this it's the same with NicheNetR - can be combined in 1 script
 # calculate cellchat probabilities ----------------------------------------
 
+
+####################################################
 #  calculating the cellchat probabilties
+group2 <- 'stroma_pre'
+
+#TODO rmv later
+# only take stroma_post to make the comparison faster
+meta_data_sel <- meta_data_sel[grepl(group2, meta_data_sel$comparison_group), ]
+bprism_res_sel <- bprism_res_sel[, meta_data_sel$dcc_ct]
+
+####################################################
 
 cellchat_results <- list()
 
@@ -144,19 +189,23 @@ for(group in unique(meta_data_sel$comparison_group)) {
     
     # filtering out ct
     meta_data_sel_group <- meta_data_sel_group[!(meta_data_sel_group$ct_label %in% too_little_ct), ]
-    bprism_res_sel_group <- bprism_res_sel_group[, !grepl(paste(too_little_ct, collapse = '|'), colnames(bprism_res_sel_group))]
+    bprism_res_sel_group <- bprism_res_sel_group[, meta_data_sel_group$dcc_ct]
   }
-
-  cellchat_results[[group]] <- cellchat_predict_prob(
-    meta_data_sel_group,
-    bprism_res_sel_group,
-    thresh_fc = thresh_fc, 
-    thresh_p = thresh_fc, 
-    min_cells = min_cells
-  )
+  
+  if(length(unique(meta_data_sel_group$ct_label)) >= 2){
+    cellchat_results[[group]] <- cellchat_predict_prob(
+      meta_data_sel_group,
+      bprism_res_sel_group,
+      thresh_fc = thresh_fc, 
+      thresh_p = thresh_pval, 
+      min_cells = min_cells
+    )
+  }
 }
 
 saveRDS(cellchat_results, geomx_CellChat_path)
+
+
 
 
 # combine all LR predictions to a single dataframe list -------------------

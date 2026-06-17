@@ -171,12 +171,13 @@ source("/home/iganiemi/Documents/phd/st/geomx-processing/src/lr-analysis/BulkSig
 scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lvl_ct_updated' / 'low_lvl_ct'
 sample_name <- 'Sample'
 # common parameters
-grouping_var_col_ids <- c("Segment") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
+grouping_var_col_ids <- c("Segment", "NACT_status") # define the meta data column names of the groups that needed to be compared separately eg: c("Segment","NACT_status")
 
 # parameters for CellChat and MultiNicheNet : Single cell approaches
 # names of cells to fin
 #cell_types_selected = c("Tcells_CD8","Macrophages_Monocytes") # set to NULL to get all the cell types : ct_of_interest
-cell_types_selected <- NULL
+cell_types_selected <- c("tumor", "Bcells", "Tcells_CD4", "Tcells_other", "Tcells_CD8", 
+                         "Fibroblasts_Mesothelial", "Macrophages_Monocytes", "DCs")
 
 # parameters for Cellchat
 cell_frac_cutoff = 0.01 # 0.01 or 0.005

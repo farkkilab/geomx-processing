@@ -5,6 +5,13 @@
 
 # TODO for pathways max prob is very high and other vals are not visible - now scale for each
 
+manually_filtered_cellchat_df <- NULL
+thresh_prob <- 0.1
+cc_lr_df_path <- "/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/lr_interactions/cell_chat/stroma_post_roi_cluster_gmm_deseq2log_harmony/CellChat_df_Segment_NACT_status_roi_cluster_label_gmm_tumor_Bcells_Tcells_CD4_Tcells_other_Tcells_CD8_Fibroblasts_Mesothelial_Macrophages_Monocytes_DCs_lr.csv"
+cc_path_df_path <- "/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/lr_interactions/cell_chat/stroma_post_roi_cluster_gmm_deseq2log_harmony/CellChat_df_Segment_NACT_status_roi_cluster_label_gmm_tumor_Bcells_Tcells_CD4_Tcells_other_Tcells_CD8_Fibroblasts_Mesothelial_Macrophages_Monocytes_DCs_pathway.csv"
+
+plot_dir <- "/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/lr_interactions/cell_chat/stroma_post_roi_cluster_gmm_deseq2log_harmony/plots_and_csv_files"
+
 # load CellChat results ---------------------------------------------------
 
 if (!is.null(manually_filtered_cellchat_df) && is.data.frame(manually_filtered_cellchat_df)) {
@@ -29,8 +36,8 @@ for(receiver in unique(df_for_plotting$target)) {
     df_plot = df_for_plotting %>% 
       filter(source == sender, 
              target == receiver, 
-             pval < pval_threshold,
-             prob > prob_threshold)
+             pval < thresh_pval,
+             prob > thresh_prob)
     
     print(nrow(df_plot))
     
@@ -47,7 +54,7 @@ for(receiver in unique(df_for_plotting$target)) {
           axis.ticks = element_blank(),
           axis.title = element_blank(),
           #axis.text.y = element_blank(),
-          axis.text.y = element_text(face = "bold.italic", size = 7),
+          axis.text.y = element_text(face = "bold.italic", size = 5),
           axis.text.x = element_blank(),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
@@ -67,8 +74,8 @@ for(receiver in unique(df_for_plotting$target)) {
       p1 = p1+ custom_scale_fill + scale_size_binned_area(max_size = 4) 
       
       file_name <- paste(sender,receiver, sep = "_")
-      pdf(file.path(plot_dir, paste0(file_name,"_cellchat_plot_prob_", gsub('\\.', '', as.character(prob_threshold)), ".pdf")),
-          width = 7.5, height = 9)
+      pdf(file.path(plot_dir, paste0(file_name,"_cellchat_plot_prob_", gsub('\\.', '', as.character(thresh_prob)), ".pdf")),
+          width = 9, height = 12)
       print(p1)
       dev.off()
     } else{
@@ -87,8 +94,8 @@ for (receiver in unique(df_path_for_plotting$target)) {
     df_path_plot = df_path_for_plotting %>% 
       filter(source == sender, 
              target == receiver, 
-             pval < pval_threshold,
-             prob > prob_threshold)
+             pval < thresh_pval,
+             prob > thresh_prob)
     
     
     if(nrow(df_path_plot) > 0){
@@ -126,7 +133,7 @@ for (receiver in unique(df_path_for_plotting$target)) {
       p2 = p2+ custom_scale_fill + scale_size_binned_area(max_size = 4) 
       
       file_name <- paste(sender,receiver, sep = "_")
-      pdf(file.path(plot_dir, paste0(file_name,"_cellchat_plot_pathway_prob_", gsub('\\.', '', as.character(prob_threshold)), ".pdf")),
+      pdf(file.path(plot_dir, paste0(file_name,"_cellchat_plot_pathway_prob_", gsub('\\.', '', as.character(thresh_prob)), ".pdf")),
           width = 7.5, height = 9)
       print(p2)
       dev.off()

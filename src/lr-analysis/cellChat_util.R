@@ -226,6 +226,7 @@ do_normalisation <- function(expr_mtx, meta_data,
     dcc_ct <- data.frame('dcc_filename' = gsub('_.*', '', colnames(expr_mtx)), 
                          'dcc_ct' = colnames(expr_mtx))
     meta_data_ct <- left_join(dcc_ct, meta_data)
+    #TODO is this needed here?
     meta_data_ct$ct_label <- gsub('^[^_]*', '', meta_data_ct$dcc_ct)
     meta_data_ct$ct_label <- gsub('^_', '', meta_data_ct$ct_label)
     
@@ -243,7 +244,7 @@ do_normalisation <- function(expr_mtx, meta_data,
     expr_mtx_norm <- counts(dds, normalized=TRUE)
     
   } else if (norm_type == 'libsize_log'){
-    # do library size normalisation + log transformation 
+    # do library size normalisation + log transformation from CellChat 
     expr_mtx_norm <- normalizeData(expr_mtx, do.log = T, do.sparse = T)
   } else{ 
     stop(print('choose either q3_norm log_norm deseq2 deseq2_vst libsize_log as norm_type'))
@@ -252,12 +253,20 @@ do_normalisation <- function(expr_mtx, meta_data,
   return(expr_mtx_norm)
 }
 
+# helper function for cbind dfs with different nrs of rows
+cbind.fill <- function(df_list){
+  nm <- lapply(df_list, as.matrix)
+  n <- max(sapply(nm, nrow)) 
+  do.call(cbind, lapply(nm, function (x) 
+    rbind(x, matrix(, n-nrow(x), ncol(x))))) 
+}
 
 # create pseudo scRNaseq dataset from all deconvolution results
 #TODO change in cellchat script - new params
-create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna_anno, cell_frac_cutoff, bp_pseudosc_path, 
-                                             norm_type = c('q3_norm', 'log_norm', 'deseq2', 'deseq2_vst', 'libsize_log'),
-                                             meta_data = NULL, aoi_segment_var = 'Segment', main_experimental_condition = 'NACT_status'){
+create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna_anno, cell_frac_cutoff, bp_pseudosc_path, meta_data,
+                                             norm_type = c('deseq2', 'deseq2_vst', 'libsize_log'),
+                                             aoi_segment_var = 'Segment', main_experimental_condition = 'NACT_status',
+                                             primary_batch_var = 'main_batch_nr', secondary_batch_var = 'batch_nr'){
   
   # load and filter raw bayesprism results and metadata
   bprism_res <<- readRDS(bp_res_path) # raw bp results
@@ -285,13 +294,7 @@ create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna
       return()
     )
   })
-  
-  cbind.fill <- function(df_list){
-    nm <- lapply(df_list, as.matrix)
-    n <- max(sapply(nm, nrow)) 
-    do.call(cbind, lapply(nm, function (x) 
-      rbind(x, matrix(, n-nrow(x), ncol(x))))) 
-  }
+
   
   # clean list from ct with no cells 
   bprism_res_filtered[sapply(bprism_res_filtered, is.null)] <- NULL
@@ -310,14 +313,31 @@ create_norm_pseudosc_from_deconv <- function(bp_res_path, bp_ct_frac_path, scrna
 
   bprism_res_norm <- do_normalisation(bprism_res_filtered, meta_data, 
                                norm_type, aoi_segment_var, main_experimental_condition)
-
-  fwrite(bprism_res_norm, bp_pseudosc_path, row.names = TRUE)
+  
+  # log if needed 
+  if(norm_type == 'deseq2'){
+    bprism_res_norm <- log2(bprism_res_norm + 1)
+  }
   
   plot_expr_distribution(bprism_res_norm, paste('pseudo scRNAseq from deconv ct norm'), 
                          file.path(dirname(bp_pseudosc_path), 
                                    paste0('expr_hist_bp_res_pseudosc_', scrna_anno, 'ct_frac_', cell_frac_cutoff, '_', norm_type, '.png')), 
-                         is_log = ifelse(norm_type %in% c('q3_norm', 'deseq2'), FALSE, TRUE))
-  return(bprism_res_norm)
+                         is_log = TRUE)
+  
+  # do harmony batch effect correction
+  # make metadata with ct names
+  # TODO repetition in do_normalisation function
+  dcc_ct <- data.frame('dcc_filename' = gsub('_.*', '', colnames(bprism_res_norm)), 
+                       'dcc_ct' = colnames(bprism_res_norm))
+  meta_data_ct <- left_join(dcc_ct, meta_data)
+  
+  bprism_res_norm_harmony <- t(HarmonyMatrix(bprism_res_norm,
+                                     meta_data = meta_data_ct,
+                                     vars_use = c(primary_batch_var, secondary_batch_var)))
+  
+  fwrite(bprism_res_norm_harmony, bp_pseudosc_path, row.names = TRUE)
+  
+  return(bprism_res_norm_harmony)
 }
 
 ########################################################################
