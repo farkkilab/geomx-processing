@@ -1,6 +1,9 @@
 library(data.table)
 library(dplyr)
 library(CellChat)
+library(tibble)
+library(tidyr)
+library(ggpubr)
 
 # following the vignette
 # https://rdrr.io/github/sqjin/CellChat/f/tutorial/CellChat-vignette.Rmd
@@ -30,10 +33,13 @@ cc_obj_path <- file.path(cc_res_dir, "CellChat_output_Segment_NACT_status_roi_cl
 
 ct1 <- 'Macrophages_Monocytes' #
 ct2 <- 'Macrophages_Monocytes'
-dt_group <- 'stroma_post_mixed_w_others'
+dt_group <- 'stroma_post_Macro_domin'
 
 
 ###################
+source(file.path("/home/iganiemi/Documents/phd/st", 'geomx-processing', 'src', 'geomx_utils.R'))
+
+
 cc_plot_dir <- file.path(cc_res_dir, paste0('cc_plots_', dt_group, '_', 'prob', as.character(prob_thr)))
 dir.create(cc_plot_dir)
 
@@ -176,6 +182,51 @@ if(prob_thr >= 0.1){
   dev.off()
 
 }
+
+
+#############################################################################
+#############################################################################
+# expression of key L-R pairs across clusters
+
+# return expression of all genes in pathways from all cc objects
+path_expr_all <- lapply(names(cc_all), function(group_name){
+  cc_obj <- cc_all[[group_name]]
+  
+  path_expr_group <- lapply(paths_oi, function(path_name){
+    LR_genes <- unique(extractEnrichedLR(cc_obj, signaling = path_name, geneLR.return = TRUE)$geneLR)
+    
+    cc_obj_path_expr <- as.data.frame(t(as.matrix(cc_obj@data)[LR_genes, ])) %>%
+      rownames_to_column(var = "cell_type") %>%
+      mutate(cell_type = gsub('.*dcc_', '', cell_type)) %>%
+      mutate(data_group = group_name) %>%
+      mutate(pathway = path_name) %>%
+      pivot_longer(cols = LR_genes, names_to = 'gene_name', values_to = 'gene_expression')
+    
+    return(cc_obj_path_expr)
+  })
+  return(path_expr_group)
+})
+
+path_expr_all <- do.call(rbind, unlist(path_expr_all, recursive = F))
+
+# iterate through pathways and plot distribution of genes across ct an data group
+path_name <- paths_oi[2]
+
+for(path_name in paths_oi){
+  ct_name <- ct_names[3]
+  
+  path_expr_sel <- path_expr_all[path_expr_all$pathway == path_name, ]
+  path_expr_sel$data_group <- gsub('stroma_post_', '', path_expr_sel$data_group)
+  path_expr_sel <- path_expr_sel[path_expr_sel$cell_type == ct_name, ]
+  path_expr_sel$data_group <- ifelse(path_expr_sel$data_group == 'Macro_domin', 'Macro_domin', 'other')
+  
+  pathway_boxplot(path_expr_sel, 'data_group', 'gene_expression', 'data_group', 'gene_name', 
+                  ymin= 0, ymax=10, #max(path_expr_sel$gene_expression)+1,
+                  paste0(path_name, ' in ', ct_name), 
+                  file.path(cc_res_dir, paste0('path_expr_macro_domin_vs_all_', path_name, '_', ct_name,  '.pdf')),
+                  manual_colours = c("#F8766D", "#00BA38", "#619CFF", "#C77CFF", "yellow", "orange", "magenta"))
+}
+
 
 # 
 # # visualisations with in-build functions ----------------------------------
