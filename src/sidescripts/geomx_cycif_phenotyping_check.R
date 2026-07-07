@@ -33,7 +33,7 @@ deconv_ct_count_path <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_r
 #                                  file.path(eyemt_pdrive_dir, 'Data/cycif/batch3_adjacent_slides/phenotyped_cells/tribus'))
 
 phenotyped_cells_path <- file.path(eyemt_pdrive_dir, 'Data/cycif/single_cell_datasets', 'phenotypes_original_samplenames_adj.csv')
-
+phenotyped_cells_refined_outpath <- file.path(eyemt_pdrive_dir, 'Data/cycif/single_cell_datasets', 'phenotypes_original_samplenames_adj_consensus_refined.csv')
 
 out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", paste0(batchname, "_adjusted_phenotypes")) #  "batch3tls_tribus_and_manualgating"
 outp_plot_dir <- file.path(out_path_hubs_cells_inroi, 'plots')
@@ -111,58 +111,93 @@ meta_weird_coords <- metadt[metadt$roi_c1_X_cycif >= metadt$roi_c2_X_cycif | met
 # 
 # fwrite(pheno_cells_all, file.path(eyemt_pdrive_dir, 'Data/cycif/single_cell_datasets', 'phenotypes_original_samplenames_adj.csv'))
 
-#########################################################################
 
-# redo logic
-pheno_cells_inroi_all_df$aSMA_Vim <- ifelse(pheno_cells_inroi_all_df$aSMA == TRUE | pheno_cells_inroi_all_df$Vimentin == TRUE, TRUE, FALSE)
-
-pheno_cells_inroi_all_df$consensus2 <- pheno_cells_inroi_all_df$final_label_tribus
-
-# If tumor with CD8 relabel to CD8
-pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Tumor_Tumor" & 
-                                                pheno_cells_inroi_all_df$CD8a == TRUE, 
-                                              'Tumor_Immune_CD8_Tcells', pheno_cells_inroi_all_df$consensus2)
-
-# move to stroma/tumor if tum/str marker present
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_CD4_Tcells") & 
-                                                 (pheno_cells_inroi_all_df$CD4 == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)), 
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_CD4_Tcells") & 
-                                                 (pheno_cells_inroi_all_df$CD4 == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)), 
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_CD8_Tcells") & 
-                                                 (pheno_cells_inroi_all_df$CD8a == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)), 
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_CD8_Tcells") & 
-                                                 (pheno_cells_inroi_all_df$CD8a == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)), 
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_Dcs") & 
-                                                 (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)), 
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_Dcs") & 
-                                                 (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)), 
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_Macrophages") & 
-                                                 (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)), 
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_Macrophages") & 
-                                                 (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)), 
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-
-# if CD4 does have CD11c and Iba1 -> move to Macrophages
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 %in%  c("Stroma_Immune_CD4_Tcells", "Tumor_Immune_CD4_Tcells", "Immune_CD4_Tcells")) & 
-                                                 (pheno_cells_inroi_all_df$Iba1 == TRUE) & (pheno_cells_inroi_all_df$CD11c == TRUE)), 
-                                              'Immune_Macrophages', pheno_cells_inroi_all_df$consensus2)
-
-
-
-# iterate through samples and select cells within ROIs --------------------
+# load phenotyped cells and redo consensus label logic --------------------
 
 pheno_cells_all <- fread(phenotyped_cells_path)
+
+pheno_cells_all$aSMA_Vim <- ifelse(pheno_cells_all$aSMA == TRUE | pheno_cells_all$Vimentin == TRUE, TRUE, FALSE)
+
+pheno_cells_all$consensus_label_refined <- pheno_cells_all$final_label_tribus
+
+# If tumor with CD8 relabel to CD8
+pheno_cells_all$consensus_label_refined <- ifelse(pheno_cells_all$consensus_label_refined == "Tumor_Tumor" & 
+                                       pheno_cells_all$CD8a == TRUE, 
+                                              'Tumor_Immune_CD8_Tcells', pheno_cells_all$consensus_label_refined)
+
+# move to stroma/tumor if tum/str marker present
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD4_Tcells") & 
+                                                 (pheno_cells_all$CD4 == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+                                              'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD4_Tcells") & 
+                                                 (pheno_cells_all$CD4 == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+                                              'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD8_Tcells") & 
+                                                 (pheno_cells_all$CD8a == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+                                              'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD8_Tcells") & 
+                                                 (pheno_cells_all$CD8a == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+                                              'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Dcs") & 
+                                                 (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+                                              'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Dcs") & 
+                                                 (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+                                              'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Macrophages") & 
+                                                 (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+                                              'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Macrophages") & 
+                                                 (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+                                              'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+
+pheno_cells_all$consensus_label_clean_refined <- gsub('^Tumor_|^Stroma_|^Immune_|^Tumor_Immune_|^Stroma_Immune_', '', 
+                                                        pheno_cells_all$consensus_label_refined)
+
+fwrite(pheno_cells_all, phenotyped_cells_refined_outpath)
+
+
+# bruteforce phenotyping based only on manual gates -----------------------
+# BRUTEFORCE
+
+# pheno_cells_all$aSMA_Vim <- ifelse(pheno_cells_all$aSMA == TRUE | pheno_cells_all$Vimentin == TRUE, TRUE, FALSE)
+# 
+# pheno_cells_all$cell_type_bruteforce <- "other"
+# 
+# pheno_cells_all$cell_type_bruteforce <- ifelse((pheno_cells_all$PanCK == TRUE),
+#                                                         'tumor', pheno_cells_all$cell_type_bruteforce)
+# 
+# pheno_cells_all$cell_type_bruteforce <- ifelse((pheno_cells_all$aSMA_Vim == TRUE),
+#                                                         'stroma', pheno_cells_all$cell_type_bruteforce)
+# 
+# pheno_cells_all$cell_type_bruteforce <- ifelse((pheno_cells_all$CD4 == TRUE & 
+#                                                            pheno_cells_all$CD8a == FALSE & 
+#                                                            pheno_cells_all$CD11c == FALSE &
+#                                                            pheno_cells_all$Iba1 == FALSE &
+#                                                            pheno_cells_all$PanCK == FALSE &
+#                                                            pheno_cells_all$aSMA_Vim == FALSE),
+#                                                         'Tcells_CD4', pheno_cells_all$cell_type_bruteforce)
+# 
+# pheno_cells_all$cell_type_bruteforce <- ifelse(((pheno_cells_all$CD11c == TRUE &
+#                                                             pheno_cells_all$Iba1 == TRUE) | 
+#                                                            (pheno_cells_all$CD11c == FALSE &
+#                                                               pheno_cells_all$Iba1 == TRUE)),
+#                                                         'Macrophages_Monocytes', pheno_cells_all$cell_type_bruteforce)
+# 
+# pheno_cells_all$cell_type_bruteforce <- ifelse((pheno_cells_all$CD11c == TRUE &
+#                                                            pheno_cells_all$Iba1 == FALSE),
+#                                                         'DCs', pheno_cells_all$cell_type_bruteforce)
+# 
+# pheno_cells_all$cell_type_bruteforce <- ifelse((pheno_cells_all$CD8a == TRUE),
+#                                                         'Tcells_CD8', pheno_cells_all$cell_type_bruteforce)
+# 
+# 
+# fwrite(pheno_cells_all, phenotyped_cells_refined_outpath)
+
+# iterate through samples and select cells within ROIs --------------------
 
 pheno_cells_inroi_all <- lapply(unique(metadt$Sample), function(sample_name){
   print('###################################')
@@ -205,294 +240,9 @@ pheno_cells_inroi_all <- lapply(unique(metadt$Sample), function(sample_name){
 
 pheno_cells_inroi_all_df <- do.call("rbind.fill", pheno_cells_inroi_all)
 
-# FOR TRIBUS RESULTS - EACH IN SEPARATE FILE THROUGH BATCH FOLDERS
-# iterate through batches dirs
-# pheno_cells_inroi_all <- lapply(phenotyped_cells_dirs_paths, function(pheno_dir){
-#   batchnr <- as.numeric(substr(gsub('.*batch', '', pheno_dir), 1, 1))
-#   batch_pheno_all_files <- list.files(pheno_dir, pattern = "tribus_annotated", full.names = T)
-#   
-#   metadt_batch <- metadt[metadt$main_batch_nr == batchnr, ]
-#   
-#   #iterate through samples in batch
-#   lapply(unique(metadt_batch$Sample_fixed), function(sample_name){
-#     
-#     print('###################################')
-#     print(sample_name)
-#     pheno_cells_sample_path <- batch_pheno_all_files[grepl(sample_name, batch_pheno_all_files)]
-#     print(pheno_cells_sample_path)
-#     
-#     if(length(pheno_cells_sample_path) == 0){
-#       return(NULL)
-#     } else{
-#       pheno_cells_sample <- fread(pheno_cells_sample_path)
-#       
-#       # convert to pix
-#       pheno_cells_sample$X_centroid_px <- pheno_cells_sample$X_centroid / um_to_pix_ratio
-#       pheno_cells_sample$Y_centroid_px <- pheno_cells_sample$Y_centroid / um_to_pix_ratio
-# 
-#       # count cells within all ROIs in the sample - now in metadata
-#       roi_coords_sample <- metadt_batch[metadt_batch$Sample_fixed == sample_name, c("Sample","Sample_fixed", "main_batch_nr", "sample_roi", "Roi_geomx",
-#                                                                                     "roi_c1_X_cycif", "roi_c1_Y_cycif", "roi_c2_X_cycif", "roi_c2_Y_cycif",
-#                                                                                     "roi_c3_X_cycif", "roi_c3_Y_cycif", "roi_c4_X_cycif", "roi_c4_Y_cycif")]
-#       
-#       roi_coords_sample <- distinct(roi_coords_sample)
-#       
-#       # old implementation
-#       # cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
-#       #   # find cells within range
-#       #   # coordinates are not longer rectangles, they're a bit rotated - the cells are found inside longer edges of rectangle
-#       #   cells_in_roi <- dplyr::filter(pheno_cells_sample,
-#       #                                 as.numeric(X_centroid_px) >= min(as.numeric(row[['roi_c1_X_cycif']]), as.numeric(row[['roi_c4_X_cycif']])) &
-#       #                                   as.numeric(X_centroid_px) <= max(as.numeric(row[['roi_c2_X_cycif']]), as.numeric(row[['roi_c3_X_cycif']])) &
-#       #                                   as.numeric(Y_centroid_px) >= min(as.numeric(row[['roi_c4_Y_cycif']]), as.numeric(row[['roi_c3_Y_cycif']])) &
-#       #                                   as.numeric(Y_centroid_px) <= max(as.numeric(row[['roi_c1_Y_cycif']]), as.numeric(row[['roi_c2_Y_cycif']])))
-#       # 
-#       # 
-#       #   cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-#       #   return(cells_in_roi)
-#       # })
-#       # 
-#       # cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
-#       # print(nrow(cells_in_roi_all))
-#       # table(cells_in_roi_all$Roi_geomx)
-#       
-#       # new implementation
-#       cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
-# 
-#         #new finding cells implementation rewritten from python shapely package to sp R package
-#         poly_x <- c(row[['roi_c1_X_cycif']], row[['roi_c2_X_cycif']], row[['roi_c3_X_cycif']], row[['roi_c4_X_cycif']])
-#         poly_y <- c(row[['roi_c1_Y_cycif']], row[['roi_c2_Y_cycif']], row[['roi_c3_Y_cycif']], row[['roi_c4_Y_cycif']])
-# 
-#         cells_in_roi <- dplyr::filter(pheno_cells_sample, sp::point.in.polygon(point.x = as.numeric(X_centroid_px),
-#                                                                                 point.y = as.numeric(Y_centroid_px),
-#                                                                                 pol.x = poly_x, pol.y = poly_y) != 0)
-# 
-#         cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-#         return(cells_in_roi)
-#       })
-#       
-#       cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
-#       print(nrow(cells_in_roi_all))
-#       table(cells_in_roi_all$Roi_geomx)
-# 
-#       #TODO choose here which implementation to use
-#       return(cells_in_roi_all)
-#     }
-#   })
-# })
-# 
-# pheno_cells_inroi_all <- unlist(pheno_cells_inroi_all, recursive = FALSE)
-# pheno_cells_inroi_all_df <- do.call("rbind.fill", pheno_cells_inroi_all)
 
-# clean labels ------------------------------------------------------------
-
-pheno_cells_inroi_all_df$cell_type_tribus <- ifelse(grepl('undefined|other', pheno_cells_inroi_all_df$final_label), 'other', pheno_cells_inroi_all_df$final_label)
-pheno_cells_inroi_all_df$cell_type_tribus <- gsub('^Tumor_|^Stroma_|^Immune_', '', pheno_cells_inroi_all_df$cell_type_tribus)
-pheno_cells_inroi_all_df$cell_type_tribus <- mapvalues(pheno_cells_inroi_all_df$cell_type_tribus,
-                                                        from = c("Tumor", "Dcs", "CD8_Tcells", "Stroma", "Macrophages", "CD4_Tcells"),
-                                                        to = c("tumor", "DCs", "Tcells_CD8", "stroma", "Macrophages_Monocytes", "Tcells_CD4"))
-
-pheno_cells_inroi_all_df$cell_type <- mapvalues(pheno_cells_inroi_all_df$consensus_label_clean, 
-                                                from = c("Tumor", "DCs", "CD8_Tcells", "Stroma", "Macrophages", "CD4_Tcells", "Undefined"),
-                                                to = c("tumor", "DCs", "Tcells_CD8", "stroma", "Macrophages_Monocytes", "Tcells_CD4", "other"))
-
-fwrite(pheno_cells_inroi_all_df, file.path(out_path_hubs_cells_inroi, paste0(batchname, '_cells_in_roi.csv')))
-
-
-# refine relabelling logic ------------------------------------------------
-
-table(pheno_cells_inroi_all_df$final_label, pheno_cells_inroi_all_df$final_label_tribus)
-table(pheno_cells_inroi_all_df$consensus_label, pheno_cells_inroi_all_df$consensus_label_clean)
-table(pheno_cells_inroi_all_df$final_label_tribus, pheno_cells_inroi_all_df$consensus_label)
-table(pheno_cells_inroi_all_df$final_label, pheno_cells_inroi_all_df$consensus_label_clean)
-
-table(pheno_cells_inroi_all_df$consensus_label, pheno_cells_inroi_all_df$Iba1)
-table(pheno_cells_inroi_all_df$consensus_label, pheno_cells_inroi_all_df$CD4)
-table(pheno_cells_inroi_all_df$consensus_label, pheno_cells_inroi_all_df$CD11c)
-
-table(pheno_cells_inroi_all_df$final_label_tribus, pheno_cells_inroi_all_df$Iba1)
-table(pheno_cells_inroi_all_df$final_label_tribus, pheno_cells_inroi_all_df$CD4)
-table(pheno_cells_inroi_all_df$final_label_tribus, pheno_cells_inroi_all_df$CD11c)
-
-###########################
-
-
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Tumor_Tumor" & 
-#                                                 pheno_cells_inroi_all_df$CD4 == TRUE, 
-#                                               'Tumor_Immune_CD4_Tcells', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Tumor_Tumor" & 
-#                                                 pheno_cells_inroi_all_df$CD11c == TRUE, 
-#                                               'Tumor_Immune_Dcs', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Tumor_Tumor" & 
-#                                                 pheno_cells_inroi_all_df$Iba1 == TRUE, 
-#                                               'Tumor_Immune_Macrophages', pheno_cells_inroi_all_df$consensus2)
-##################################
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Stroma_Stroma" & 
-#                                                 pheno_cells_inroi_all_df$CD8a == TRUE, 
-#                                               'Stroma_Immune_CD8_Tcells', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Stroma_Stroma" & 
-#                                                 pheno_cells_inroi_all_df$CD4 == TRUE, 
-#                                               'Stroma_Immune_CD4_Tcells', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Stroma_Stroma" & 
-#                                                 pheno_cells_inroi_all_df$CD11c == TRUE, 
-#                                               'Stroma_Immune_Dcs', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Stroma_Stroma" & 
-#                                                 pheno_cells_inroi_all_df$Iba1 == TRUE, 
-#                                               'Stroma_Immune_Macrophages', pheno_cells_inroi_all_df$consensus2)
-
-####################
-
-# if tribus called Stroma/Tumor_X but manual gating false for X - move to tumor/stroma
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_CD4_Tcells") & 
-#                                                 (pheno_cells_inroi_all_df$CD4 == FALSE)), 
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_CD4_Tcells") & 
-#                                                 (pheno_cells_inroi_all_df$CD4 == FALSE)), 
-#                                               'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_CD8_Tcells") & 
-#                                                 (pheno_cells_inroi_all_df$CD8a == FALSE)), 
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_CD8_Tcells") & 
-#                                                 (pheno_cells_inroi_all_df$CD8a == FALSE)), 
-#                                               'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_Dcs") & 
-#                                                 (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE)), 
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_Dcs") & 
-#                                                 (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE)), 
-#                                               'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_Macrophages") & 
-#                                                 (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE)), 
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_Macrophages") & 
-#                                                 (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE)), 
-#                                               'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-###################################################3333
-
-
-###############################################################
-# move to unknown in immune in tum/str if marker not present
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_CD4_Tcells") & 
-#                                                  (pheno_cells_inroi_all_df$CD4 == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_CD4_Tcells") & 
-#                                                  (pheno_cells_inroi_all_df$CD4 == FALSE) & (pheno_cells_inroi_all_df$PanCK == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_CD8_Tcells") & 
-#                                                  (pheno_cells_inroi_all_df$CD8a == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_CD8_Tcells") & 
-#                                                  (pheno_cells_inroi_all_df$CD8a == FALSE) & (pheno_cells_inroi_all_df$PanCK == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_Dcs") & 
-#                                                  (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_Dcs") & 
-#                                                  (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$PanCK == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Stroma_Immune_Macrophages") & 
-#                                                  (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Tumor_Immune_Macrophages") & 
-#                                                  (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$PanCK == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-
-###############################################################
-# move to unknown if marker not present
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD4_Tcells") & 
-#                                                  (pheno_cells_inroi_all_df$CD4 == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD8_Tcells") & 
-#                                                  (pheno_cells_inroi_all_df$CD8a == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Dcs") & 
-#                                                  (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Macrophages") & 
-#                                                  (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE)), 
-#                                               'Undefined', pheno_cells_inroi_all_df$consensus2)
-
-###############################################################
-# move to tum/str if marker imm not present
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD4_Tcells") &
-                                                 (pheno_cells_inroi_all_df$CD4 == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)),
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD4_Tcells") &
-                                                 (pheno_cells_inroi_all_df$CD4 == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)),
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD8_Tcells") &
-                                                 (pheno_cells_inroi_all_df$CD8a == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)),
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD8_Tcells") &
-                                                 (pheno_cells_inroi_all_df$CD8a == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)),
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Dcs") &
-                                                 (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)),
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Dcs") &
-                                                 (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)),
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Macrophages") &
-                                                 (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$aSMA_Vim == TRUE)),
-                                              'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Macrophages") &
-                                                 (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$PanCK == TRUE)),
-                                              'Tumor_Tumor', pheno_cells_inroi_all_df$consensus2)
-
-#######################################################3
-# move to stroma from immune if immm marker not present
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD4_Tcells") &
-#                                                  (pheno_cells_inroi_all_df$CD4 == FALSE)),
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_CD8_Tcells") &
-#                                                  (pheno_cells_inroi_all_df$CD8a == FALSE)),
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-# 
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Dcs") &
-#                                                  (pheno_cells_inroi_all_df$CD11c == FALSE) & (pheno_cells_inroi_all_df$Iba1 == FALSE)),
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-# 
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(((pheno_cells_inroi_all_df$consensus2 == "Immune_Macrophages") &
-#                                                  (pheno_cells_inroi_all_df$Iba1 == FALSE) & (pheno_cells_inroi_all_df$CD11c == FALSE)),
-#                                               'Stroma_Stroma', pheno_cells_inroi_all_df$consensus2)
-
-
-
-#######################################################
-# pheno_cells_inroi_all_df$consensus2 <- ifelse(pheno_cells_inroi_all_df$consensus2 == "Stroma_Stroma",
-#                                               'Stroma_Stroma2', pheno_cells_inroi_all_df$consensus2)
-
-table(pheno_cells_inroi_all_df$consensus2, pheno_cells_inroi_all_df$consensus_label)
-
-kk <- distinct(pheno_cells_inroi_all_df[, c('CD4', 'CD8a', 'CD11c', 'Iba1', 'final_label_tribus', 'consensus_label', 'consensus2')])
-
-#################################################
-# add additional logic for cleaning
-
-#################################################
-# clean consensus labels
-pheno_cells_inroi_all_df$cell_type <- pheno_cells_inroi_all_df$consensus2
-pheno_cells_inroi_all_df$cell_type <- gsub('^Tumor_|^Stroma_|^Immune_|^Tumor_Immune_|^Stroma_Immune_', '', pheno_cells_inroi_all_df$cell_type)
+# adjust labels to deconv ctnames
+pheno_cells_inroi_all_df$cell_type <- pheno_cells_inroi_all_df$consensus_label_clean_refined
 pheno_cells_inroi_all_df$cell_type <- mapvalues(pheno_cells_inroi_all_df$cell_type,
                                                        from = c("Tumor", "Dcs", "CD8_Tcells", "Stroma", "Macrophages", "CD4_Tcells", "Undefined"),
                                                        to = c("tumor", "DCs", "Tcells_CD8", "stroma", "Macrophages_Monocytes", "Tcells_CD4", "other"))
@@ -502,50 +252,6 @@ fwrite(pheno_cells_inroi_all_df, file.path(out_path_hubs_cells_inroi, paste0(bat
 
 labs_count <- group_by(pheno_cells_inroi_all_df, cell_type, final_label_tribus, CD4, CD8a, CD11c, Iba1, PanCK, aSMA_Vim) %>%
   summarise(n = n())
-
-#########################################################
-# some manual changes based on labs count
-# pheno_cells_inroi_all_df$cell_type <- ifelse((pheno_cells_inroi_all_df$cell_type == 'tumor' & (pheno_cells_inroi_all_df$Iba1 == TRUE | pheno_cells_inroi_all_df$CD11c == TRUE)),
-#                                              "Macrophages_Monocytes", pheno_cells_inroi_all_df$cell_type)
-
-fwrite(pheno_cells_inroi_all_df, file.path(out_path_hubs_cells_inroi, paste0(batchname, '_cells_in_roi.csv')))
-#############################################
-# BRUTEFORCE
-
-pheno_cells_inroi_all_df$aSMA_Vim <- ifelse(pheno_cells_inroi_all_df$aSMA == TRUE | pheno_cells_inroi_all_df$Vimentin == TRUE, TRUE, FALSE)
-
-pheno_cells_inroi_all_df$cell_type_bruteforce <- "other"
-
-pheno_cells_inroi_all_df$cell_type_bruteforce <- ifelse((pheno_cells_inroi_all_df$PanCK == TRUE),
-                                                        'tumor', pheno_cells_inroi_all_df$cell_type_bruteforce)
-
-pheno_cells_inroi_all_df$cell_type_bruteforce <- ifelse((pheno_cells_inroi_all_df$aSMA_Vim == TRUE),
-                                                        'stroma', pheno_cells_inroi_all_df$cell_type_bruteforce)
-
-pheno_cells_inroi_all_df$cell_type_bruteforce <- ifelse((pheno_cells_inroi_all_df$CD4 == TRUE & 
-                                                          pheno_cells_inroi_all_df$CD8a == FALSE & 
-                                                          pheno_cells_inroi_all_df$CD11c == FALSE &
-                                                          pheno_cells_inroi_all_df$Iba1 == FALSE &
-                                                          pheno_cells_inroi_all_df$PanCK == FALSE &
-                                                          pheno_cells_inroi_all_df$aSMA_Vim == FALSE),
-                                                        'Tcells_CD4', pheno_cells_inroi_all_df$cell_type_bruteforce)
-
-pheno_cells_inroi_all_df$cell_type_bruteforce <- ifelse(((pheno_cells_inroi_all_df$CD11c == TRUE &
-                                                         pheno_cells_inroi_all_df$Iba1 == TRUE) | 
-                                                        (pheno_cells_inroi_all_df$CD11c == FALSE &
-                                                             pheno_cells_inroi_all_df$Iba1 == TRUE)),
-                                                        'Macrophages_Monocytes', pheno_cells_inroi_all_df$cell_type_bruteforce)
-
-pheno_cells_inroi_all_df$cell_type_bruteforce <- ifelse((pheno_cells_inroi_all_df$CD11c == TRUE &
-                                                              pheno_cells_inroi_all_df$Iba1 == FALSE),
-                                                        'DCs', pheno_cells_inroi_all_df$cell_type_bruteforce)
-
-pheno_cells_inroi_all_df$cell_type_bruteforce <- ifelse((pheno_cells_inroi_all_df$CD8a == TRUE),
-                                                        'Tcells_CD8', pheno_cells_inroi_all_df$cell_type_bruteforce)
-
-pheno_cells_inroi_all_df$cell_type <- pheno_cells_inroi_all_df$cell_type_bruteforce
-
-fwrite(pheno_cells_inroi_all_df, file.path(out_path_hubs_cells_inroi, paste0(batchname, '_cells_in_roi.csv')))
 
 #########################################
 # to check b3TLS 
