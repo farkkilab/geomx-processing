@@ -61,6 +61,12 @@ groups_to_compare <- NULL
 # groups_to_exclude <- c('stroma_pre_Bcell_domin', 'stroma_pre_mixed_w_CD4', 'stroma_pre_mixed_w_others', 'tumor_pre_mixed_w_CD4')
 groups_to_exclude <- NULL
 
+# list with 2 groups to compare at once for csv and plots
+comparison_list <- list(c("stroma_post_Macro_domin", "stroma_post_other_roi_type"),
+                        c("tumor_post_Macro_domin", "tumor_post_other_roi_type"),
+                        c("stroma_pre_Macro_domin", "stroma_pre_other_roi_type"),
+                        c("tumor_pre_Macro_domin", "tumor_pre_other_roi_type"))
+
 sample_id <- 'dcc_filename'
 covariates <- NA
 batches <- NA
@@ -75,6 +81,7 @@ grouping_var_col_ids_within_sample <- NULL
 
 cell_frac_cutoff = 0.01 # 0.01 or 0.005 ct specific expr from dcc with ct fraction lower than cutoff will be removed
 min_cells = 1 # minimum number of rois containing given cell > cell_frac_cutoff per cell type per sample.Samples that have less than min_cells cells will be excluded from the analysis for that specific cell type
+p_val_adj <- FALSE
 
 min_sample_prop = 0.25 # genes expressed if they are expressed in at least a min_sample_prop fraction of samples in the condition with the lowest number of samples
 fraction_cutoff = 0.05 # genes as expressed if they have non-zero expression values in a fraction_cutoff fraction of cells of that cell type in that sample
@@ -472,7 +479,7 @@ prioritization_tables = generate_prioritization_tables(
   sender_receiver_tbl = sender_receiver_tbl,
   grouping_tbl = grouping_tbl,
   scenario = "regular", # all prioritization criteria will be weighted equally
-  fraction_cutoff = 0.05, 
+  fraction_cutoff = fraction_cutoff, 
   abundance_data_receiver = abundance_expression_info$abundance_data_receiver,
   abundance_data_sender = abundance_expression_info$abundance_data_sender,
   ligand_activity_down = ligand_activity_down
@@ -518,116 +525,118 @@ top_n_LR_pairs = list()
 top_n <- 100
 
 
-for (group in groups_to_compare) {
-  for (receiver in cell_types_selected) {
-    for (sender in cell_types_selected) {
-      
-      print(paste0(group,"-",receiver,"-",sender))
-      prioritized_tbl_oi = get_top_n_lr_pairs(
-        prioritization_tables, 
-        top_n, 
-        groups_oi = group, 
-        receivers_oi = receiver,
-        senders_oi = sender)
-      
-      
-      # ligand-receptor pseudobulk product expression panel
-      sample_data = prioritization_tables$sample_prioritization_tbl %>% 
-        dplyr::filter(id %in% prioritized_tbl_oi$id) %>% 
-        dplyr::mutate(
-          sender_receiver = paste(sender, receiver, sep = " --> "), 
-          lr_interaction = paste(ligand, receptor, sep = " - ")) %>%
-        dplyr::arrange(receiver) %>% 
-        dplyr::group_by(receiver) %>%  
-        dplyr::arrange(sender, .by_group = TRUE)
-      
-      sample_data = sample_data %>% 
-        dplyr::mutate(sender_receiver = factor(
-          sender_receiver, 
-          levels = sample_data$sender_receiver %>% unique()
-        ))
-      
-      ################################################################
-      
-      keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4) # TODO check
-      names(keep_sender_receiver_values) = levels(sample_data$keep_sender_receiver)
-      
-      ######## calculate the median bulk expression for each group
-      
-      # calculate the median
-      
-      group_medians <- sample_data %>%
-        group_by(group,lr_interaction) %>%
-        summarize(median_scaled_LR = median(scaled_LR_pb_prod, na.rm = TRUE), .groups = "drop") %>%
-        pivot_wider(names_from = group, values_from = median_scaled_LR)
-      
-      
-      # Compute median difference (stroma - tumor)
-      group_medians <- group_medians %>%
-        mutate(
-          diff_median = .[[comparison[1]]] - .[[comparison[2]]]
-        )
-      
-      # Wilcoxon test per interaction
-      wilcox_results <- sample_data %>%
-        group_by(lr_interaction) %>%
-        filter(group %in% comparison) %>%
-        summarize(
-          test = list(wilcox.test(scaled_LR_pb_prod ~ group)),
-          .groups = "drop"
-        ) %>%
-        mutate(
-          p_value = map_dbl(test, "p.value"),
-          neg_log10_p = -log10(p_value)
-        ) %>%
-        select(lr_interaction, p_value, neg_log10_p)
-      
-      
-      adj_pvals <- p.adjust(wilcox_results$p_value, method = "BH")
-      
-      # Merge with fold change data
-      final_data <- group_medians %>%
-        left_join(wilcox_results, by = "lr_interaction")
-      
-      
-      final_data$adj_p_value = adj_pvals
-      final_data$neg_log10_p_adj = -log10(adj_pvals)
-      
-      
-      sender_receiver <- paste(sender, receiver, sep = " --> ")
-      final_data$sender_receiver <- rep(sender_receiver, nrow(final_data))
-      final_data$group <- rep(paste(comparison, collapse = "-"), nrow(final_data))
-      df_plot1 = final_data
-      
-      
-      
-      #########################################################################
-      
-      group_data = multinichenet_output$prioritization_tables$group_prioritization_table_source  %>% 
-        dplyr::mutate(
-          sender_receiver = paste(sender, receiver, sep = " --> "), 
-          lr_interaction = paste(ligand, receptor, sep = " - "))  %>% 
-        dplyr::distinct(id, sender, receiver, sender_receiver, ligand, receptor, lr_interaction, group, activity_scaled, direction_regulation, prioritization_score) %>% 
-        dplyr::filter(id %in% sample_data$id) %>% 
-        dplyr::arrange(receiver) %>% 
-        dplyr::group_by(receiver) %>% 
-        dplyr::arrange(sender, .by_group = TRUE)
-      
-      df_plot2 = group_data %>% dplyr::mutate(
-        sender_receiver = factor(
-          sender_receiver, 
-          levels = group_data$sender_receiver %>% unique()
-        ))
-
-      #################################################################
-      
-      table_name <- paste(group, receiver, sender, sep = "_")
-      file_name_p1 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_median_bulk_expr.csv"))
-      write.csv(df_plot1, file_name_p1, row.names = FALSE)
-      file_name_p2 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_ligand_activity.csv"))
-      write.csv(df_plot2, file_name_p2, row.names = FALSE)
-      top_n_LR_pairs[[table_name]] <- list(df_plot1 = df_plot1, df_plot2 = df_plot2)
-      
+for(comparison in comparison_list){
+  for (group in comparison) {
+    for (receiver in cell_types_selected) {
+      for (sender in cell_types_selected) {
+        
+        print(paste0(group,"-",receiver,"-",sender))
+        prioritized_tbl_oi = get_top_n_lr_pairs(
+          prioritization_tables, 
+          top_n, 
+          groups_oi = group, 
+          receivers_oi = receiver,
+          senders_oi = sender)
+        
+        if(nrow(prioritized_tbl_oi) > 0){
+          # ligand-receptor pseudobulk product expression panel
+          sample_data = prioritization_tables$sample_prioritization_tbl %>% 
+            dplyr::filter(id %in% prioritized_tbl_oi$id) %>% 
+            dplyr::mutate(
+              sender_receiver = paste(sender, receiver, sep = " --> "), 
+              lr_interaction = paste(ligand, receptor, sep = " - ")) %>%
+            dplyr::arrange(receiver) %>% 
+            dplyr::group_by(receiver) %>%  
+            dplyr::arrange(sender, .by_group = TRUE)
+          
+          sample_data = sample_data %>% 
+            dplyr::mutate(sender_receiver = factor(
+              sender_receiver, 
+              levels = sample_data$sender_receiver %>% unique()
+            ))
+          
+          ################################################################
+          
+          keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4) # TODO check
+          names(keep_sender_receiver_values) = levels(sample_data$keep_sender_receiver)
+          
+          ######## calculate the median bulk expression for each group
+          
+          # calculate the median
+          
+          group_medians <- sample_data %>%
+            group_by(group,lr_interaction) %>%
+            summarize(median_scaled_LR = median(scaled_LR_pb_prod, na.rm = TRUE), .groups = "drop") %>%
+            pivot_wider(names_from = group, values_from = median_scaled_LR)
+          
+          
+          # Compute median difference (stroma - tumor)
+          group_medians <- group_medians %>%
+            mutate(
+              diff_median = .[[comparison[1]]] - .[[comparison[2]]]
+            )
+          
+          # Wilcoxon test per interaction
+          wilcox_results <- sample_data %>%
+            group_by(lr_interaction) %>%
+            filter(group %in% comparison) %>%
+            summarize(
+              test = list(wilcox.test(scaled_LR_pb_prod ~ group)),
+              .groups = "drop"
+            ) %>%
+            mutate(
+              p_value = map_dbl(test, "p.value"),
+              neg_log10_p = -log10(p_value)
+            ) %>%
+            select(lr_interaction, p_value, neg_log10_p)
+          
+          
+          adj_pvals <- p.adjust(wilcox_results$p_value, method = "BH")
+          
+          # Merge with fold change data
+          final_data <- group_medians %>%
+            left_join(wilcox_results, by = "lr_interaction")
+          
+          
+          final_data$adj_p_value = adj_pvals
+          final_data$neg_log10_p_adj = -log10(adj_pvals)
+          
+          
+          sender_receiver <- paste(sender, receiver, sep = " --> ")
+          final_data$sender_receiver <- rep(sender_receiver, nrow(final_data))
+          final_data$group <- rep(paste(comparison, collapse = "-"), nrow(final_data))
+          df_plot1 = final_data
+          
+          
+          
+          #########################################################################
+          
+          group_data = multinichenet_output$prioritization_tables$group_prioritization_table_source  %>% 
+            dplyr::mutate(
+              sender_receiver = paste(sender, receiver, sep = " --> "), 
+              lr_interaction = paste(ligand, receptor, sep = " - "))  %>% 
+            dplyr::distinct(id, sender, receiver, sender_receiver, ligand, receptor, lr_interaction, group, activity_scaled, direction_regulation, prioritization_score) %>% 
+            dplyr::filter(id %in% sample_data$id) %>% 
+            dplyr::arrange(receiver) %>% 
+            dplyr::group_by(receiver) %>% 
+            dplyr::arrange(sender, .by_group = TRUE)
+          
+          df_plot2 = group_data %>% dplyr::mutate(
+            sender_receiver = factor(
+              sender_receiver, 
+              levels = group_data$sender_receiver %>% unique()
+            ))
+          
+          #################################################################
+          
+          table_name <- paste(group, receiver, sender, sep = "_")
+          file_name_p1 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_median_bulk_expr.csv"))
+          write.csv(df_plot1, file_name_p1, row.names = FALSE)
+          file_name_p2 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_ligand_activity.csv"))
+          write.csv(df_plot2, file_name_p2, row.names = FALSE)
+          top_n_LR_pairs[[table_name]] <- list(df_plot1 = df_plot1, df_plot2 = df_plot2)
+        }
+      }
     }
   }
 }
@@ -635,44 +644,46 @@ for (group in groups_to_compare) {
 
 # make plots --------------------------------------------------------------
 
-
-# TODO check if works for more groups
-for (group in groups_to_compare){ 
-  for (receiver in cell_types_selected) {
-    for (sender in cell_types_selected) {
-      
-      table_name <- paste(group, sender, receiver, sep = "_")
-      sample_data = top_n_LR_pairs[[table_name]]
-      
-      
-      df_plot1 = sample_data$df_plot1
-      df_plot2 = sample_data$df_plot2
-      
-      p1 = plot_bulk_expression(df_plot1)
-      p2 = plot_igand_activity(df_plot2)
-      
-      p = patchwork::wrap_plots(
-        p1,p2,
-        nrow = 1,guides = "collect",
-        widths = c(6,6)
-      )
-      
-      pdf(file = file.path(plot_dir,paste0("MultiNicheNet_plot_",table_name,".pdf")), width = 17, height = 10)
-      print(p)
-      dev.off()
-
+for(comparison in comparison_list){
+  for (group in comparison){ 
+    for (receiver in cell_types_selected) {
+      for (sender in cell_types_selected) {
+        
+        print(paste0(group,"-",receiver,"-",sender))
+        
+        table_name <- paste(group, sender, receiver, sep = "_")
+        sample_data = top_n_LR_pairs[[table_name]]
+        
+        if(!is.null(sample_data)){
+          df_plot1 = sample_data$df_plot1
+          df_plot2 = sample_data$df_plot2
+          
+          p1 = plot_bulk_expression(df_plot1)
+          p2 = plot_igand_activity(df_plot2)
+          
+          p = patchwork::wrap_plots(
+            p1,p2,
+            nrow = 1,guides = "collect",
+            widths = c(6,6)
+          )
+          
+          pdf(file = file.path(plot_dir,paste0("MultiNicheNet_plot_",table_name,".pdf")), width = 17, height = 10)
+          print(p)
+          dev.off()
+        }
+      }
     }
   }
 }
 
 ########################
-# multinichenet_output <- readRDS(geomx_MultiNicheNet_path)
-# celltype_info <- multinichenet_output$celltype_info
-# celltype_de <- multinichenet_output$celltype_de
-# sender_receiver_info <- multinichenet_output$sender_receiver_info
-# sender_receiver_de <- multinichenet_output$sender_receiver_de
-# ligand_activities_targets_DEgenes <- multinichenet_output$ligand_activities_targets_DEgenes
-# prioritization_tables2 <- multinichenet_output$prioritization_tables
-# grouping_tbl <- multinichenet_output$grouping_tbl
-# lr_target_prior_cor <- multinichenet_output$lr_target_prior_cor
-# 
+multinichenet_output <- readRDS(geomx_MultiNicheNet_path)
+celltype_info <- multinichenet_output$celltype_info
+celltype_de <- multinichenet_output$celltype_de
+sender_receiver_info <- multinichenet_output$sender_receiver_info
+sender_receiver_de <- multinichenet_output$sender_receiver_de
+ligand_activities_targets_DEgenes <- multinichenet_output$ligand_activities_targets_DEgenes
+prioritization_tables <- multinichenet_output$prioritization_tables
+grouping_tbl <- multinichenet_output$grouping_tbl
+lr_target_prior_cor <- multinichenet_output$lr_target_prior_cor
+
