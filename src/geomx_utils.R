@@ -688,9 +688,9 @@ pathway_boxplot <- function(df, pathway_colname, score_colname, color_colname, f
     xlab(pathway_colname) +
     ylab(paste0(score_colname)) +
     guides(fill=guide_legend(title=color_colname)) +
-    scale_fill_manual(values=manual_colours) #+
+    scale_fill_manual(values=manual_colours) +
     #scale_y_continuous(trans='log10')
-    #ylim(ymin, ymax)
+    ylim(ymin, ymax)
   
   if(length(facet_var) == 1){
     gsva_boxpl <- gsva_boxpl +
@@ -1151,7 +1151,7 @@ rank_genes_and_do_gsea_enrichment <- function(gene_diff_df, diff_colname, pval_c
 # clustering gsea enrichment results by jaccard idx (+ heatmap)
 
 cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname, simscore = 'jaccard', hclust_cuts = c(0.5, 1, 1.2, 1.5), lead_genes_split = ';', 
-                                    nes_colname = 'NES', hmap_outpath = NULL, hmap_title = NULL){
+                                    nes_colname = 'NES', hmap_outpath = NULL, hmap_title = NULL, min_simscore = NULL){
   # cluster pathways based on jaccard idx -----------------------------------
   
   paths_genes_list <- lapply(gsea_sign[[lead_genes_colname]], function(x){
@@ -1179,11 +1179,13 @@ cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname,
   # calculate jaccard score between each pathway leading gene set
   path_sim <- lapply(paths_genes_list, function(x){
     p1 <- lapply(paths_genes_list, function(y){
+      x <- unlist(unname(x))
+      y <- unlist(unname(y))
       if(simscore == 'jaccard'){
         sim <- as.numeric(round(length(intersect(x, y)) / length(union(x,y)), digits = 4))
       } else if(simscore == 'overlap'){
         # Overlap coefficient (Szymkiewicz–Simpson): x / min(a,b) — emphasizes whether the smaller set is contained.
-        sim <- as.numeric(round(length(intersect(x, y)) / min(length(x), length(y))), digits = 4)
+        sim <- as.numeric(round(length(intersect(x, y)) / min(length(x), length(y)), digits = 4))
       }
       return(sim)
     })
@@ -1192,7 +1194,10 @@ cluster_gsea_enrichment <- function(gsea_sign, lead_genes_colname, path_colname,
   
   path_sim_mtx <- do.call('cbind', path_sim)
   # heatmap(path_jaccard_mtx)
-  
+  if(!is.null(min_simscore)){
+    path_sim_mtx[path_sim_mtx < min_simscore] <- 0
+  }
+
   # clustering with hclust
   path_hclust <- hclust(dist(path_sim_mtx), method = "average")
   #plot(path_hclust, hang = -1, cex = 0.4)
