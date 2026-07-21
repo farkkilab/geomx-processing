@@ -28,11 +28,11 @@ hubs_labels_list <- c('component_label', 'community_cluster_label') # before wit
 
 # main immune cells from deconv - also counted in cycif phenotyping
 #TODO decide if B_cells should be counted as immune or as other
-ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes", "Bcells") # , , no Bcells in basic phenotyping eg b1b2 
+ct_names_immune <- c("Tcells_CD4", "Tcells_CD8", "DCs", "Macrophages_Monocytes") # , , no Bcells in basic phenotyping eg b1b2 
 ct_names_myeloids <- c("Macrophages_Monocytes", "DCs")
 ct_names_lymphoids <- c("Tcells_CD4", "Tcells_CD8")
 # additional cells from deconv not counted in phenotyping and should be treated as 'other'
-ct_names_other <- c("Tcells_other", "Mast_cells", "NKcells") # "Bcells" goes here when basic phenotyping b1b2 and 'consensus_label_clean'
+ct_names_other <- c("Tcells_other", "Mast_cells", "NKcells", "Bcells") # "Bcells" goes here when basic phenotyping b1b2 and 'consensus_label_clean'
 
 ###########
 proj_dir <<- '~/Documents/phd/st'
@@ -47,16 +47,23 @@ sd_cellcounts_path <- file.path(output_dir, 'deconvolution', 'spatial_decon', 's
 ######################
 # all cells within ROIs with components/communities annotations computed with geomx_cycif_integration.R
 
+#batch123tls 
+hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch123tls_hubs_cells_inroi.csv")
+hubs_outname <- "batch123tls"
+ct_frac_deconv_outname <- "b123tls_ct_frac_deconv"
+clust_names <- paste0('cluster_', seq(0, 5))
+clust_manualnames <- c('loCD4_CD8_Macro', 'Macro', 'CD4', 'CD4_CD8_Macro','CD8', 'loCD4_loCD8_Macro')
+
 # # combined myeloids, no bcells,  min 20 cells components, no mixing
-hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv")
-hubs_outname <- "batch3tls_combined_myeloids_min20cells_nomix_new_polygons"
-ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells"
-clust_names <- paste0('cluster_', seq(0, 16))
-clust_manualnames <- c('CD4_Macro',
-                       'CD8_Macro', 'loCD8_Macro', 'CD8', 'CD4_CD8', 'Macro',
-                       'loCD8_Macro', 'CD4', 'loCD4_CD8', 'loCD4_CD8_loMacro', 'CD8_loMacro',
-                       'CD4_loMacro', 'loCD4_loCD8_Macro', 'loCD4_loCD8_loMacro', 'loCD4_Macro', 'loCD8_Macro',
-                       'loCD8_Macro')
+# hubs_inroi_path <- file.path(output_dir, "cycif_integration", "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv")
+# hubs_outname <- "batch3tls_combined_myeloids_min20cells_nomix_new_polygons"
+# ct_frac_deconv_outname <- "b123_ct_frac_deconv_bcells"
+# clust_names <- paste0('cluster_', seq(0, 16))
+# clust_manualnames <- c('CD4_Macro',
+#                        'CD8_Macro', 'loCD8_Macro', 'CD8', 'CD4_CD8', 'Macro',
+#                        'loCD8_Macro', 'CD4', 'loCD4_CD8', 'loCD4_CD8_loMacro', 'CD8_loMacro',
+#                        'CD4_loMacro', 'loCD4_loCD8_Macro', 'loCD4_loCD8_loMacro', 'loCD4_Macro', 'loCD8_Macro',
+#                        'loCD8_Macro')
 
 #####################
 # # combined myeloids, no bcells,  min 2 components, no mixing

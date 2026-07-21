@@ -15,25 +15,34 @@ library(tidyr)
 
 # define paths ------------------------------------------------------------
 
-um_to_pix_ratio <- 0.65 #0.325 for b2, 0.65 for b3TLS
+# 0.325 for b1b2b3
+# 0.65 for b3TLS
+um_to_pix_ratio_b123 <- 0.325 #0.325 for b2, 0.65 for b3TLS
+um_to_pix_ratio_b3tls <- 0.65
 
 # from master script
 proj_dir <<- '~/Documents/phd/st'
 output_dir <<- file.path(proj_dir, 'geomx-processing', 'results', 'batch123-2808') # batch123
 eyemt_pdrive_dir <- "/home/ad/P-drive/h30492/farkkilab2/9_EyeMT"
 
-metadt_path <- file.path(output_dir, 'metadata_full_SENSITIVE.csv')
+metadt_path <- file.path(proj_dir,'data/geomx', 'metadata_full_SENSITIVE.csv')
 geomx_norm_batch_eff_rm_path <<- file.path(output_dir, 'geomx_qc_norm_batch_eff_rm.RDS') 
 
 # phenotyped cells + components + communities
-hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPACEstat/batch3_communities")
-
+#hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPACEstat/batch3_communities")
+hubs_comm_dir <- file.path(eyemt_pdrive_dir, "Data_analysis/spatial_analysis/SPACEstat/network_and_single_cell_analysis_results")
 #############################
 # hubs files
+# all batches together with new phenotyping
+hubs_cells_path <- file.path(hubs_comm_dir, "cell_level_results.csv")
+hubs_comm_path <- file.path(hubs_comm_dir, "communities_and_components.csv")
+hubs_cellsinroi_outname <- "batch123tls_hubs_cells_inroi.csv"
+
+
 # # combined myeloids, no bcells,  min 2 components, no mixing
-hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cell_df_nomix_comfiltct20_dt171715_ct10_dt300.csv")
-hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_nomix_comfiltct20_dt171715_ct10_dt300.csv")
-hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv"
+# hubs_cells_path <- file.path(hubs_comm_dir, "eyemt_batch3_cell_df_nomix_comfiltct20_dt171715_ct10_dt300.csv")
+# hubs_comm_path <- file.path(hubs_comm_dir, "eyemt_batch3_components_and_communities_nomix_comfiltct20_dt171715_ct10_dt300.csv")
+# hubs_cellsinroi_outname <- "batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv"
 
 
 # # combined myeloids, no bcells,  min 2 components, no mixing
@@ -65,6 +74,7 @@ out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", hubs_cel
 # also "S139_post" "S139_pre" (b1) super high NTC
 b3tls_imageid <- c("S015", "S080", "S081", "S091", "S106", "S112", "S113", "S118", "S120",
                    "S123", "S195", "S225", "S229", "S247", "S309", "S311", "S355", "S378", "S380")
+b3tls_imageid <- paste0(b3tls_imageid, '_tls')
 
 b3tls_samplename <- c("S015_iOme", "S080_iOme2", "S081_iOme", "S091_iOme1", "S106_iOme", "S112_iOme", "S113_iOme", 
                       "S118_iOme",  "S120_iOme", "S123_iOme", "S195_iOme1", "S225_iOme",  "S229_iOme",  "S247_iOme", "S309_iOme", 
@@ -79,7 +89,7 @@ rownames(metadt) <- NULL
 
 print(colnames(metadt))
 # subset to batch2/3
-metadt <- metadt[metadt$Sample %in% b3tls_samplename, ]
+#metadt <- metadt[metadt$Sample %in% b3tls_samplename, ]
 
 length(unique(metadt$sample_roi))
 
@@ -99,8 +109,15 @@ hubs_comm <- fread(hubs_comm_path)
 
 
 # TODO it might be changed back to pix in the original files
-hubs_cells$X_centroid_px <- hubs_cells$X_centroid / um_to_pix_ratio
-hubs_cells$Y_centroid_px <- hubs_cells$Y_centroid / um_to_pix_ratio
+# hubs_cells$X_centroid_px <- hubs_cells$X_centroid / um_to_pix_ratio
+# hubs_cells$Y_centroid_px <- hubs_cells$Y_centroid / um_to_pix_ratio
+
+hubs_cells$X_centroid_px <- ifelse(hubs_cells$imageid %in% b3tls_imageid, 
+                                   hubs_cells$X_centroid / um_to_pix_ratio_b3tls,
+                                   hubs_cells$X_centroid / um_to_pix_ratio_b123)
+hubs_cells$Y_centroid_px <- ifelse(hubs_cells$imageid %in% b3tls_imageid, 
+                                   hubs_cells$Y_centroid / um_to_pix_ratio_b3tls,
+                                   hubs_cells$Y_centroid / um_to_pix_ratio_b123)
 
 if(!('cluster_label' %in% colnames(hubs_comm))){
   hubs_comm$community_cluster_label <- paste0('cluster_', hubs_comm$community_cluster)
@@ -108,13 +125,13 @@ if(!('cluster_label' %in% colnames(hubs_comm))){
  
 # join with network hubs and communities
 hubs_cells <- left_join(hubs_cells, hubs_comm[, c('component_id', 'component_label', 'component_size', 'residency', 'community_id', 'community_cluster', 'community_cluster_label')], 
-                        by = c('component_id'))
+                        by = c('component_id', 'community_id'))
 
 #TODO change imageid to Sample - already handled during phenotyping
 hubs_cells$Sample <- mapvalues(hubs_cells$imageid, 
                                from = b3tls_imageid,to = b3tls_samplename)
 # filter to shared samples
-hubs_cells <- hubs_cells[hubs_cells$Sample %in% b3tls_samplename, ]
+#hubs_cells <- hubs_cells[hubs_cells$Sample %in% b3tls_samplename, ]
 
 # TODO uncomment if needed, a bit to heavy just for checking 
 # fwrite(hubs_cells, out_path_hubs_cells)
@@ -134,43 +151,26 @@ hubs_cells_inroi <- lapply(unique(hubs_cells$Sample), function(sample_name){
   
   roi_coords_sample <- distinct(roi_coords_sample)
   
-  cells_in_roi_all_old <- apply(roi_coords_sample, 1, function(row){
-
-    # find cells within range
-    # coordinates are not longer rectangles, they're a bit rotated - the cells are found inside longer edges of rectangle
-    cells_in_roi <- dplyr::filter(hubs_cells_sample,
-                                  as.numeric(X_centroid_px) >= min(as.numeric(row[['roi_c1_X_cycif']]), as.numeric(row[['roi_c4_X_cycif']])) &
-                                    as.numeric(X_centroid_px) <= max(as.numeric(row[['roi_c2_X_cycif']]), as.numeric(row[['roi_c3_X_cycif']])) &
-                                    as.numeric(Y_centroid_px) >= min(as.numeric(row[['roi_c4_Y_cycif']]), as.numeric(row[['roi_c3_Y_cycif']])) &
-                                    as.numeric(Y_centroid_px) <= max(as.numeric(row[['roi_c1_Y_cycif']]), as.numeric(row[['roi_c2_Y_cycif']])))
-
-
-    cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-    return(cells_in_roi)
-  })
-  
-  cells_in_roi_all_old <- do.call(rbind, cells_in_roi_all_old)
-  print(nrow(cells_in_roi_all_old))
-  table(cells_in_roi_all_old$Roi_geomx)
-  
-  cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
+  if(nrow(roi_coords_sample) > 0){
+    cells_in_roi_all <- apply(roi_coords_sample, 1, function(row){
+      
+      #new finding cells implementation rewritten from python shapely package to sp R package
+      poly_x <- c(row[['roi_c1_X_cycif']], row[['roi_c2_X_cycif']], row[['roi_c3_X_cycif']], row[['roi_c4_X_cycif']])
+      poly_y <- c(row[['roi_c1_Y_cycif']], row[['roi_c2_Y_cycif']], row[['roi_c3_Y_cycif']], row[['roi_c4_Y_cycif']])
+      
+      cells_in_roi <- dplyr::filter(hubs_cells_sample, sp::point.in.polygon(point.x = as.numeric(X_centroid_px),
+                                                                            point.y = as.numeric(Y_centroid_px),
+                                                                            pol.x = poly_x, pol.y = poly_y) != 0)
+      
+      cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
+      return(cells_in_roi)
+    })
     
-    #new finding cells implementation rewritten from python shapely package to sp R package
-    poly_x <- c(row[['roi_c1_X_cycif']], row[['roi_c2_X_cycif']], row[['roi_c3_X_cycif']], row[['roi_c4_X_cycif']])
-    poly_y <- c(row[['roi_c1_Y_cycif']], row[['roi_c2_Y_cycif']], row[['roi_c3_Y_cycif']], row[['roi_c4_Y_cycif']])
-    
-    cells_in_roi <- dplyr::filter(hubs_cells_sample, sp::point.in.polygon(point.x = as.numeric(X_centroid_px),
-                                                                           point.y = as.numeric(Y_centroid_px),
-                                                                           pol.x = poly_x, pol.y = poly_y) != 0)
-    
-    cells_in_roi <- cbind(cells_in_roi, as.data.frame(lapply(row, rep, nrow(cells_in_roi))))
-    return(cells_in_roi)
-  })
-  
-  cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
-  print(nrow(cells_in_roi_all))
-  table(cells_in_roi_all$Roi_geomx)
-  return(cells_in_roi_all)
+    cells_in_roi_all <- do.call(rbind, cells_in_roi_all)
+    print(nrow(cells_in_roi_all))
+    table(cells_in_roi_all$Roi_geomx)
+    return(cells_in_roi_all)
+  }
 })
 
 hubs_cells_inroi <- do.call(rbind, hubs_cells_inroi)

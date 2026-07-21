@@ -125,39 +125,88 @@ pheno_cells_all$consensus_label_refined <- ifelse(pheno_cells_all$consensus_labe
                                        pheno_cells_all$CD8a == TRUE, 
                                               'Tumor_Immune_CD8_Tcells', pheno_cells_all$consensus_label_refined)
 
+# if in immune CD4, move to myeloids if positive for Iba1/Cd11c
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Immune_CD4_Tcells") &
+                                                     ((pheno_cells_all$Iba1 == TRUE) | (pheno_cells_all$CD11c == TRUE))),
+                                                  'Immune_Macrophages', pheno_cells_all$consensus_label_refined)
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD4_Tcells") &
+                                                     ((pheno_cells_all$Iba1 == TRUE) | (pheno_cells_all$CD11c == TRUE))),
+                                                  'Stroma_Immune_Macrophages', pheno_cells_all$consensus_label_refined)
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD4_Tcells") &
+                                                     ((pheno_cells_all$Iba1 == TRUE) | (pheno_cells_all$CD11c == TRUE))),
+                                                  'Tumor_Immune_Macrophages', pheno_cells_all$consensus_label_refined)
+
 # move to stroma/tumor if tum/str marker present
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD4_Tcells") & 
-                                                 (pheno_cells_all$CD4 == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD4_Tcells") &
+                                                 (pheno_cells_all$CD4 == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)),
                                               'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD4_Tcells") & 
-                                                 (pheno_cells_all$CD4 == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD4_Tcells") &
+                                                 (pheno_cells_all$CD4 == FALSE) & (pheno_cells_all$PanCK == TRUE)),
                                               'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
 
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD8_Tcells") & 
-                                                 (pheno_cells_all$CD8a == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD8_Tcells") &
+                                                 (pheno_cells_all$CD8a == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)),
                                               'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD8_Tcells") & 
-                                                 (pheno_cells_all$CD8a == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD8_Tcells") &
+                                                 (pheno_cells_all$CD8a == FALSE) & (pheno_cells_all$PanCK == TRUE)),
                                               'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
 
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Dcs") & 
-                                                 (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Dcs") &
+                                                 (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)),
                                               'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Dcs") & 
-                                                 (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Dcs") &
+                                                 (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$PanCK == TRUE)),
                                               'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
 
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Macrophages") & 
-                                                 (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Macrophages") &
+                                                 (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$aSMA_Vim == TRUE)),
                                               'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
-pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Macrophages") & 
-                                                 (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$PanCK == TRUE)), 
+pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Macrophages") &
+                                                 (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$PanCK == TRUE)),
                                               'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+#####################
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD4_Tcells") &
+#                                                      (pheno_cells_all$CD4 == FALSE)),
+#                                                   'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD4_Tcells") &
+#                                                      (pheno_cells_all$CD4 == FALSE)),
+#                                                   'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+# 
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_CD8_Tcells") &
+#                                                      (pheno_cells_all$CD8a == FALSE)),
+#                                                   'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_CD8_Tcells") &
+#                                                      (pheno_cells_all$CD8a == FALSE)),
+#                                                   'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+# 
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Dcs") &
+#                                                      (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE)),
+#                                                   'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Dcs") &
+#                                                      (pheno_cells_all$CD11c == FALSE) & (pheno_cells_all$Iba1 == FALSE)),
+#                                                   'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
+# 
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Stroma_Immune_Macrophages") &
+#                                                      (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE)),
+#                                                   'Stroma_Stroma', pheno_cells_all$consensus_label_refined)
+# pheno_cells_all$consensus_label_refined <- ifelse(((pheno_cells_all$consensus_label_refined == "Tumor_Immune_Macrophages") &
+#                                                      (pheno_cells_all$Iba1 == FALSE) & (pheno_cells_all$CD11c == FALSE)),
+#                                                   'Tumor_Tumor', pheno_cells_all$consensus_label_refined)
 
+
+
+################
 pheno_cells_all$consensus_label_clean_refined <- gsub('^Tumor_|^Stroma_|^Immune_|^Tumor_Immune_|^Stroma_Immune_', '', 
                                                         pheno_cells_all$consensus_label_refined)
 
-fwrite(pheno_cells_all, phenotyped_cells_refined_outpath)
+pheno_cells_all$final_label_tribus_cleaned <- gsub('^Tumor_|^Stroma_|^Immune_|^Tumor_Immune_|^Stroma_Immune_', '', 
+                                                      pheno_cells_all$final_label_tribus)
+
+table(pheno_cells_all$consensus_label_clean)
+table(pheno_cells_all$final_label_tribus_cleaned)
+table(pheno_cells_all$consensus_label_clean_refined)
+
+#fwrite(pheno_cells_all, phenotyped_cells_refined_outpath)
 
 
 # bruteforce phenotyping based only on manual gates -----------------------
