@@ -47,7 +47,7 @@ scrna_anno <<- 'mid_lvl_ct_updated' #either 'cell_type' / 'mid_lvl_ct' / 'mid_lv
 # names of cells to fin
 # c("tumor", "Macrophages_Monocytes", "Tcells_CD8", "Tcells_CD4", "DCs", "Fibroblasts_Mesothelial", "Bcells")
 
-cell_types_selected <- c("Macrophages_Monocytes", "Tcells_CD8")
+cell_types_selected <- c("Macrophages_Monocytes", "Tcells_CD8", "Fibroblasts_Mesothelial")
 
 # for multiNicheNetR if you are providing DEGS externally follow the MultiNicheNet_LR_util.R script to prepare the DEGs dataframe. 
 # Else MUltiNicheNet will not work
@@ -57,15 +57,21 @@ celltype_de_external_path = NULL # either NULL or path to the prepared DEGs data
 # note that even for 4 groups, there will be already 12 combinations so choose wisely!
 # see documentation for get_DE_info()
 # format eg: c('stroma_pre-stroma_post', 'stroma_post-stroma_pre') each comparison in both directions
-groups_to_compare <- NULL
+groups_to_compare <- c("stroma_post_Macro_domin", "stroma_post_other_roi_type")
 # groups_to_exclude <- c('stroma_pre_Bcell_domin', 'stroma_pre_mixed_w_CD4', 'stroma_pre_mixed_w_others', 'tumor_pre_mixed_w_CD4')
 groups_to_exclude <- NULL
 
 # list with 2 groups to compare at once for csv and plots
-comparison_list <- list(c("stroma_post_Macro_domin", "stroma_post_other_roi_type"),
-                        c("tumor_post_Macro_domin", "tumor_post_other_roi_type"),
-                        c("stroma_pre_Macro_domin", "stroma_pre_other_roi_type"),
-                        c("tumor_pre_Macro_domin", "tumor_pre_other_roi_type"))
+# comparison_list <- list(c("stroma_post_Macro_domin", "stroma_post_other_roi_type"),
+#                         c("tumor_post_Macro_domin", "tumor_post_other_roi_type"),
+#                         c("stroma_pre_Macro_domin", "stroma_pre_other_roi_type"),
+#                         c("tumor_pre_Macro_domin", "tumor_pre_other_roi_type"))
+# Create a contrast table
+contrast_tbl <- tibble(contrast = c('stroma_post_other_roi_type-stroma_post_Macro_domin',
+                                    'stroma_post_Macro_domin-stroma_post_other_roi_type'), 
+                       group = c('stroma_post_other_roi_type', 'stroma_post_Macro_domin'))
+
+comparison_list <- list(groups_to_compare)
 
 sample_id <- 'dcc_filename'
 covariates <- NA
@@ -198,9 +204,11 @@ dge_all <- do.call(rbind, dge_all)
 dge_all$cont1 <- paste0(dge_all$data_group, '_', gsub(' -.*', '', dge_all$Contrast))
 dge_all$cont2 <- paste0(dge_all$data_group, '_', gsub('.*- ', '', dge_all$Contrast))
 
-if(is.null(groups_to_compare)){
-  groups_to_compare <- unique(c(unique(dge_all$cont1), unique(dge_all$cont2)))
+if(!is.null(groups_to_compare)){
+  dge_all <- dge_all[dge_all$cont1 %in% groups_to_compare | dge_all$cont1 %in% groups_to_compare, ]
 }
+
+groups_to_compare <- unique(c(unique(dge_all$cont1), unique(dge_all$cont2)))
 
 # in original nn theres tum-str and str-tum contrast with negatives of each value
 celltype_de_pos <- data.frame(gene = dge_all$Gene, cluster_id = dge_all$cluster_id, logFC = dge_all$Estimate,
@@ -211,6 +219,7 @@ celltype_de_neg <- data.frame(gene = dge_all$Gene, cluster_id = dge_all$cluster_
                           p_adj = dge_all$FDR, contrast = paste0(dge_all$cont2, '-', dge_all$cont1))
 
 celltype_de <- rbind(celltype_de_neg, celltype_de_pos)
+#celltype_de <- celltype_de_pos
 
 # filter to groups to compare
 celltype_de <- celltype_de[grepl(paste0(groups_to_compare, collapse = '|'), celltype_de$contrast), ]
@@ -247,15 +256,16 @@ rm(dge_all)
 
 # contrasts_oi_list <- sapply(contrasts_oi, function(x){paste0("'", x, "'" )})
 
-contrasts_oi_list <- unname(sapply(unique(celltype_de$contrast), function(x){paste0("'", x, "'" )}))
-contrasts_oi <- paste(contrasts_oi_list, collapse = ',')
+# contrasts_oi_list <- unname(sapply(unique(celltype_de$contrast), function(x){paste0("'", x, "'" )}))
+# contrasts_oi <- paste(contrasts_oi_list, collapse = ',')
+# 
+# # Create a contrast table
+# contrast_tbl <- tibble(contrast = contrasts_oi_list, 
+#                        group = unique(groups_to_compare))
+# 
+# # fix contrast table
+# contrast_tbl$contrast <- gsub("'", "", contrast_tbl$contrast) # in NichenetR 2.1 it goes wo quites
 
-# Create a contrast table
-contrast_tbl <- tibble(contrast = contrasts_oi_list, 
-                       group = unique(groups_to_compare))
-
-# fix contrast table
-contrast_tbl$contrast <- gsub("'", "", contrast_tbl$contrast) # in NichenetR 2.1 it goes wo quites
 
 # filter metadata and expression to group, cells and samples ------------
 
@@ -342,12 +352,13 @@ condition_specific_celltypes = intersect(
 total_nr_conditions = SummarizedExperiment::colData(sce)[,group_id] %>% 
   unique() %>% length() 
 
-absent_celltypes = abundance_df_summarized %>% 
-  filter(samples_present < 2) %>% 
-  group_by(celltype_id) %>% 
-  count() %>% 
-  filter(n == total_nr_conditions) %>% 
-  pull(celltype_id)
+# absent_celltypes = abundance_df_summarized %>% 
+#   filter(samples_present < 2) %>% 
+#   group_by(celltype_id) %>% 
+#   count() %>% 
+#   filter(n == total_nr_conditions) %>% 
+#   pull(celltype_id)
+absent_celltypes <- c()
 
 print("condition-specific celltypes:")
 print(condition_specific_celltypes)
@@ -522,19 +533,23 @@ saveRDS(multinichenet_output, geomx_MultiNicheNet_path)
 # theses df can be directly used for plotting or can do manually filtering and provide seperetly
 
 top_n_LR_pairs = list()
-top_n <- 100
+top_n <- 50
 
+comparison <- comparison_list[[1]]
+receiver <- cell_types_selected[1]
+sender <- cell_types_selected[1]
 
 for(comparison in comparison_list){
-  for (group in comparison) {
+  #for (group in comparison) {
     for (receiver in cell_types_selected) {
       for (sender in cell_types_selected) {
         
-        print(paste0(group,"-",receiver,"-",sender))
+        print(paste0(comparison,"-",receiver,"-",sender))
         prioritized_tbl_oi = get_top_n_lr_pairs(
           prioritization_tables, 
           top_n, 
-          groups_oi = group, 
+          #groups_oi = group, 
+          groups_oi = comparison,
           receivers_oi = receiver,
           senders_oi = sender)
         
@@ -557,8 +572,8 @@ for(comparison in comparison_list){
           
           ################################################################
           
-          keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4) # TODO check
-          names(keep_sender_receiver_values) = levels(sample_data$keep_sender_receiver)
+          # keep_sender_receiver_values = c(0.25, 0.9, 1.75, 4) # TODO check
+          # names(keep_sender_receiver_values) = levels(sample_data$keep_sender_receiver)
           
           ######## calculate the median bulk expression for each group
           
@@ -629,7 +644,7 @@ for(comparison in comparison_list){
           
           #################################################################
           
-          table_name <- paste(group, receiver, sender, sep = "_")
+          table_name <- paste(paste(comparison, collapse = '-'), receiver, sender, sep = "_")
           file_name_p1 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_median_bulk_expr.csv"))
           write.csv(df_plot1, file_name_p1, row.names = FALSE)
           file_name_p2 <- file.path(plot_dir, paste0(table_name, "_LR_pairs_dfplot_ligand_activity.csv"))
@@ -638,20 +653,21 @@ for(comparison in comparison_list){
         }
       }
     }
-  }
+  #}
 }
 
 
 # make plots --------------------------------------------------------------
 
 for(comparison in comparison_list){
-  for (group in comparison){ 
+  #for (group in comparison){ 
     for (receiver in cell_types_selected) {
       for (sender in cell_types_selected) {
         
-        print(paste0(group,"-",receiver,"-",sender))
+        print(paste0(comparison,"-",receiver,"-",sender))
         
-        table_name <- paste(group, sender, receiver, sep = "_")
+        
+        table_name <- paste(paste(comparison, collapse = '-'), receiver, sender, sep = "_")
         sample_data = top_n_LR_pairs[[table_name]]
         
         if(!is.null(sample_data)){
@@ -673,17 +689,20 @@ for(comparison in comparison_list){
         }
       }
     }
-  }
+  #}
 }
 
 ########################
-multinichenet_output <- readRDS(geomx_MultiNicheNet_path)
-celltype_info <- multinichenet_output$celltype_info
-celltype_de <- multinichenet_output$celltype_de
-sender_receiver_info <- multinichenet_output$sender_receiver_info
-sender_receiver_de <- multinichenet_output$sender_receiver_de
-ligand_activities_targets_DEgenes <- multinichenet_output$ligand_activities_targets_DEgenes
-prioritization_tables <- multinichenet_output$prioritization_tables
-grouping_tbl <- multinichenet_output$grouping_tbl
-lr_target_prior_cor <- multinichenet_output$lr_target_prior_cor
+# comparison_list <- list(c("stroma_post_Macro_domin", "stroma_post_other_roi_type"))
+# cell_types_selected <- c("Macrophages_Monocytes", "Tcells_CD8", "Fibroblasts_Mesothelial")
+# 
+# multinichenet_output <- readRDS('/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/lr_interactions/multi_niche_netr/Macro_domin_vs_others_stroma_post_Macro_CD8_Fibro_onlyposdge_priorup/multinichenet_output_Macrophages_Monocytes_Tcells_CD8_Fibroblasts_Mesothelial.rds')
+# celltype_info <- multinichenet_output$celltype_info
+# celltype_de <- multinichenet_output$celltype_de
+# sender_receiver_info <- multinichenet_output$sender_receiver_info
+# sender_receiver_de <- multinichenet_output$sender_receiver_de
+# ligand_activities_targets_DEgenes <- multinichenet_output$ligand_activities_targets_DEgenes
+# prioritization_tables <- multinichenet_output$prioritization_tables
+# grouping_tbl <- multinichenet_output$grouping_tbl
+# lr_target_prior_cor <- multinichenet_output$lr_target_prior_cor
 
