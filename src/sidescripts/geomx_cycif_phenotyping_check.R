@@ -15,7 +15,7 @@ library(raster)
 # define paths ------------------------------------------------------------
 
 um_to_pix_ratio <- 1 #0.325 for b2, 0.65 for b3TLS, 1 if already in pix
-batchname <- 'batch123'
+batchname <- 'batch123tls'
 
 # from master script
 proj_dir <<- '~/Documents/phd/st'
@@ -34,6 +34,7 @@ deconv_ct_count_path <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_r
 
 phenotyped_cells_path <- file.path(eyemt_pdrive_dir, 'Data/cycif/single_cell_datasets', 'phenotypes_original_samplenames_adj.csv')
 phenotyped_cells_refined_outpath <- file.path(eyemt_pdrive_dir, 'Data/cycif/single_cell_datasets', 'phenotypes_original_samplenames_adj_consensus_refined.csv')
+
 
 out_path_hubs_cells_inroi <- file.path(output_dir, "cycif_integration", paste0(batchname, "_adjusted_phenotypes")) #  "batch3tls_tribus_and_manualgating"
 outp_plot_dir <- file.path(out_path_hubs_cells_inroi, 'plots')
@@ -313,7 +314,6 @@ labs_count <- group_by(pheno_cells_inroi_all_df, cell_type, final_label_tribus, 
 ##########################################
 
 # count cells per roi -----------------------------------------------------
-
 ct_frac_cycif_roi <- as.data.frame(dcast(pheno_cells_inroi_all_df[, c('sample_roi', 'cell_type')], sample_roi ~ cell_type))
 ct_frac_cycif_roi$total_cell_nr_cycif <- rowSums(ct_frac_cycif_roi[, -1])
 ct_frac_cycif_roi$immune <- rowSums(ct_frac_cycif_roi[, intersect(ct_names_immune, colnames(ct_frac_cycif_roi))])
