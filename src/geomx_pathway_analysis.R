@@ -4,10 +4,6 @@
 # TODO better output_names - deconv and all may have diff norm types!
 # get variables -----------------------------------------------------------
 
-# variables to merge the final csv with
-meta_names <- unique(c(aoi_id, roi_id, aoi_segment_var, sample_name, main_experimental_condition, 
-               main_roi_label, other_vars_bio))
-
 # best to use batch effect corrected or at least vst data (all in log form) 
 norm_type <- 'harmony_batch_corr_q3_norm' # from geomx assays
 deconv_norm_type <- 'deseq2_vst' # c('q3_norm', 'deseq2_vst') which norm should be used for bayesprism results
@@ -107,8 +103,13 @@ if('msigdb' %in% signature_type){
 
 if('custom' %in% signature_type){
   # signatures from custom file
-  sign_list_custom <- prepare_custom_sign_list(fread(custom_sign_path), adjust_synonym = F,
-                                               geomx_obj = geomx_obj)
+  if(grepl('.csv', custom_sign_path)){
+    sign_list_custom <- prepare_custom_sign_list(fread(custom_sign_path), adjust_synonym = F,
+                                                 geomx_obj = geomx_obj)
+
+  } else if(grepl('.RDS', custom_sign_path)){
+    sign_list_custom <- readRDS(custom_sign_path)
+  }
   sign_list <- append(sign_list, sign_list_custom)
 }
 
@@ -132,7 +133,6 @@ gsva_list_long <- lapply(1:length(expr_list), function(x){
   gsea_long <- melt(gsea)
   colnames(gsea_long) <- c('pathway', aoi_id, paste0(gsea_type, '_score'))
   gsea_long$expr_signal <- names(expr_list)[x]
-  gsea_long <- left_join(gsea_long, sData(geomx_obj)[meta_names])
   
   #TODO better names - deconv and all may have diff norm types!
   fwrite(gsea_long, file.path(output_dir,'pathway_analysis', 'gsea', 
