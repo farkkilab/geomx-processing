@@ -13,21 +13,22 @@ library(tibble)
 
 #TODO check why gsea scores are so big
 #TODO check in deconvoluted bulk RNAseq
+# TODO no norm, log2 after pseudobulk
 
 
 proj_dir <- '~/Documents/phd/st'
 outdir <- '~/Documents/phd/st/geomx-processing/results/batch123-2808/downstream/myelonets_signatures_validation/'
 
 #ct_markers_path <- '/home/iganiemi/Documents/phd/st/geomx-processing/data/signatures/ct_markers.csv'
-myelonets_sign_path <- file.path(outdir, 'myelonets_signatures_list.RDS')
-
+myelonets_sign_path <- file.path(outdir, 'myelonets_programmes.RDS')
+myelonets_sign_name <- 'programmes'
 
 source(file.path(proj_dir, 'geomx-processing', 'src', 'geomx_utils.R'))
 ########################
 # Vaharautio lab scRNAseq ref from Erdogan
 
 dataset_name <- 'GSE266577'
-gsea_outpath <- file.path(outdir, paste0('ssgsea_myelonets_signatures_', dataset_name, '.csv'))
+gsea_outpath <- file.path(outdir, paste0('ssgsea_myelonets_', myelonets_sign_name, '_', dataset_name, '.csv'))
 
 
 mtx_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE266577_counts_raw.mtx'
@@ -53,18 +54,18 @@ sc_ref <- subset(sc_ref, subset = percent.mt < 10)
 
 dim(sc_ref)
 # log normalise
-sc_ref <- NormalizeData(object = sc_ref)
+#sc_ref <- NormalizeData(object = sc_ref)
 
 # filter to post samples and macrophages
 sc_ref_post <- subset(sc_ref, subset = treatment_stage == 'IDS')
-sc_ref_post_macro <- subset(sc_ref_post, subset = cell_type %in% c('Macrophages')) # , 
+sc_ref_post_macro <- subset(sc_ref_post, subset = cell_type %in% c('Macrophages')) # ,
 sc_ref_post_macro <- subset(sc_ref_post_macro, subset = publication_patient_code_final != 'S014')
 
 # retrieved from publication
-pt_pfi <- data.frame(sample_id = c("S022", "S001", "S002", "S025", "S008", 
-                                   "S009", "S010", "S027", "S011", "S012", 
-                                   "S028", "S029", "S014", "S015", "S017", 
-                                   "S030", "S018", "S019", "S020", "S021", 
+pt_pfi <- data.frame(sample_id = c("S022", "S001", "S002", "S025", "S008",
+                                   "S009", "S010", "S027", "S011", "S012",
+                                   "S028", "S029", "S014", "S015", "S017",
+                                   "S030", "S018", "S019", "S020", "S021",
                                    "S031", "S032"),
                      PFI_group = c('long', 'short', 'long', 'long', 'long',
                                    'short', 'short', 'short', 'short', 'short',
@@ -78,22 +79,22 @@ meta_postmacro <- sc_ref_post_macro@meta.data %>%
   left_join(pt_pfi)
 
 table(meta_postmacro$sample_id, meta_postmacro$PFI_group)
-
+# 
 # meta_postmacro <- sc_ref_post_macro@meta.data %>%
 #   mutate(sample_id = patient_id) %>%
 #   mutate(cell_name = cell) %>%
 #   mutate(celltype_id = cell_subtype) %>%
 #   left_join(pt_pfi)
-# 
-# pt_pfi_macro <- pt_pfi[pt_pfi$sample_id %in% meta_postmacro$sample_id]
-# 
-# table(meta_postmacro$sample_id, meta_postmacro$PFI_group)
+
+pt_pfi_macro <- pt_pfi[pt_pfi$sample_id %in% meta_postmacro$sample_id, ]
+
+table(meta_postmacro$sample_id, meta_postmacro$PFI_group)
 
 #####################################
 # Hautaniemi lab scRNAseq ref from Kaiyang
 
 # dataset_name <- 'GSE165897'
-# gsea_outpath <- paste0('~/Documents/phd/st/geomx-processing/results/batch123-2808/lr_interactions/multi_niche_netr/ssgsea_myelonets_signatures_', dataset_name, '.csv')
+# gsea_outpath <- file.path(outdir, paste0('ssgsea_myelonets_', myelonets_sign_name, '_', dataset_name, '.csv'))
 # 
 # mtx_path <- '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_UMIcounts_HGSOC.tsv'
 # meta_path <-  '/home/iganiemi/Documents/phd/st/data/scrna/GSE165897_cellInfo_HGSOC.tsv'
@@ -112,12 +113,12 @@ table(meta_postmacro$sample_id, meta_postmacro$PFI_group)
 # dim(sc_ref)
 # gc()
 # 
-# sc_ref <- subset(sc_ref, subset = percent.mt < 7.5) 
+# sc_ref <- subset(sc_ref, subset = percent.mt < 7.5)
 # 
 # dim(sc_ref)
 # 
 # # log normalise
-# sc_ref <- NormalizeData(object = sc_ref)
+# #sc_ref <- NormalizeData(object = sc_ref)
 # 
 # 
 # # filter to post samples and macrophages
@@ -141,7 +142,7 @@ table(meta_postmacro$sample_id, meta_postmacro$PFI_group)
 # pt_pfi_macro <- pt_pfi[pt_pfi$sample_id %in% meta_postmacro$sample_id]
 # 
 # table(meta_postmacro$sample_id, meta_postmacro$PFI_group)
-
+# 
 
 # -------------------------------------------------------------------------
 
@@ -149,7 +150,7 @@ table(meta_postmacro$sample_id, meta_postmacro$PFI_group)
 
 expr_mtx <- SeuratObject::GetAssayData(object = sc_ref_post_macro,
                                        assay = "RNA",
-                                       layer = "data")
+                                       layer = "counts")
 
 # creating single cell experiment object
 sce <- SingleCellExperiment(
@@ -195,6 +196,7 @@ pb_expr_mtx <- pivot_wider(pb_df[, 1:3], names_from = gene, values_from = averag
   t() 
 
 # -------------------------------------------------------------------------
+#pb_expr_mtx_log <- log2(pb_expr_mtx + 1)
 
 # check if signature genes are matching
 signatures_list <- readRDS(myelonets_sign_path)
@@ -214,7 +216,7 @@ colnames(gsea_long) <- c('signature', 'sample_id', 'ssgsea_score')
 gsea_long <- left_join(gsea_long, pt_pfi) 
 
 
-fwrite(gsea_long, file.path(outdir, paste0('gsea_per_sample_avg_', dataset_name, '_Macro.csv')))
+fwrite(gsea_long, file.path(outdir, paste0('gsea_per_sample_avg_', myelonets_sign_name, '_', dataset_name, '_Macro_counts.csv')))
 
 # all sign, per group
 ggplot(data = gsea_long, aes(x = signature, y = ssgsea_score, fill = PFI_group)) +
@@ -227,41 +229,41 @@ ggplot(data = gsea_long, aes(x = signature, y = ssgsea_score, fill = PFI_group))
   theme(axis.text.x = element_text(angle=45, hjust=1, size = 5))
 
 
-ggsave(file.path(outdir, paste0("mye_vs_PFI_", dataset_name, "_avg_Macro.png")))
+ggsave(file.path(outdir, paste0("mye_vs_PFI_", myelonets_sign_name, '_', dataset_name, "_avg_Macro.pdf")),
+       width = 8, height = 12, units = 'in')
 
 
-# sign <- names(signatures_list)[4]
+sign <- names(signatures_list)[6]
+# print(sign)
 # gsea_long_sign <- gsea_long[gsea_long$signature == sign, ]
+# gsea_long_sign <- gsea_long_sign[gsea_long_sign$sample_id != 'EOC349', ]
 # plot(gsea_long_sign$ssgsea_score, gsea_long_sign$PFIdays)
-# 
-# for(sign in names(signatures_list)){
-#   gsea_long_sign <- gsea_long[gsea_long$signature == sign, ]
-#   print(sign)
-#   print(cor(gsea_long_sign$ssgsea_score, gsea_long_sign$PFIdays, method = 'spearman'))
-#   print(cor(gsea_long_sign$ssgsea_score, gsea_long_sign$PFIdays, method = 'pearson'))
-#   print('XXX')
-# }
+# cor(gsea_long_sign$ssgsea_score, gsea_long_sign$PFIdays, method = 'spearman')
+# cor(gsea_long_sign$ssgsea_score, gsea_long_sign$PFIdays, method = 'pearson')
 
-
+sign_avg <- celltype_info$pb_df_group
+sign_avg <- sign_avg[sign_avg$gene %in% signatures_list[[7]], ]
+sign_tot <- group_by(sign_avg, group) %>%
+  summarise(tot_expr = mean(pb_group))
 
 ################################################################################
 ################################################################################3
 # GSEA in each cell
 # expr_mtx_log <- log2(expr_mtx + 1)
 
-# do gsea
-# gsea_sign <- gsva(ssgseaParam(expr_mtx, signatures_list, minSize = 10, normalize = T))
-# 
-# # adjust df and save
-# gsea_long <- melt(gsea_sign)
-# colnames(gsea_long) <- c('signature', 'cell_name', 'ssgsea_score')
-# gsea_long <- left_join(gsea_long, meta_postmacro)
-# 
-# fwrite(gsea_long, file.path(outdir, paste0('ssgsea_myelonets_signatures_', dataset_name, '_percell.csv')))
-# 
-# 
-# # plot scores over samples
-# 
+#do gsea
+gsea_sign_cell <- gsva(ssgseaParam(expr_mtx, signatures_list, minSize = 10, normalize = T))
+
+# adjust df and save
+gsea_long_cell <- melt(gsea_sign_cell)
+colnames(gsea_long_cell) <- c('signature', 'cell_name', 'ssgsea_score')
+gsea_long_cell <- left_join(gsea_long, meta_postmacro)
+
+fwrite(gsea_long_cell, file.path(outdir, paste0('ssgsea_myelonets_', myelonets_sign_name, '_', dataset_name, '_percell.csv')))
+
+
+# plot scores over samples
+
 # sign_name <- names(signatures_list)[1]
 # 
 # gsea_long_sign <- gsea_long[gsea_long$signature == sign_name, ]
@@ -276,20 +278,20 @@ ggsave(file.path(outdir, paste0("mye_vs_PFI_", dataset_name, "_avg_Macro.png")))
 #   stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
 #   #geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
 #   theme(axis.text.x = element_text(angle=45, hjust=1, size = 5))
-# 
-# ##############################
-# # all sign, per group
-# ggplot(data = gsea_long, aes(x = signature, y = ssgsea_score, fill = PFI_group)) +
-#   #geom_boxplot() +
-#   geom_violin() +
-#   # geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
-#   #            size= 0.2, alpha = 0.6) +
-#   stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
-#   geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
-#   theme(axis.text.x = element_text(angle=45, hjust=1, size = 5))+
-#   ylim(min(gsea_long$ssgsea_score), 1.2)
-# 
-# ggsave(file.path(outdir, paste0("mye_vs_PFI_", dataset_name, "_percell_Macro.png")))
+
+##############################
+# all sign, per group
+ggplot(data = gsea_long_cell, aes(x = signature, y = ssgsea_score, fill = PFI_group)) +
+  #geom_boxplot() +
+  geom_violin() +
+  # geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+  #            size= 0.2, alpha = 0.6) +
+  stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 5))+
+  ylim(min(gsea_long_cell$ssgsea_score), 1.2)
+
+ggsave(file.path(outdir, paste0("mye_vs_PFI_", myelonets_sign_name, '_', dataset_name, "_percell_Macro.png")))
 
 # ########################################
 # # downsample to 200 cells per sample and 7 short samples
@@ -319,25 +321,26 @@ ggsave(file.path(outdir, paste0("mye_vs_PFI_", dataset_name, "_avg_Macro.png")))
 # ggsave(paste0("~/Documents/phd/st/geomx-processing/results/batch123-2808/lr_interactions/multi_niche_netr/mye_vs_PFI_", dataset_name, "_down_200cell5.png"))
 # 
 # #########################################
-# # mean per patient and then per group
-# gsea_long_mean <- gsea_long %>%
-#   group_by(sample_id, signature) %>%
-#   summarise(mean_ssgsea = mean(ssgsea_score)) %>%
-#   ungroup() %>%
-#   left_join(pt_pfi) 
-# 
-# ggplot(data = gsea_long_mean, aes(x = signature, y = mean_ssgsea, fill = PFI_group)) +
-#   geom_boxplot() +
-#   #geom_violin() +
-#   geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
-#              size= 0.2, alpha = 0.6) +
-#   stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
-#   geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = FALSE, size = 0.2, label.size = 2.8) +
-#   theme(axis.text.x = element_text(angle=45, hjust=1, size = 5)) +
-#   ylim(min(gsea_long_mean$mean_ssgsea), 0.7)
-# 
-# ggsave(paste0("~/Documents/phd/st/geomx-processing/results/batch123-2808/lr_interactions/multi_niche_netr/mye_vs_PFI_", dataset_name, "_meanperpt.png"))
-# 
+# mean per patient and then per group
+gsea_long_mean <- gsea_long_cell %>%
+  group_by(sample_id, signature) %>%
+  summarise(mean_ssgsea = mean(ssgsea_score)) %>%
+  ungroup() %>%
+  left_join(pt_pfi)
+
+ggplot(data = gsea_long_mean, aes(x = signature, y = mean_ssgsea, fill = PFI_group)) +
+  geom_boxplot() +
+  #geom_violin() +
+  geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+             size= 0.2, alpha = 0.6) +
+  stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = FALSE, size = 0.2, label.size = 2.8) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 5)) +
+  ylim(min(gsea_long_mean$mean_ssgsea), 0.9)
+
+ggsave(file.path(outdir, paste0("mye_vs_PFI_", myelonets_sign_name, '_', dataset_name, "_percell_meanperpt_Macro.png")))
+
+
 # ##############################################################################
 # #############################################################################
 # #############################################################################
