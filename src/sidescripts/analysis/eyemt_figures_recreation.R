@@ -32,18 +32,23 @@ metadt_path <- file.path(proj_dir, 'data/geomx/metadata_full_SENSITIVE.csv')
 # deconv ct fractions per roi and aoi
 # from geomx_roi_hubs_integration.R
 # TODO confirm from github bcs it changed the output now per each deconv-cycif check
-deconv_ct_count_path_4_imm_roi <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_roi_mid_lvl_ct_updated_4mainimmune.csv')
-deconv_ct_count_path_4_imm_aoi <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_mid_lvl_ct_updated_4mainimmune.csv')
+# deconv_ct_count_path_4_imm_roi <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_roi_mid_lvl_ct_updated_4mainimmune.csv')
+# deconv_ct_count_path_4_imm_aoi <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_mid_lvl_ct_updated_4mainimmune.csv')
 
 deconv_ct_count_path_roi <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_roi_mid_lvl_ct_updated.csv')
 deconv_ct_count_path_aoi <- file.path(output_dir, 'deconvolution', 'ct_frac_deconv_mid_lvl_ct_updated.csv')
 
 # ct fractions from geomx_roi_hubs_integration.R
-ct_frac_all_path <- file.path(output_dir, 'cycif_integration/ct_frac_comparison_batch123tls', 'ct_frac_all_roi_batch123tls.csv')
+ct_frac_all_path <- file.path(output_dir, 'cycif_integration/ct_frac_comparison_batch123tls_dist100', 'ct_frac_all_roi_batch123tls_dist100.csv')
+
+# all ct from cycif with residency and clusters from geomx_cycif_integration.R
+cycif_cells_all_path <- file.path(output_dir, 'cycif_integration', 'batch123tls_hubs_cells_all_dist100.csv')
 
 #ssgsea scores from eyemt_downstream_analysis_gsea.R
 gsea_res_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'gsea_all_cells_immune_reactome.csv')
 
+#ssgsea scores on full signal for ct markers - deconv validation
+gsea_ct_markers_path <- file.path(output_dir, 'pathway_analysis', 'gsea', 'ssgsea_harmony_batch_corr_q3_norm_all_ct_markers.csv')
 # ssgsea_scores dir for msigdb and additional
 # gsea_out_dir <- file.path(output_dir, 'pathway_analysis', 'gsea')
 # 
@@ -112,8 +117,8 @@ cols_segm <- c("#508791", "#ffff41",  "#D33F49")
 # load metadata and filter to dcc after qc --------------------------------
 
 geomx_dcc <- colnames(readRDS(geomx_path))
-metadt <- as.data.frame(fread(metadt_path))
-metadt <- metadt[metadt$dcc_filename %in% geomx_dcc, ]
+metadt_all <- as.data.frame(fread(metadt_path))
+metadt <- metadt_all[metadt_all$dcc_filename %in% geomx_dcc, ]
 rownames(metadt) <- NULL
 
 deconv_ct_count_roi <- fread(deconv_ct_count_path_roi)
@@ -149,6 +154,31 @@ ggplot(aoi_ctfrac_long, aes(x = factor(cell_type), y = ct_frac_sd, fill = factor
 ggsave(file.path(out_dir, paste0('ct_frac_aoi_segment_nact.pdf')), height = 8, width = 10, unit = 'in')
 ggsave(file.path(out_dir, paste0('ct_frac_aoi_segment_nact.svg')), height = 8, width = 10, unit = 'in')
 
+###################################
+###################################
+ct_gsea_all <- fread(gsea_ct_markers_path) %>%
+  filter(pathway != 'tumor_old') %>%
+  mutate(pathway = gsub('Nkcells', 'NKcells', pathway)) %>%
+  mutate(pathway = gsub('Endothelial cells', 'Endothelial_cells', pathway))
+
+for(ct_name in c(ct_all[ct_all != 'DCs'], 'stroma')){
+  print(ct_name)
+  aoi_ct <- deconv_ct_count_aoi[grepl(ct_name, deconv_ct_count_aoi$cell_type), ] 
+  ct_gsea_fraq <- left_join(ct_gsea_all[grepl(unlist(strsplit(ct_name, '_'))[1], ct_gsea_all$pathway)], aoi_ct[, c('dcc_filename','Segment', 'ct_frac_bp', 'ct_frac_sd')])
+  
+  for(ct_frac in c('ct_frac_bp', 'ct_frac_sd')){
+    
+    ct_gsea_fraq <- ct_gsea_fraq[ct_gsea_fraq[[ct_frac]] != 0, ] # remove too little fractions which were moved to 0
+    
+    ct_scatter <- ggplot(data = ct_gsea_fraq, aes(x = ssgsea_score, y = get(ct_frac), color = Segment)) +
+      geom_point(aes(shape = Segment)) + 
+      xlab(paste0(ct_name, ' markers ssgsea score')) +
+      ylab(paste0(ct_name, ' fraction')) +
+      facet_wrap(~pathway, scales = "fixed", ncol = 1) 
+    
+    ggsave(file.path(out_dir, paste0('deconv_validation_', ct_frac, '_', ct_name, '_ssgsea_vs_cell_count.pdf')))
+  }
+}
 
 # roi celltype clustering -------------------------------------------------
 # TODO find + check calcuations of immunefractions (from geomx_deconvolution_count_unify)
@@ -304,7 +334,7 @@ for(value_comb in c('bp_sd', 'bp_cycif', 'sd_cycif')){
 
 # comparison between geomx and cycif roi labels
 # TODO rerun basic code with new clustering
-lab_name1 <- 'community_cluster_label_manualnames_freq0.05'
+lab_name1 <- 'community_cluster_label_freq0.05'
 lab_name2 <- 'roi_cluster_label_gmm'
 
 labs_all <- ct_frac_all %>%
@@ -323,8 +353,13 @@ labs_cross <- labs_cross[order(rownames(labs_cross)), ]
 # do heatmap
 col_fun = colorRamp2(c(0, max(labs_cross)), c("white", "red"))
 
-ht <- Heatmap(labs_cross, col = col_fun, show_heatmap_legend = TRUE,
-              cluster_rows = FALSE, cluster_columns = FALSE, row_title = lab_name1, column_title = lab_name2)
+ht <- Heatmap(labs_cross, col = col_fun, name = "nr of ROIs",
+              show_heatmap_legend = TRUE,
+              cluster_rows = FALSE, cluster_columns = FALSE, 
+              row_title = lab_name1, 
+              column_title = lab_name2,
+              column_names_gp = gpar(fontsize = 8),
+              row_names_gp = gpar(fontsize = 8))
 
 pdf(file = file.path(out_dir, paste0('heatmap_labels_', lab_name1, '_', lab_name2, '.pdf')), width=10, height=8)
 draw(ht, heatmap_legend_side="bottom")
@@ -402,12 +437,13 @@ myelonets_paths_less <- c('REACTOME_INTERLEUKIN_10_SIGNALING',
 outname <- 'stroma_post_myelonets' # depend on filtering
 
 metadt_sel <- metadt %>%
-  filter(roi_cluster_label_gmm == 'Macro_domin', NACT_status == 'post' & Segment == 'stroma') %>% # roi_cluster_label_gmm == 'Macro_domin' & 
+  filter(NACT_status == 'post' & Segment == 'stroma') %>% # roi_cluster_label_gmm == 'Macro_domin' & 
   #filter(NACT_status == 'post' & Segment == 'stroma') %>%
   #filter(roi_cluster_label_gmm != 'Macro_domin', Segment == 'stroma', NACT_status == 'post') %>%
-  mutate(PFS_group = ifelse(PFS_days <= 350, 'short', ifelse(PFS_days >= 602, 'long', 'mid')))
+  mutate(PFS_group = ifelse(PFS_days <= 350, 'short', ifelse(PFS_days >= 602, 'long', 'mid'))) %>%
+  mutate(OS_group = ifelse(OS_days <= 613, 'short', ifelse(OS_days >= 1083, 'long', 'mid')))
 
-dcc_annots <- c('Segment_geomx', 'HRP_status', 'BRCA_status', 'primary_treatment_response', 'PFS_group', 'roi_cluster_label_gmm')
+dcc_annots <- c('Segment_geomx', 'HRP_status', 'BRCA_status', 'primary_treatment_response', 'PFS_group','OS_group', 'roi_cluster_label_gmm')
 
 # row annotations based on metadata
 dcc_annot <- metadt_sel %>%
@@ -459,6 +495,7 @@ gsea_heat <- Heatmap(gsea_sel_wide, name = "ssGSEA score",
                        legend_direction = "vertical", 
                        legend_width = unit(1, "in")),
                      show_row_names = F,
+                     cluster_columns = T,
                      column_names_gp = gpar(fontsize = 6),
                      column_names_max_height = unit(12, "in")
 )
@@ -468,6 +505,38 @@ draw(gsea_heat,
      annotation_legend_side="right",
      merge_legend = TRUE)
 dev.off()
+
+########################################
+# corr with PFS/OS
+dcc_annots <- c('Segment_geomx', 'HRP_status', 'BRCA_status', 'primary_treatment_response',
+                'PFS_group','OS_group', 'roi_cluster_label_gmm', 'PFS_days', 'OS_days')
+
+gsea_check_long <- left_join(gsea_sel, metadt_sel[, c('dcc_filename', 'Sample', dcc_annots)]) 
+
+gsea_check_long_mean <- gsea_check_long %>%
+  group_by(Sample, pathway) %>%
+  mutate(ssgsea_mean = mean(ssgsea_score)) %>%
+  distinct(Sample, pathway, ssgsea_mean, PFS_group, OS_group, primary_treatment_response, PFS_days, OS_days)
+
+ggplot(data = gsea_check_long_mean, aes(x = pathway, y = ssgsea_mean, fill = OS_group)) +
+  geom_boxplot() +
+  #geom_violin() +
+  geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+             size= 0.2, alpha = 0.6) +
+  stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 5))
+
+gsea_check_wide_mean <- pivot_wider(gsea_check_long_mean, names_from = pathway, values_from = ssgsea_mean)
+
+
+for(path in unique(gsea_check_long_mean$pathway)){
+  print(path)
+  print(cor(gsea_check_wide_mean[[path]], gsea_check_wide_mean$PFS_days, method = 'spearman'))
+  print(cor(gsea_check_wide_mean[[path]], gsea_check_wide_mean$PFS_days, method = 'pearson'))
+  print(cor(gsea_check_wide_mean[[path]], gsea_check_wide_mean$OS_days, method = 'spearman'))
+  print(cor(gsea_check_wide_mean[[path]], gsea_check_wide_mean$OS_days, method = 'pearson'))
+}
 
 #######################################
 #######################################
@@ -526,11 +595,11 @@ umap_annot <- cbind(dcc_annot_toplot, umap_out_res, pca_resdf)
 
 # make plot
 ggplot(umap_annot,
-       aes(x = PC1, y = PC2, 
+       aes(x = UMAP_1, y = UMAP_2, 
            #color = as.numeric(PFS_days), 
            #color = PFS_group,
            #color = HRP_status, 
-           color = roi_cluster_label_gmm
+           color = primary_treatment_response
            )) +
   geom_point(size = 3) +
   xlab(paste0('PC1 (',as.character(round(pca_obj$variance[1], 1)), '% of variance)')) +
@@ -540,6 +609,26 @@ ggplot(umap_annot,
   theme_bw()
 
 ggsave(file.path(out_dir, paste0('pca_gsea_myelonets_paths_',outname, '.pdf')), width = 5, height = 5, device=pdf)
+
+
+##########################################################
+##########################################################
+# boxplot with wilcox between cr and other groups
+gsea_sel2 <- left_join(gsea_sel, metadt[, c('dcc_filename', 'primary_treatment_response')]) %>%
+  filter(primary_treatment_response != '') %>%
+  mutate(primary_treatment_response = ifelse(primary_treatment_response %in% c('PD', 'SD'), 'PD/SD', primary_treatment_response))
+
+
+ggplot(data = gsea_sel2, aes(x = pathway, y = ssgsea_score, fill = primary_treatment_response)) +
+  geom_boxplot() +
+  #geom_violin() +
+  geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+             size= 0.2, alpha = 0.6) +
+  stat_summary(fun = "mean", geom = "point", colour = "red", position = position_dodge(0.9), size=0.3) +
+  geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = FALSE, size = 0.2, label.size = 2.8) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 5))
+
+ggsave(file.path(out_dir, 'mye_survival', paste0('mye_signatures_stroma_post_macro_dominated_per_ptr.png')), width = 8, height = 5)
 
 #######################################################3
 ########################################################
@@ -590,5 +679,326 @@ gsea_heat <- Heatmap(gsea_seg_corr_aoi_ctfrac, name = "correlation between ssGSE
 draw(gsea_heat, heatmap_legend_side="bottom")
 dev.off()
 
+######################################################3
+#######################################################
+# correlations between myelonets fractions from cycif and pfs
 
-#############
+cycif_cells_all <- fread(cycif_cells_all_path)
+cycif_cells_all$community_cluster_label <- ifelse(cycif_cells_all$community_cluster_label == '', 
+                                                  'not_in_community', cycif_cells_all$community_cluster_label)
+
+
+main_cluster_name <- 'Myeloids'
+# clust_names <- paste0('cluster_', seq(0, 5))
+# clust_manualnames <- c('CD4_Myeloid_mix', 'CD8_enriched', 'Myeloid_CD8_CD4_mix', 
+#                        'CD4_enriched','Myeloid_enriched', 'CD8_CD4_mix')
+# 
+# cycif_cells_all$community_cluster_label <- mapvalues(cycif_cells_all$community_cluster_label,
+#                                                       from = clust_names, to = clust_manualnames)
+
+# cycif_cells_all$Sample <- ifelse(cycif_cells_all$Sample == 'S084_tls', 'S084_iOme', cycif_cells_all$Sample)
+
+colnames(cycif_cells_all)
+View(cycif_cells_all[1:20, ])
+unique(cycif_cells_all$final_label)
+
+cycif_cells_stroma <- cycif_cells_all[cycif_cells_all$Tumor_region_residency == 'outside_region', ]
+#cycif_cells_stroma <- cycif_cells_all
+cycif_cells_stroma_mye <- cycif_cells_stroma[cycif_cells_stroma$final_label == 'Myeloids', ]
+
+mye_clust_count <- group_by(cycif_cells_stroma_mye, Sample, community_cluster_label) %>%
+  summarise(n_mye_in_cluster = n())
+
+mye_clust_count_wide <- pivot_wider(mye_clust_count, names_from = community_cluster_label, values_from = n_mye_in_cluster)
+mye_clust_count_wide[is.na(mye_clust_count_wide)]<- 0
+
+mye_clust_count_wide$total <- rowSums(mye_clust_count_wide[, 2:8])
+mye_clust_count_wide$total_in_cluster <- rowSums(mye_clust_count_wide[, c(2:6, 8)])
+mye_clust_count_wide$other_clusters <- rowSums(mye_clust_count_wide[, c(2:5, 8)])
+
+mye_clust_count_wide$total_in_cluster_over_total <- mye_clust_count_wide$total_in_cluster/mye_clust_count_wide$total
+mye_clust_count_wide$mye_over_total <- mye_clust_count_wide[[main_cluster_name]]/mye_clust_count_wide$total
+mye_clust_count_wide$mye_over_total_in_cluster <- mye_clust_count_wide[[main_cluster_name]]/mye_clust_count_wide$total_in_cluster
+mye_clust_count_wide$mye_over_other_clusters <- ifelse(mye_clust_count_wide$other_clusters == 0, 1, 
+                                                       mye_clust_count_wide[[main_cluster_name]]/mye_clust_count_wide$other_clusters)
+mye_clust_count_wide$mye_over_mye_and_myecd8 <- ifelse(mye_clust_count_wide$`Myeloids-CD8` == 0, 1, 
+                                                       mye_clust_count_wide$Myeloids/(mye_clust_count_wide$`Myeloids-CD8` + mye_clust_count_wide$`Myeloids`))
+  
+# add metadata
+b3tls_samplename <- c("S015_iOme", "S080_iOme2", "S081_iOme","S084_iOme", "S091_iOme1", "S106_iOme", "S112_iOme", "S113_iOme", 
+                      "S118_iOme",  "S120_iOme", "S123_iOme", "S195_iOme1", "S225_iOme",  "S229_iOme",  "S247_iOme", "S309_iOme", 
+                      "S311_iOme", "S355_iOme", "S378_iOme", "S380_iOme") 
+
+# merge with metadata
+meta_per_sample <- metadt_all[, c('Patient', 'Sample','NACT_status', 'HRP_status', 'BRCA_status', 'OS_days',
+                              'PFS_days', 'primary_treatment_response', 'Site', 'main_batch_nr', 'treatment_bevacizumab_1st_line',
+                              'treatment_PARPi', 'progression')] %>%
+  distinct() %>%
+  mutate(main_batch_nr = ifelse(Sample %in% b3tls_samplename, '3TLS', main_batch_nr))
+
+
+mye_count_meta <- left_join(mye_clust_count_wide, meta_per_sample)
+
+# missing info 
+#add missing info
+mye_count_meta$NACT_status[mye_count_meta$Sample == 'S188_iOme'] <- 'post'
+mye_count_meta$PFS_days[mye_count_meta$Sample == 'S188_iOme'] <- 701
+mye_count_meta$OS_days[mye_count_meta$Sample == 'S188_iOme'] <- 1261
+mye_count_meta$main_batch_nr[mye_count_meta$Sample == 'S188_iOme'] <- '2'
+mye_count_meta$primary_treatment_response[mye_count_meta$Sample == 'S188_iOme'] <- 'PR'
+mye_count_meta$Patient[mye_count_meta$Sample == 'S188_iOme'] <- 'S188'
+
+vals <- c('Myeloid_enriched', 'mye_over_total', 'mye_over_total_in_cluster')
+
+col_vals <- c('primary_treatment_response', 'Site', 'main_batch_nr', 'NACT_status', 'HRP_status', 'BRCA_status', 
+              'treatment_bevacizumab_1st_line', 'treatment_PARPi', 'progression')
+
+surv_vals <- c('OS_days', 'PFS_days')
+
+bad_staining_macro <- c('S032_pre', 'S088_iOme')
+midbad_staining_macro <- c('S139_iOme', 'S139_pPer', 'S333_iOvaR', 'S032_pOme', 'S069_iAdnL') #  # less than 0.2-35
+mid_staining_macro <- c('S131_iOme', 'S057_post') # less than 0.5 
+
+bad_staining_macro_b3tls <- c('S015_iOme', 'S081_iOme', 'S311_iOme')
+midbad_staining_macro_b3tls <- c('S225_iOme', 'S123_iOme')
+mid_staining_macro_b3tls <- c() 
+
+# bad_staining_macro_cd4 <- c('S032_pre', 'S088_iOme', 'S139_pPer', 'S333_iOvaR')
+# bad_staining_macro_cd4_b3tls <- c('S311_iOme')
+# 
+# 
+outliers <- c('S032_post', 'S195_iOme1')
+
+###############################################
+unique(mye_count_meta$Sample)
+
+surv_val <- 'OS_days'
+bname <- 'b123tls'
+nact_name <- 'post'
+ptr_vars <- c('CR')
+#ptr_vars <- c('CR', 'PR')
+#ptr_vars <- c('PD', 'PR', 'SD')
+#ptr_vars <- 'all'
+frac_var <- 'mye_over_total_in_cluster'# 'mye_over_mye_and_myecd8'
+
+mye_count_meta_filt <- mye_count_meta %>%
+  filter(NACT_status == nact_name) %>%
+  filter(!(Sample %in% bad_staining_macro)) %>%
+  filter(!(Sample %in% bad_staining_macro_b3tls))
+
+if(bname == 'b3tls'){
+  mye_count_meta_filt <- filter(mye_count_meta_filt, main_batch_nr == '3TLS')
+}
+
+#if(ptr_vars != 'all'){
+  mye_count_meta_filt <- filter(mye_count_meta_filt, primary_treatment_response %in% ptr_vars)
+#}
+
+# if sample from the same patient, calculate mean
+mye_count_meta_filt <- mye_count_meta_filt %>%
+  group_by(Patient) %>%
+  mutate(mye_over_total_in_cluster = mean(mye_over_total_in_cluster)) %>%
+  mutate(mye_over_mye_and_myecd8 = mean(mye_over_mye_and_myecd8)) %>%
+  ungroup() %>%
+  distinct(Patient, mye_over_total_in_cluster, mye_over_mye_and_myecd8, OS_days, PFS_days, primary_treatment_response)
+
+print(nrow(mye_count_meta_filt))
+corval <- cor(mye_count_meta_filt[[surv_val]], mye_count_meta_filt[[frac_var]], method = 'pearson')
+corval2 <- cor(mye_count_meta_filt[[surv_val]], mye_count_meta_filt[[frac_var]], method = 'spearman')
+
+print(round(corval, 2))
+print(round(corval2, 2))
+
+ggplot(mye_count_meta_filt,
+       aes(x = get(frac_var),
+           y = get(surv_val),
+           color = primary_treatment_response,
+       )) +
+  geom_point(size = 3) +
+  labs(title = paste0(surv_val, ' vs ', frac_var, ' ', bname, ' ', nact_name),
+  subtitle = paste0('corr = ', as.character(round(corval, 2)), ' / ', as.character(round(corval2, 2)))) +
+  ylab(surv_val) +
+  xlab(frac_var)
+
+
+ggsave(file.path(out_dir, 'mye_survival', paste0(bname, '_corr_', nact_name, '_', surv_val, '_', frac_var, 
+                                                 '_ptr_', paste0(ptr_vars, collapse = ''), '.png')), 
+       width = 8, height = 5)
+#########################################333
+# mean per patient and nact
+
+#############################################
+###########################################################################
+# check PCA on random matrices
+library(PCAtools)
+# ranom mtx with addon of correlated variables
+n.cases <- 10000               # Number of points.
+n.vars <- 9                  # Number of mutually correlated variables.
+set.seed(26)                 # Make these results reproducible.
+eps <- rnorm(n.vars, 0, 1/2) # Make "1/4" smaller to *increase* the correlations.
+x <- matrix(rnorm(n.cases * (n.vars+2)), nrow=n.cases)
+beta <- rbind(c(1,rep(0, n.vars)), c(0,rep(1, n.vars)), 
+              cbind(rep(0,n.vars), diag(eps)))
+y <- x%*%beta                # The variables.
+cor(y)                       # Verify their correlations are as intended.
+
+eps2 <- rnorm(n.vars, 0, 1/2) 
+x2 <- matrix(rnorm(n.cases * (n.vars+2)), nrow=n.cases)
+beta2 <- rbind(c(1,rep(0, n.vars)), c(0,rep(1, n.vars)), 
+              cbind(rep(0,n.vars), diag(eps2)))
+y2 <- x2%*%beta2                # The variables.
+cor(y2) 
+
+
+# totally random mtx 10k samples, 30 variables
+rand <- matrix(rexp(300000, rate=.1), ncol=10000)
+colnames(rand) <- paste0('sam', seq(1, ncol(rand)))
+
+# totally random mtx 10k samples, 20 vars + 10 correlated vars
+rand_and_corr <- rbind(rand[1:20,], t(y))
+
+# totally random mtx 10k samples, 10 vars + 10 correlated vars 
+# + other set of 10 correlated vars
+rand_and_corr2 <- rbind(rand[1:10,], t(y)[1:10, ], t(y2)[1:10, ])
+
+rownames(rand) <- paste0('var', seq(1, nrow(rand)))
+rownames(rand_and_corr) <- paste0('var', seq(1, nrow(rand_and_corr)))
+rownames(rand_and_corr2) <- paste0('var', seq(1, nrow(rand_and_corr2)))
+
+dim(rand)
+pca_obj <- pca(rand, scale = T)
+pca_obj$variance[1]
+pca_obj$variance[2]
+
+dim(rand_and_corr)
+pca_obj2 <- pca(rand_and_corr, scale = T)
+pca_obj2$variance[1]
+pca_obj2$variance[2]
+
+dim(rand_and_corr2)
+pca_obj3 <- pca(rand_and_corr2, scale = T)
+pca_obj3$variance[1]
+pca_obj3$variance[2]
+
+###################################################################
+###################################################################
+# check sd vs cycif comparison
+# maindir <- '~/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/'
+# mainoutdir <- file.path(maindir, 'check_fractions_comp')
+# dir.create(mainoutdir)
+# 
+# b3tls_samplename <- c("S015_iOme", "S080_iOme2", "S081_iOme", "S091_iOme1", "S106_iOme", "S112_iOme", "S113_iOme", 
+#                       "S118_iOme",  "S120_iOme", "S123_iOme", "S195_iOme1", "S225_iOme",  "S229_iOme",  "S247_iOme", "S309_iOme", 
+#                       "S311_iOme", "S355_iOme", "S378_iOme", "S380_iOme") 
+# 
+# #######
+# 
+# b3tls_cells_in_roi <- fread(file.path(maindir, 'batch3tls_hubs_cells_inroi_combined_myeloids_min20cells_nomix_dt171715_ct10_dt300_new_polygons.csv'))
+# # b123tls_cells_in_roi <- fread(file.path(maindir, 'batch123tls_hubs_cells_inroi.csv'))
+# b123tls_cells_in_roi_new <- fread(file.path(maindir, 'batch123tls_hubs_cells_inroi_modified.csv'))
+# 
+# # from phenotyping_check script
+# b3tls_ct_frac_phenocheck <- fread(file.path(maindir,'batch3tls_tribus_and_manualgating_new_polygons',
+#                                                   'batch3tls_ct_frac_cycif_roi_new_polygons.csv'))
+# b123_ct_frac_phenocheck <- fread(file.path(maindir,'batch123_adjusted_phenotypes/final_original_tumcd8_moveiftumstrpos',
+#                                                   'batch123_ct_frac_cycif_roi.csv'))
+# b123_cells_inroi_phenocheck <- fread(file.path(maindir,'batch123_adjusted_phenotypes/final_original_tumcd8_moveiftumstrpos',
+#                                                  'batch123_cells_in_roi.csv'))
+# 
+# # ct_fractions from roi hubs_integration
+# b3tls_ct_frac_hubsint <- fread(file.path(maindir,'ct_frac_comparison_batch3tls_combined_myeloids_min20cells_nomix_new_polygons',
+#                                             'ct_frac_all_roi_batch3tls_combined_myeloids_min20cells_nomix_new_polygons.csv'))
+# 
+# # b123tls_ct_frac_hubsint <- fread(file.path(maindir,'ct_frac_comparison_batch123tls',
+# #                                             'ct_frac_all_roi_batch123tls.csv'))
+# 
+# b123tls_ct_frac_hubsint_modified <- fread(file.path(maindir,'ct_frac_comparison_batch123tls_modified',
+#                                            'ct_frac_all_roi_batch123tls_modified.csv'))
+# 
+# # b123tls vs modified - identical
+# # identical(b123tls_cells_in_roi[, c('X_centroid', 'Y_centroid', 'final_label', 'imageid')],
+# #           b123tls_cells_in_roi_new[, c('X_centroid', 'Y_centroid', 'final_label', 'imageid')])
+# # 
+# # identical(b123tls_ct_frac_hubsint[, c('sample_roi', 'cell_type', 'ct_nr_cycif')],
+# #           b123tls_ct_frac_hubsint_modified[, c('sample_roi', 'cell_type', 'ct_nr_cycif')])
+# # 
+# # 
+# # kk <- left_join(b123tls_ct_frac_hubsint[, c('sample_roi', 'cell_type', 'ct_nr_cycif')], 
+# #                 b123tls_ct_frac_hubsint_modified[, c('sample_roi', 'cell_type', 'ct_nr_cycif')], by = c('sample_roi', 'cell_type'))
+# 
+# # check cellsinroi b123tls vs b3tls
+# 
+# identical(b3tls_cells_in_roi[, c('X_centroid', 'Y_centroid', 'final_label', 'imageid')],
+#           b123tls_cells_in_roi_new[b123tls_cells_in_roi_new$Sample %in% b3tls_samplename,
+#                                    c('X_centroid', 'Y_centroid', 'final_label', 'imageid')])
+# 
+# kk <- b123_cells_inroi_phenocheck[, c('X_centroid', 'Y_centroid', 'final_label', 'sample_roi')]
+# ll <- b123tls_cells_in_roi_new[!(b123tls_cells_in_roi_new$Sample %in% b3tls_samplename),
+#                                c('X_centroid', 'Y_centroid', 'final_label', 'sample_roi')]
+# 
+# 
+# setdiff(ll$sample_roi, kk$sample_roi)
+# 
+# kk1 <- as.data.frame(table(kk$sample_roi))
+# ll1 <- as.data.frame(table(ll$sample_roi))
+# llkk1 <- left_join(ll1, kk1, by = 'Var1')
+# identical(llkk1$Freq.x, llkk1$Freq.y)
+# 
+# 
+# # TODO x and y are not matchin! 0 maybe in um or pix?
+# pp <- left_join(kk, ll, by = c('X_centroid', 'Y_centroid', 'sample_roi'))
+# identical(pp$final_label.x, pp$final_label.y)
+# 
+# # nr of cells in rois are also not matching...
+# kk2 <- as.data.frame(table(kk$sample_roi, kk$final_label))
+# ll2 <- as.data.frame(table(ll$sample_roi, ll$final_label))
+# llkk2 <- left_join(ll2, kk2, by = 'Var1')
+# identical(llkk1$Freq.x, llkk1$Freq.y)
+# 
+# # rois not in old b3tls
+# b3tls_add_rois <- c("S106_iOme_roi-45", "S106_iOme_roi-46")
+# # 
+# # setdiff(ll$sample_roi, kk$sample_roi)
+# # 
+# # llwo <- ll[!(ll$sample_roi %in% b3tls_add_rois), ]
+# # 
+# # 
+# # pp <- left_join(kk, llwo, by = c('X_centroid', 'Y_centroid', 'sample_roi'))
+# # identical(pp$final_label.x, pp$final_label.y)
+# # 
+# # kk1 <- as.data.frame(table(kk$sample_roi))
+# # ll1 <- as.data.frame(table(ll$sample_roi))
+# # ll2 <- as.data.frame(table(llwo$sample_roi))
+# # 
+# # llkk1 <- left_join(ll1, kk1, by = 'Var1')
+# # llkk2 <- left_join(ll2, kk1, by = 'Var1')
+# # identical(llkk2$Freq.x, llkk2$Freq.y)
+# 
+# #######################
+# # check cellsinroi b123 vs old
+# 
+# identical(b123_cells_in_roi[, c('X_centroid', 'Y_centroid', 'final_label', 'imageid')],
+#           b123tls_cells_in_roi_new[b123tls_cells_in_roi_new$Sample %in% b3tls_samplename,
+#                                    c('X_centroid', 'Y_centroid', 'final_label', 'imageid')])
+# 
+# kk <- b123_cells_in_roi[, c('X_centroid', 'Y_centroid', 'final_label', 'imageid', 'sample_roi')]
+# ll <- b123tls_cells_in_roi_new[b123tls_cells_in_roi_new$Sample %in% b3tls_samplename,
+#                                c('X_centroid', 'Y_centroid', 'final_label', 'imageid', 'sample_roi')]
+# 
+# #####
+# # check b3tls ct counts
+# #TODO no DCs in cycif counts in hubs integration!!!!
+# 
+# kk <- b3tls_ct_frac_phenocheck[, c('sample_roi', 'cell_type', 'ct_frac_cycif')]
+# ll <- b3tls_ct_frac_hubsint[, c('sample_roi', 'cell_type', 'ct_frac_cycif')]
+# mm <- b123tls_ct_frac_hubsint_modified[, c('sample_roi', 'cell_type', 'ct_frac_cycif')]
+# 
+# pp <- left_join(kk, ll, by = c('sample_roi', 'cell_type'))
+# identical(pp$ct_frac_cycif.x, pp$ct_frac_cycif.y)
+# 
+# ppp <- left_join(ll, mm, by = c('sample_roi', 'cell_type'))
+# identical(ppp$ct_frac_cycif.x, ppp$ct_frac_cycif.y)
+# 
+# setdiff(kk$sample_roi, ll$sample_roi)
+# 
+# identical(b3tls_ct_frac_hubsint, b123tls_ct_frac_hubsint_modified[])
