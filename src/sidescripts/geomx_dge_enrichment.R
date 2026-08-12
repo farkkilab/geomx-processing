@@ -11,6 +11,7 @@ library(GO.db)
 #library(evoGO)
 #remotes::install_github("RHReynolds/rutils")
 library(rutils)
+library(scales)
 
 # set variables -----------------------------------------------------------
 
@@ -96,12 +97,6 @@ sign_list <- sign_list[sapply(sign_list, length) >= min_sign_gene_nr]
 print(paste0(length(sign_list), ' signatures will be used'))
 
 # load dge files ----------------------------------------------------------
-
-dge_df_path <- dge_df_list[3]
-cont <- "stroma - tumor"
-dt_group <- 'post'
-
-clust_forplot <- '15' # c('1', '12', '15')
 
 # loop through all dge results
 for(dge_df_path in dge_df_list){
@@ -337,13 +332,14 @@ go_reduce2 <- function (pathway_df, orgdb = "org.Hs.eg.db", threshold = 0.7,
 }
 
 dge_df_path <- dge_df_list[1]
-cont <- "Macro_domin - other_roi_type"
-dt_group <- 'stroma_post'
+cont <- "stroma - tumor"#"Macro_domin - other_roi_type"
+dt_group <- "post"#'stroma_post'
+i <- 1
 
 dir.create(file.path(dge_dir_path, 'go_enrichment'))
 
 # loop through all dge results
-for(dge_df_path in dge_df_list){
+for(dge_df_path in dge_df_list[1]){
   
   dge_inp_data <- gsub(paste0( '_', dge_name, '.csv'), '', basename(dge_df_path))
   print(paste0('##### ', dge_inp_data, ' #####'))
@@ -806,3 +802,151 @@ for(dge_df_path in dge_df_list){
 #   ggtitle("Top 15 enriched GO terms ", dir)
 # 
 # ggsave(file.path(output_dir, outp2, paste0('dotplot_', var_name, '_clustterms_all.png')))
+
+#####################################################################################3
+remove_parent_terms <- function(go_terms) {
+  # Step 1: Get all offspring for each term
+  all_offspring <- list()
+  for (term in go_terms) {
+    # Use GOBPOFFSPRING for biological process aspect
+    offspring <- unlist(as.list(GOBPOFFSPRING[[term]]))
+    all_offspring[[term]] <- offspring
+  }
+  
+  # Step 2: Identify which terms are offspring of other terms in the list
+  remove_indices <- c()
+  for (i in seq_along(go_terms)) {
+    for (j in seq_along(go_terms)) {
+      if (i != j) {
+        # If term i is an offspring of term j, mark i for removal
+        if (go_terms[i] %in% all_offspring[[go_terms[j]]]) {
+          remove_indices <- c(remove_indices, i)
+          break
+        }
+      }
+    }
+  }
+  
+  # Step 3: Keep only the most specific terms
+  if (length(remove_indices) > 0) {
+    specific_terms <- go_terms[-remove_indices]
+  } else {
+    specific_terms <- go_terms
+  }
+  return(specific_terms)
+}
+
+# reproduce GO plots from output
+
+go_dir <- '/home/iganiemi/Documents/phd/st/geomx-processing/results/batch123-2808/dge/dge_within_slide_Segment_bin_FALSE__NACT_status/go_enrichment'
+
+dge_inp_data <- 'dge_deconv_Tcells_CD8'
+
+go_res_all <- fread(file.path(go_dir, paste0('go_dge_', dge_inp_data, '_fc0.5_pval0.05.csv')))
+
+dt_group <- 'pre'
+cont <- 'stroma - tumor'
+dir <- 'neg'
+
+topnr <- 20
+countthr <- 5
+
+for(dt_group in c('pre', 'post')){
+  for(dir in c('pos', 'neg')){
+    go_res_sel <- go_res_all[go_res_all$data_group == dt_group & go_res_all$Contrast == cont & go_res_all$direction == dir, ]
+    go_res_sel <- go_res_sel[go_res_sel$Count >= 10, ]
+    go_res_sel <- go_res_sel[go_res_sel$FoldEnrichment >= 2, ]
+    
+    if(nrow(go_res_sel) > 0){
+      go_specific <- remove_parent_terms(unique(go_res_sel$ID))
+      go_res_sel_specific <- go_res_sel[go_res_sel$ID %in% go_specific]
+      
+      fwrite(go_res_sel_specific, file.path(go_dir, paste0('go_specific', dge_inp_data,'_', dt_group, '_', cont, '_', dir, '_fe2_count', as.character(countthr), '.csv')))
+      #####################################################
+
+      
+      go_res_clust_best07 <-  go_res_sel_specific %>%
+        group_by(parent_ID_07) %>%
+        filter(RichFactor == max(RichFactor)) %>%
+        filter(FoldEnrichment == max(FoldEnrichment)) %>%
+        filter(row_number()==1) %>%
+        arrange(-RichFactor)
+      
+      if(nrow(go_res_clust_best07) > topnr){
+        go_res_clust_best07 <- go_res_clust_best07[1:topnr, ]
+      }
+      
+      if(nrow(go_res_clust_best07) > 0){
+        # by parent term
+        ggplot(go_res_clust_best07, aes(x = RichFactor, y = factor(parent_term_07, levels = rev(go_res_clust_best07$parent_term_07)))) +
+          geom_point(aes(color = FoldEnrichment, size = Count)) +
+          theme_classic() +
+          xlab('Rich Factor') +
+          ylab(NULL) +
+          ggtitle("Top enriched GO terms ", dir) 
+        
+        ggsave(file.path(go_dir, dge_inp_data,
+                         paste0('dotplot_go_richfactor_childonly_parent07_top', as.character(topnr), '_', dge_inp_data, '_', dt_group, '_', cont, '_', dir,
+                                '_fc0.5_pval0.05.pdf')),
+               width = 8, height = 5, units = 'in')
+        
+        # by actual pathway
+        ggplot(go_res_clust_best07, aes(x = RichFactor, y = factor(Description, levels = rev(go_res_clust_best07$Description)))) +
+          geom_point(aes(color = FoldEnrichment, size = Count)) +
+          theme_classic() +
+          xlab('Rich Factor') +
+          ylab(NULL) +
+          ggtitle("Top enriched GO terms ", dir)
+        
+        ggsave(file.path(go_dir, dge_inp_data,
+                         paste0('dotplot_go_richfactor_childonly_parent07_best_top', as.character(topnr), '_', dge_inp_data, '_', dt_group, '_', cont, '_', dir,
+                                '_fc0.5_pval0.05.pdf')),
+               width = 8, height = 5, units = 'in')
+        
+      }
+    
+      #####
+      # same for 0.5
+      
+      go_res_clust_best05 <-  go_res_sel_specific %>%
+        group_by(parent_ID_05) %>%
+        filter(RichFactor == max(RichFactor)) %>%
+        filter(FoldEnrichment == min(FoldEnrichment)) %>%
+        filter(row_number()==1) %>%
+        arrange(-RichFactor)
+      
+      if(nrow(go_res_clust_best05) > topnr){
+        go_res_clust_best05 <- go_res_clust_best05[1:topnr, ]
+      }
+      
+      if(nrow(go_res_clust_best05) > 0){
+        ggplot(go_res_clust_best05, aes(x = RichFactor, y = factor(parent_term_05, levels = rev(go_res_clust_best05$parent_term_05)))) +
+          geom_point(aes(color = FoldEnrichment, size = Count)) +
+          theme_classic() +
+          xlab('Rich Factor') +
+          ylab(NULL) +
+          ggtitle("Top enriched GO terms ", dir)
+        
+        ggsave(file.path(go_dir, dge_inp_data,
+                         paste0('dotplot_go_richfactor_childonly_parent05_top', as.character(topnr), '_', dge_inp_data, '_', dt_group, '_', cont, '_', dir,
+                                '_fc0.5_pval0.05.pdf')),
+               width = 8, height = 5, units = 'in')
+        
+        ggplot(go_res_clust_best05, aes(x = RichFactor, y = factor(Description, levels = rev(go_res_clust_best05$Description)))) +
+          geom_point(aes(color = FoldEnrichment, size = Count)) +
+          theme_classic() +
+          xlab('Gene Ratio') +
+          ylab(NULL) +
+          ggtitle("Top enriched GO terms ", dir)
+        
+        ggsave(file.path(go_dir, dge_inp_data,
+                         paste0('dotplot_go_richfactor_childonly_parent05_best_top', as.character(topnr), '_' , dge_inp_data, '_', dt_group, '_', cont, '_', dir,
+                                '_fc0.5_pval0.05.pdf')),
+               width = 8, height = 5, units = 'in')
+        
+      }
+    }
+    
+  }
+}
+
