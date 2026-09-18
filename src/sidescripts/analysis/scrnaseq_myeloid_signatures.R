@@ -10,6 +10,8 @@ library(multinichenetr)
 library(SingleCellExperiment)
 library(tidyr)
 library(tibble)
+library(ggpubr)
+library(ggpmisc)
 
 #TODO check why gsea scores are so big
 #TODO check in deconvoluted bulk RNAseq
@@ -257,10 +259,28 @@ gsea_sign_cell <- gsva(ssgseaParam(expr_mtx, signatures_list, minSize = 10, norm
 # adjust df and save
 gsea_long_cell <- melt(gsea_sign_cell)
 colnames(gsea_long_cell) <- c('signature', 'cell_name', 'ssgsea_score')
-gsea_long_cell <- left_join(gsea_long, meta_postmacro)
+gsea_long_cell <- left_join(gsea_long_cell, meta_postmacro)
 
 fwrite(gsea_long_cell, file.path(outdir, paste0('ssgsea_myelonets_', myelonets_sign_name, '_', dataset_name, '_percell.csv')))
 
+
+#scatters between signatures
+gsea_sign_cell_wide <- as.data.frame(t(gsea_sign_cell)) %>%
+  rownames_to_column(var = 'cell_name') %>%
+  left_join(meta_postmacro)
+
+prog1 <- 'myelonets_il1'
+prog2 <- 'myelonets_tnfa'
+
+# scatters 2 programmes
+ggplot(data = gsea_sign_cell_wide, aes(x = get(prog1), y = get(prog2), color = PFI_group)) +
+  geom_point() +
+  xlab(prog1) +
+  ylab(prog2) +
+  geom_smooth(method='lm', formula= y~x) +
+  stat_poly_eq(use_label(c("R2", "p")))
+
+ggsave(file.path(outdir, paste0('scatter_gsea_percell', prog1, '_', prog2, '.png')))
 
 # plot scores over samples
 
