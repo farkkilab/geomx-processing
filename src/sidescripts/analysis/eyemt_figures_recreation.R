@@ -79,7 +79,7 @@ clust_type <- 'roi_cluster_label_gmm'
 clust_type_name <- 'gmm' # for plotting
 
 #cols_segment_nact <- c('#FED18C','#9c5f01', '#A7AEF2', '#15208e') # pre-postnact
-cols_segment_nact <- c('#508791', '#305157', '#D33F49','#861f26')
+cols_segment_nact <- c('#fed18c', '#ea8f02', '#D33F49','#861f26')
 cols_nact <- c('#FED18C', '#A7AEF2')
 cols_cell_types_imm <- c('#7d28d7', '#00BA38', '#0095B6', '#F8766D', '#ffff41', '#fa7828') # Bcells, DC, Macro, other_imm, CD4, CD8
 cols_segm <- c("#508791", "#ffff41",  "#D33F49")
@@ -338,6 +338,7 @@ lab_name1 <- 'community_cluster_label_freq0.05'
 lab_name2 <- 'roi_cluster_label_gmm'
 
 labs_all <- ct_frac_all %>%
+  filter(total_cell_nr_cycif >= 100) %>%
   select(sample_roi, lab_name1, lab_name2) %>%
   distinct()
 
@@ -416,44 +417,42 @@ myelonets_paths_less <- c('REACTOME_INTERLEUKIN_10_SIGNALING',
                      'REACTOME_INTERLEUKIN_2_SIGNALING',
                      'REACTOME_MHC_CLASS_II_ANTIGEN_PRESENTATION',
                      'REACTOME_ROS_AND_RNS_PRODUCTION_IN_PHAGOCYTES',
-                     'REACTOME_SIGNALING_BY_CSF1_M_CSF_IN_MYELOID_CELLS',
                      'REACTOME_TNF_SIGNALING',
                      'BIOCARTA_TGFB_PATHWAY',
                      'BIOCARTA_VEGF_PATHWAY',
                      'GOBP_ACUTE_INFLAMMATORY_RESPONSE',
                      'ADDITIONAL_WANG_M2',
+                     'REACTOME_SCAVENGING_BY_CLASS_A_RECEPTORS',
                      'GOBP_CHOLESTEROL_EFFLUX',
-                     'GOBP_CHOLESTEROL_IMPORT',
                      'GOBP_CHOLESTEROL_STORAGE',
                      'GOBP_FOAM_CELL_DIFFERENTIATION',                     
-                     'REACTOME_RUNX3_REGULATES_IMMUNE_RESPONSE_AND_CELL_MIGRATION',
-                     'REACTOME_SCAVENGING_BY_CLASS_A_RECEPTORS',
                      'REACTOME_TNFR2_NON_CANONICAL_NF_KB_PATHWAY',
                      'REACTOME_TNFR1_INDUCED_PROAPOPTOTIC_SIGNALING',
                      'REACTOME_TNFR1_INDUCED_NF_KAPPA_B_SIGNALING_PATHWAY'
                      
 )
 
-outname <- 'stroma_post_myelonets' # depend on filtering
+
+outname <- 'stroma_prepost_myelonets_fin2' # depend on filtering
 
 metadt_sel <- metadt %>%
-  filter(NACT_status == 'post' & Segment == 'stroma') %>% # roi_cluster_label_gmm == 'Macro_domin' & 
+  filter(roi_cluster_label_gmm == 'Macro_domin' & Segment == 'stroma') %>% #   & NACT_status == 'post' &  
   #filter(NACT_status == 'post' & Segment == 'stroma') %>%
   #filter(roi_cluster_label_gmm != 'Macro_domin', Segment == 'stroma', NACT_status == 'post') %>%
   mutate(PFS_group = ifelse(PFS_days <= 350, 'short', ifelse(PFS_days >= 602, 'long', 'mid'))) %>%
   mutate(OS_group = ifelse(OS_days <= 613, 'short', ifelse(OS_days >= 1083, 'long', 'mid')))
 
-dcc_annots <- c('Segment_geomx', 'HRP_status', 'BRCA_status', 'primary_treatment_response', 'PFS_group','OS_group', 'roi_cluster_label_gmm')
+dcc_annots <- c('NACT_status', 'Segment_geomx', 'HRP_status', 'BRCA_status', 'primary_treatment_response', 'PFS_group','OS_group', 'roi_cluster_label_gmm')
 
 # row annotations based on metadata
 dcc_annot <- metadt_sel %>%
-  select('dcc_filename', !!dcc_annots) %>%
+  dplyr::select('dcc_filename', !!dcc_annots) %>%
   column_to_rownames(var="dcc_filename") %>%
   mutate_all(as.factor)
 
 # select dcc and pathways
 gsea_sel <- gsea_res_macro %>%
-  select(dcc_filename, pathway, ssgsea_score) %>%
+  dplyr::select(dcc_filename, pathway, ssgsea_score) %>%
   filter(dcc_filename %in% metadt_sel$dcc_filename & pathway %in% myelonets_paths_less) %>% #
   distinct()
 
@@ -882,6 +881,74 @@ pca_obj3$variance[2]
 
 ###################################################################
 ###################################################################
+# corr re-check from Maias hmaps
+mye_fracs <- read.csv('~/Documents/phd/st/eyeMT/mye_fracs.csv')
+
+cols_mye = c('myeloid_communities_myeloidcluster_over_total',
+         'myeloid_components_myeloidcluster_over_total',
+         'myeloid_cells_myeloidcluster_over_total')
+cols_surv = c('PFS_days','OS_days')
+
+mye_sel <- mye_fracs[mye_fracs$NACT_status == 'post' & mye_fracs$primary_treatment_response == 'CR', c(cols_mye, cols_surv)]
+
+for(mye in cols_mye){
+  for(surv in cols_surv){
+    print('############')
+    print(mye)
+    print(surv)
+    
+    result = cor.test(mye_sel[[mye]], mye_sel[[surv]], method = "spearman", exact = F)
+    print(result)
+    
+  }
+}
+
+
+#############################################################################
+#############################################################################
+# check of myelonets signatures gsea on macro deconv
+prog_outdir <- '~/Documents/phd/st/geomx-processing/results/batch123-2808/downstream/myelonets_signatures_validation/programmes_gsea/stroma_post'
+dir.create(prog_outdir, recursive = T)
+
+gsea_myelonets <- fread('~/Documents/phd/st/geomx-processing/results/batch123-2808/pathway_analysis/gsea/ssgsea_harmony_batch_corr_q3_norm_deconv_Macrophages_Monocytes_myelonets_programmes.csv')
+gsea_myelonets <- gsea_myelonets[, c('dcc_filename', 'pathway', 'ssgsea_score')]
+gsea_myelonets_wide <- pivot_wider(gsea_myelonets, id_cols = 'dcc_filename', names_from = 'pathway', values_from = 'ssgsea_score')
+
+metadt_sel <- metadt %>%
+  mutate(PFS_group = ifelse(PFS_days <= 350, 'short', ifelse(PFS_days >= 602, 'long', 'mid'))) %>%
+  mutate(OS_group = ifelse(OS_days <= 613, 'short', ifelse(OS_days >= 1083, 'long', 'mid')))
+  
+gsea_myelonets_wide <- left_join(gsea_myelonets_wide, metadt_sel)
+
+gsea_myelonets_wide <- gsea_myelonets_wide %>%
+  filter(Segment == 'stroma' & NACT_status == 'post')
+
+
+col_vars <- c('NACT_status', 'Segment_geomx', 'HRP_status', 'primary_treatment_response', 
+              'PFS_group','OS_group','PFS_days', 'OS_days', 'roi_cluster_label_gmm',
+                'ct_immunefrac_sd_roi_DCs', 'ct_immunefrac_sd_roi_Tcells_CD4', 'ct_immunefrac_sd_roi_Bcells', 
+                'ct_immunefrac_sd_roi_Tcells_CD8', 'primary_surgery_residual', 'TMB', 'tls_status')
+
+progs <- unique(gsea_myelonets$pathway)
+prog1 <- 'myelonets_lipid_dge'
+prog2 <- 'myelonets_il1_dge'
+colvar <- col_vars[1]
+
+for(colvar in col_vars){
+  ggplot(data = gsea_myelonets_wide, aes(x = get(prog1), y = get(prog2), color = get(colvar))) +
+    geom_point(aes(shape = Segment)) + 
+    xlab(prog1) +
+    ylab(prog2) +
+    guides(color = guide_legend(title = colvar))
+  
+  ggsave(file.path(prog_outdir, paste0('scatter_gsea_', prog1, '_', prog2, '_col_', colvar, '.png')))
+}
+
+
+
+#############################################################################
+#############################################################################
+
 # check sd vs cycif comparison
 # maindir <- '~/Documents/phd/st/geomx-processing/results/batch123-2808/cycif_integration/'
 # mainoutdir <- file.path(maindir, 'check_fractions_comp')

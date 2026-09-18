@@ -34,12 +34,12 @@ library(GeomxTools)
 
 # set variables -----------------------------------------------------------
 
-res_dir <- '~/Documents/phd/st/geomx-processing/results/batch1-1903/'
-main_out_dir <- '~/Documents/phd/st/geomx-processing/results/batch1-1903/downstream_analysis/for_cornell'
+res_dir <- '~/Documents/phd/st/geomx-processing/results/batch123-2808/'
+main_out_dir <- '~/Documents/phd/st/geomx-processing/results/batch123-2808/downstream/for_cornell'
 
 geomx_path <- file.path(res_dir, "geomx_qc_norm_batch_eff_rm.RDS")
-deconv_path <- file.path(res_dir, "deconvolution", "bayes_prism", "bp_res_mid_lvl_ct_expr_mtx_cleaned_vst_harmony_batch_corr.RDS")
-deconv_ct_frac_path <- file.path(res_dir, "deconvolution", "bayes_prism", "bp_res_mid_lvl_ct_ct_fraction.csv")
+deconv_path <- file.path(res_dir, "deconvolution", "bayes_prism", "bp_res_mid_lvl_ct_updated_expr_mtx_cleaned_deseq2_vst_harmony_corr.RDS")
+deconv_ct_frac_path <- file.path(res_dir, "deconvolution", "bayes_prism", "bp_res_mid_lvl_ct_updated_ct_fraction.csv")
 gsea_all_path <- file.path(res_dir, "pathway_analysis", "gsea",  "ssgsea_norm_harmony_batch_corr_all_msigdb.csv")
 
 # gsea_deconv_dc_path <- file.path(res_dir, "pathway_analysis", "gsea",  "ssgsea_norm_harmony_batch_corr_deconv_DCs_msigdb.csv")
@@ -47,25 +47,27 @@ gsea_all_path <- file.path(res_dir, "pathway_analysis", "gsea",  "ssgsea_norm_ha
 # gsea_deconv_tcell_path <- file.path(res_dir, "pathway_analysis", "gsea",  "ssgsea_norm_harmony_batch_corr_deconv_Tcells_msigdb.csv")
 
 
-dir.create(main_out_dir)
+dir.create(main_out_dir, recursive = T)
 
 source(file.path('~/Documents/phd/st/', 'geomx-processing', 'src', 'geomx_utils.R'))
 
 # set important variables -------------------------------------------------
 
-ct_interest <- c('DCs', 'Tcells', 'Macrophages')
+ct_interest <- c('DCs', 'Tcells_CD4','Tcells_CD8', 'Macrophages_Monocytes')
 metadt_important <- c('dcc_filename', 'Patient', 'Sample', 'NACT_status', 
-                      'Segment', 'Annotation_cell', 'Roi')
+                      'Segment', 'Annotation_cell', 'Roi', 'main_batch_nr')
 
 genes_interest <- c('CXCR6', 'CXCL16', 'CCL5', 'CCR7', 'P2RX7', 'TLR9')
 
-bio_vars_disc <- c('Patient', 'NACT_status', 'Annotation_cell')
+bio_vars_disc <- c('NACT_status')
 bio_vars_cont <- c(ct_interest)
 
-genes_of_cells <- list(Macrophages = c('CXCL16', 'TLR9'),
+genes_of_cells <- list(Macrophages_Monocytes = c('CXCL16', 'TLR9'),
                        DCs = c('CXCL16', 'TLR9', 'CCD7'),
-                       Tcells = c('CXCR6', 'CCL5', 'P2RX7'))
+                       Tcells_CD4 = c('CXCR6', 'CCL5', 'P2RX7'),
+                       Tcells_CD8 = c('CXCR6', 'CCL5', 'P2RX7'))
 
+min_deconv_ct_frac <- 0.01
 
 # load files and merge with metadata for full_data ------------------------
 
@@ -79,10 +81,11 @@ deconv_ct_frac <- data.frame(fread(deconv_ct_frac_path))
 metadt <- dplyr::left_join(metadt, deconv_ct_frac[, c('dcc_filename', ct_interest)], by = 'dcc_filename')
 
 # check if all genes are there
-all(genes_interest %in% rownames(geomx_obj@assayData$harmony_batch_corr))
+all(genes_interest %in% rownames(geomx_obj@assayData$harmony_batch_corr_q3_norm))
+which(genes_interest %in% rownames(geomx_obj@assayData$harmony_batch_corr_q3_norm))
 
 # add gene expression
-genes_expr <- data.frame(t(geomx_obj@assayData$harmony_batch_corr[rownames(geomx_obj@assayData$harmony_batch_corr) 
+genes_expr <- data.frame(t(geomx_obj@assayData$harmony_batch_corr_q3_norm[rownames(geomx_obj@assayData$harmony_batch_corr_q3_norm) 
                                                                   %in% genes_interest, ]))
 genes_expr <- rownames_to_column(genes_expr, var = "dcc_filename")
 genes_expr <- dplyr::left_join(metadt, genes_expr, by = 'dcc_filename')
@@ -112,7 +115,7 @@ genes_expr_deconv <- lapply(1:length(genes_of_cells), function(x){
   expr_ct <- deconv_all[[ct_name]]
   
   ct_genes_detected <- ct_genes[which(ct_genes %in% rownames(expr_ct))]
-  # fix issue if only 1 gene gere
+
   if(length(ct_genes_detected) == 1){
     expr_ct <- data.frame(expr_ct[ct_genes_detected, ])
   } else if (length(ct_genes_detected) > 1){
@@ -123,6 +126,10 @@ genes_expr_deconv <- lapply(1:length(genes_of_cells), function(x){
   
   colnames(expr_ct) <- paste0(ct_genes_detected, '_', ct_name)
   expr_ct <- rownames_to_column(expr_ct, var = "dcc_filename")
+  
+  # remove if ct fraction in given dcc < thr
+  dcc_above_frac_thr <- deconv_ct_frac$dcc_filename[!is.na(deconv_ct_frac[[ct_name]]) & deconv_ct_frac[[ct_name]] >= min_deconv_ct_frac]
+  expr_ct <- expr_ct[expr_ct$dcc_filename %in% dcc_above_frac_thr, ]
 })
 
 # merge all frames
@@ -131,28 +138,37 @@ genes_expr_deconv <- join_all(genes_expr_deconv, by='dcc_filename', type='left')
 
 genes_expr_deconv <- dplyr::left_join(metadt, genes_expr_deconv, by = 'dcc_filename')
 
-genes_expr_deconv_long <- melt(genes_expr_deconv, id.vars = colnames(genes_expr_deconv)[1: ncol(metadt)],
-                        variable.name = "gene_name", 
-                        value.name = "gene_expr")
+genes_expr_deconv_long <- melt(genes_expr_deconv, id.vars = colnames(genes_expr_deconv)[1:ncol(metadt)],
+                               variable.name = "gene_name",
+                               value.name = "gene_expr")
 
+# # move NA values to 0
+# genes_expr_deconv[is.na(genes_expr_deconv)] <- 0
+# genes_expr_deconv_long[is.na(genes_expr_deconv_long)] <- 0
+
+# move neg expr to 0
+genes_expr_deconv[(genes_expr_deconv < 0)] <- 0
+genes_expr_deconv_long$gene_expr[genes_expr_deconv_long$gene_expr < 0] <- 0
 
 
 # boxplots with expr across discrete vars ---------------------------------
 
 dt_type <- 'full_signal' # 'deconvolution', 'full_signal'
 seg_type <- 'all_segments'  # 'all_segments' # 'stroma' 'tumor'
-anno <- 'double_pos' # 'all', 'double_pos'
+batches <- 'all' # 'all' or c('1', '2', '3')
 
-for(dt_type in c('full_signal', 'deconvolution')){ 
+for(dt_type in c('deconvolution')){ # c('full_signal', 'deconvolution')
   for(seg_type in c('all_segments', 'stroma', 'tumor')){
-    for(anno in c('all_anno', 'doublepos')){
+    #for(anno in c('all_anno', 'doublepos')){
       
       print(seg_type)
-      print(anno)
+      
+      batchesname <- ifelse(batches == 'all', 'batchall', paste0('batch', paste0(batches, collapse = '')))
+      print(batchesname)
       
       ###############################
       ##############################3
-      out_dir <- file.path(main_out_dir, paste(dt_type, seg_type, anno, sep = '_'))
+      out_dir <- file.path(main_out_dir, paste(dt_type, seg_type, batchesname, sep = '_'))
       dir.create(out_dir)
       
       if(dt_type == 'full_signal'){
@@ -163,8 +179,8 @@ for(dt_type in c('full_signal', 'deconvolution')){
       } else if(dt_type == 'deconvolution'){
         dt_long <- genes_expr_deconv_long
         dt_wide <- genes_expr_deconv
-        xnames <- c('CXCR6_Tcells', 'CXCL16_Macrophages')
-        ynames <- c('P2RX7_Tcells', 'CXCL16_Macrophages', 'CXCL16_DCs', 'CXCR6_Tcells')
+        xnames <- c('CXCL16_DCs', 'CXCL16_Macrophages_Monocytes')
+        ynames <- c('CXCR6_Tcells_CD4', 'CXCR6_Tcells_CD8')
       }
       
       # for(color_colname in c('NACT_status', 'Annotation_cell')){
@@ -182,21 +198,15 @@ for(dt_type in c('full_signal', 'deconvolution')){
       
       # scatterplots for continuous vars ----------------------------------------
       
-      
-      if(seg_type == 'stroma'){
-        dt_long <- dt_long[dt_long$Segment == 'stroma', ]
-        dt_wide <- dt_wide[dt_wide$Segment == 'stroma', ]
-      } else if(seg_type == 'tumor'){
-        dt_long <- dt_long[dt_long$Segment == 'tumor', ]
-        dt_wide <- dt_wide[dt_wide$Segment == 'tumor', ]
+      if(seg_type != 'all_segments'){
+        dt_long <- dt_long[dt_long$Segment == seg_type, ]
+        dt_wide <- dt_wide[dt_wide$Segment == seg_type, ]
       }
       
-      if(anno == 'doublepos'){
-        dt_long <- dt_long[dt_long$Annotation_cell == "posCD8_posIBA1", ]
-        dt_wide <- dt_wide[dt_wide$Annotation_cell == "posCD8_posIBA1", ]
+      if(batchesname != 'batchall'){
+        dt_long <- dt_long[dt_long$main_batch_nr %in% batches, ]
+        dt_wide <- dt_wide[dt_wide$main_batch_nr %in% batches, ]
       }
-      
-      
       
       # gene expr vs cell fraction ----------------------------------------------
       # each gene per PFS and ct_fraction
@@ -236,7 +246,7 @@ for(dt_type in c('full_signal', 'deconvolution')){
               xlab(gname) +
               ylab(paste0(cont_colname)) +
               guides(color=guide_legend(title=color_colname)) +
-              scale_color_manual(values=manual_colours) +
+              #scale_color_manual(values=manual_colours) +
               geom_smooth(method='lm', formula= y~x) +
               stat_poly_eq(use_label(c("R2", "p")))
             
@@ -255,7 +265,7 @@ for(dt_type in c('full_signal', 'deconvolution')){
                 xlab(gname) +
                 ylab(paste0(cont_colname)) +
                 guides(color=guide_legend(title=color_colname)) +
-                scale_color_manual(values=manual_colours) +
+                #scale_color_manual(values=manual_colours) +
                 geom_smooth(method='lm', formula= y~x) +
                 # stat_poly_line() +
                 stat_poly_eq(use_label(c("R2", "p")))
@@ -301,7 +311,7 @@ for(dt_type in c('full_signal', 'deconvolution')){
                 xlab(xname) +
                 ylab(yname) +
                 guides(color=guide_legend(title=color_colname)) +
-                scale_color_manual(values=manual_colours) +
+                #scale_color_manual(values=manual_colours) +
                 geom_smooth(method='lm', formula= y~x) +
                 stat_poly_eq(use_label(c("R2", "p")))
               #stat_correlation(method = 'pearson')
@@ -316,7 +326,7 @@ for(dt_type in c('full_signal', 'deconvolution')){
                   xlab(xname) +
                   ylab(yname) +
                   guides(color=guide_legend(title=color_colname)) +
-                  scale_color_manual(values=manual_colours) +
+                  #scale_color_manual(values=manual_colours) +
                   geom_smooth(method='lm', formula= y~x)+
                   stat_poly_eq(use_label(c("R2", "p")))
                 
@@ -333,7 +343,7 @@ for(dt_type in c('full_signal', 'deconvolution')){
       
       #######################################
       #######################################
-    }
+    #}
   }
 }
 
