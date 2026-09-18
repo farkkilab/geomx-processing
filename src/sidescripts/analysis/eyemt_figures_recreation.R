@@ -921,7 +921,7 @@ metadt_sel <- metadt %>%
 gsea_myelonets_wide <- left_join(gsea_myelonets_wide, metadt_sel)
 
 gsea_myelonets_wide <- gsea_myelonets_wide %>%
-  filter(Segment == 'stroma' & NACT_status == 'post')
+  filter(Segment == 'stroma' & NACT_status == 'post') # & roi_cluster_label_gmm == 'Macro_domin')
 
 
 col_vars <- c('NACT_status', 'Segment_geomx', 'HRP_status', 'primary_treatment_response', 
@@ -930,10 +930,11 @@ col_vars <- c('NACT_status', 'Segment_geomx', 'HRP_status', 'primary_treatment_r
                 'ct_immunefrac_sd_roi_Tcells_CD8', 'primary_surgery_residual', 'TMB', 'tls_status')
 
 progs <- unique(gsea_myelonets$pathway)
-prog1 <- 'myelonets_lipid_dge'
-prog2 <- 'myelonets_il1_dge'
+prog1 <- 'myelonets_lipid'
+prog2 <- 'myelonets_il1'
 colvar <- col_vars[1]
 
+# scatters 2 programmes
 for(colvar in col_vars){
   ggplot(data = gsea_myelonets_wide, aes(x = get(prog1), y = get(prog2), color = get(colvar))) +
     geom_point(aes(shape = Segment)) + 
@@ -945,6 +946,20 @@ for(colvar in col_vars){
 }
 
 
+# boxpl vs groups
+for(prog in progs){
+  ggplot(gsea_myelonets_wide, aes(x = primary_treatment_response, y = get(prog1), fill = primary_treatment_response)) +
+    geom_boxplot() +
+    geom_point(position= position_jitterdodge(dodge.width = 1, jitter.width= .3, jitter.height = 0),
+               size= 0.5, alpha = 0.6) +
+    labs(x = "primary_treatment_response", y = prog1, fill = "primary_treatment_response") +
+    geom_pwc(method = "wilcox_test", label = "p.signif", hide.ns = TRUE, size = 0.2, label.size = 2.8) +
+    theme_minimal()
+  
+  ggsave(file.path(prog_outdir, paste0('boxpl_gsea_prim_tr_resp_', prog, '.png')))
+}
+
+# TODO check fractions of macro-domin vs primary treat response in geox and in tcycif
 
 #############################################################################
 #############################################################################
